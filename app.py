@@ -62,6 +62,13 @@ if "gemini_api_key" not in st.session_state:
 if "preferred_provider" not in st.session_state:
     st.session_state["preferred_provider"] = _cfg.get("preferred_provider", "claude")
 
+if "plaid_client_id" not in st.session_state:
+    st.session_state["plaid_client_id"] = _cfg.get("plaid_client_id", "")
+if "plaid_secret" not in st.session_state:
+    st.session_state["plaid_secret"] = _cfg.get("plaid_secret", "")
+if "plaid_environment" not in st.session_state:
+    st.session_state["plaid_environment"] = _cfg.get("plaid_environment", "sandbox")
+
 # ---------------------------------------------------------------------------
 # Privacy notice — shown on every stage
 # ---------------------------------------------------------------------------

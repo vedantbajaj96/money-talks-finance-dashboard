@@ -20,9 +20,15 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from categorizer import ALL_CATEGORIES, INCOME_CATEGORIES
+from categorizer import ALL_CATEGORIES, INCOME_CATEGORIES, categorize_transactions
+from parsers import deduplicate
+from plaid_client import (
+    get_connected_accounts,
+    is_configured as plaid_is_configured,
+    sync_all_transactions,
+)
 from sidebar import show_settings_sidebar
-from stages.upload import add_more_files
+from stages.upload import _filter_and_label, _run_llm, add_more_files
 from storage import save_transactions
 from subscriptions import detect_recurring
 
@@ -392,6 +398,45 @@ def _render_transaction_search(df: pd.DataFrame) -> None:
 # Stage renderer
 # ---------------------------------------------------------------------------
 
+def _sync_plaid_transactions() -> None:
+    """Pull fresh transactions from all connected Plaid accounts and merge."""
+    with st.spinner("Fetching transactions from connected banks..."):
+        new_df = sync_all_transactions()
+
+    if new_df.empty:
+        st.warning("No transactions returned from Plaid.")
+        return
+
+    existing = st.session_state.get("df_transactions")
+    combined = (
+        pd.concat([existing, new_df], ignore_index=True)
+        if existing is not None
+        else new_df
+    )
+
+    combined, removed = deduplicate(combined)
+    if removed:
+        st.info(f"Removed {removed:,} duplicate transaction(s).")
+
+    # Categorize any rows that don't yet have a category
+    if "category" not in combined.columns:
+        combined = categorize_transactions(combined)
+    else:
+        new_mask = combined["category"].isna()
+        if new_mask.any():
+            sub = categorize_transactions(combined[new_mask].copy())
+            combined.loc[new_mask, "category"]           = sub["category"]
+            combined.loc[new_mask, "suggested_category"] = sub["suggested_category"]
+
+    transactions = _filter_and_label(combined)
+    transactions = _run_llm(transactions)
+
+    save_transactions(transactions)
+    st.session_state["df_transactions"] = transactions
+    st.success(f"Synced {len(new_df):,} transactions from Plaid.")
+    st.rerun()
+
+
 def show_dashboard_stage() -> None:
     show_settings_sidebar()
 
@@ -413,6 +458,22 @@ def show_dashboard_stage() -> None:
                 args=(extra_files,),
                 disabled=(not extra_files),
             )
+
+        # ── Plaid sync ───────────────────────────────────────────────────────
+        if plaid_is_configured():
+            accounts = get_connected_accounts()
+            if accounts:
+                with st.expander("🏦 Plaid — Connected Banks"):
+                    for acct in accounts:
+                        st.write(f"• {acct['institution_name']}")
+                    if st.button("🔄 Sync Transactions", type="primary", use_container_width=True):
+                        _sync_plaid_transactions()
+            else:
+                st.info(
+                    "No banks connected yet. "
+                    "Open [localhost:8502/connect](http://localhost:8502/connect) to link an account.",
+                    icon="🏦",
+                )
 
         st.divider()
         st.header("Filters")

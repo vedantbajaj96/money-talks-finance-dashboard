@@ -32,6 +32,9 @@ def save_config() -> None:
         "anthropic_api_key":  st.session_state.get("anthropic_api_key", ""),
         "gemini_api_key":     st.session_state.get("gemini_api_key", ""),
         "preferred_provider": st.session_state.get("preferred_provider", "claude"),
+        "plaid_client_id":    st.session_state.get("plaid_client_id", ""),
+        "plaid_secret":       st.session_state.get("plaid_secret", ""),
+        "plaid_environment":  st.session_state.get("plaid_environment", "sandbox"),
     }
     try:
         with open(_CONFIG_PATH, "w") as f:

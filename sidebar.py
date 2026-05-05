@@ -11,6 +11,7 @@ import streamlit as st
 
 from config import save_config
 from storage import clear_transactions
+from plaid_client import is_configured as plaid_is_configured, get_connected_accounts, remove_account
 
 
 # ---------------------------------------------------------------------------
@@ -133,6 +134,53 @@ def show_settings_sidebar() -> None:
                 validate_fn=_validate_gemini_key,
                 valid_state_key="gemini_key_valid",
             )
+
+            st.divider()
+
+            # ── Plaid (bank sync) ────────────────────────────────────────────
+            st.markdown("**Plaid (Bank Sync)**")
+            st.caption("Get keys at [dashboard.plaid.com](https://dashboard.plaid.com)")
+
+            for field, label, placeholder in [
+                ("plaid_client_id", "Client ID",  "Enter Plaid client_id"),
+                ("plaid_secret",    "Secret",      "Enter Plaid secret"),
+            ]:
+                val = st.text_input(
+                    label,
+                    value=st.session_state.get(field, ""),
+                    type="password" if field == "plaid_secret" else "default",
+                    placeholder=placeholder,
+                    key=f"input_{field}",
+                )
+                if val != st.session_state.get(field, ""):
+                    st.session_state[field] = val
+                    save_config()
+                    st.rerun()
+
+            env = st.selectbox(
+                "Environment",
+                options=["sandbox", "production"],
+                index=0 if st.session_state.get("plaid_environment", "sandbox") == "sandbox" else 1,
+                key="plaid_env_select",
+            )
+            if env != st.session_state.get("plaid_environment"):
+                st.session_state["plaid_environment"] = env
+                save_config()
+                st.rerun()
+
+            if plaid_is_configured():
+                st.success("Plaid configured ✅")
+                accounts = get_connected_accounts()
+                if accounts:
+                    st.markdown("**Connected accounts:**")
+                    for acct in accounts:
+                        col_a, col_b = st.columns([4, 1])
+                        col_a.write(acct["institution_name"])
+                        if col_b.button("✕", key=f"remove_{acct['item_id']}"):
+                            remove_account(acct["item_id"])
+                            st.rerun()
+            else:
+                st.caption("Enter credentials above to enable bank sync")
 
             # ── Provider preference (only shown when both keys are set) ─────
             if st.session_state.get("anthropic_api_key") and st.session_state.get("gemini_api_key"):

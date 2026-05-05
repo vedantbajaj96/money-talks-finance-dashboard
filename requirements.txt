@@ -4,3 +4,6 @@ plotly
 pyarrow
 anthropic
 google-genai
+plaid-python
+fastapi
+uvicorn
