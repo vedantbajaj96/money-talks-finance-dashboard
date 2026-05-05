@@ -48,6 +48,21 @@ if st.session_state["df_transactions"] is None:
         st.session_state["df_transactions"] = _persisted
         if st.session_state["stage"] == "upload":
             st.session_state["stage"] = "dashboard"
+    else:
+        # No saved transactions — if Plaid accounts are connected, auto-sync
+        # on first load so the user lands on the dashboard without any manual step.
+        from plaid_client import get_connected_accounts, is_configured as plaid_is_configured, sync_all_transactions
+        if plaid_is_configured() and get_connected_accounts():
+            from categorizer import categorize_transactions
+            from stages.upload import _filter_and_label, _run_llm
+            from storage import save_transactions
+            _new_df = sync_all_transactions()
+            if not _new_df.empty:
+                _new_df = categorize_transactions(_new_df)
+                _new_df = _filter_and_label(_new_df)
+                save_transactions(_new_df)
+                st.session_state["df_transactions"] = _new_df
+                st.session_state["stage"] = "dashboard"
 
 # Load persisted API keys — config.json wins over environment variable
 _cfg = load_config()

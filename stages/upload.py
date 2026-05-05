@@ -18,6 +18,28 @@ from sidebar import show_settings_sidebar
 from storage import save_transactions
 
 
+def _sync_plaid_from_upload() -> None:
+    """Sync Plaid transactions from the landing page and advance to dashboard."""
+    from plaid_client import sync_all_transactions
+
+    with st.spinner("Fetching transactions from connected banks..."):
+        new_df = sync_all_transactions()
+
+    if new_df.empty:
+        st.warning("No transactions returned. Make sure you have connected a bank account.")
+        return
+
+    new_df = categorize_transactions(new_df)
+    transactions = _filter_and_label(new_df)
+    transactions = _run_llm(transactions)
+
+    save_transactions(transactions)
+    st.session_state["df_transactions"] = transactions
+    st.session_state["pending_overrides"] = {}
+    st.session_state["stage"] = "dashboard"
+    st.rerun()
+
+
 # ---------------------------------------------------------------------------
 # Helpers shared with add_more_files
 # ---------------------------------------------------------------------------
@@ -186,16 +208,51 @@ def add_more_files(uploaded_files) -> None:
 # ---------------------------------------------------------------------------
 
 def show_upload_stage() -> None:
+    from plaid_client import is_configured as plaid_is_configured
+
     show_settings_sidebar()
     st.title("💰 Personal Finance Dashboard")
-    st.header("Step 1 — Upload Statements")
+
+    # ── Primary: Plaid ────────────────────────────────────────────────────────
+    st.subheader("Connect your bank")
     st.markdown(
-        "Supports **Chase Bank** (checking/savings), **Chase Credit Card**, "
-        "and **Amex Credit Card** CSV exports."
+        "Link your bank accounts for automatic transaction sync. "
+        "Your bank credentials go directly to your bank — never stored here."
     )
 
-    with st.expander("How to export your CSVs"):
-        st.markdown("""
+    if plaid_is_configured():
+        from plaid_client import get_connected_accounts
+        accounts = get_connected_accounts()
+
+        col1, col2 = st.columns([1, 1], gap="small")
+        with col1:
+            plaid_url = "http://localhost:8502/connect"
+            st.link_button("🏦 Connect a Bank", plaid_url, type="primary")
+        with col2:
+            if accounts:
+                if st.button("⬇️ Sync Transactions", type="primary"):
+                    _sync_plaid_from_upload()
+
+        if accounts:
+            st.caption(f"{len(accounts)} bank(s) connected: {', '.join(a['institution_name'] for a in accounts)}")
+        else:
+            st.caption("No banks connected yet — click Connect a Bank to get started.")
+    else:
+        st.info(
+            "Enter your **Plaid Client ID** and **Secret** in ⚙️ Settings (sidebar) to enable bank sync.",
+            icon="🔑",
+        )
+
+    # ── Secondary: CSV upload ─────────────────────────────────────────────────
+    st.divider()
+    with st.expander("Or upload CSV statements manually"):
+        st.markdown(
+            "Supports **Chase Bank** (checking/savings), **Chase Credit Card**, "
+            "and **Amex Credit Card** CSV exports."
+        )
+
+        with st.expander("How to export your CSVs"):
+            st.markdown("""
 **Chase Bank (Checking / Savings)**
 1. Log in at chase.com → select your checking or savings account.
 2. Click **Download account activity** (the download icon near the top right).
@@ -210,18 +267,18 @@ def show_upload_stage() -> None:
 1. Log in at americanexpress.com → go to **Statements & Activity**.
 2. Click **Export** at the top right of the transactions list.
 3. Choose **CSV** and click **Export**.
-        """)
+            """)
 
-    uploaded_files = st.file_uploader(
-        "Choose one or more CSV files",
-        type="csv",
-        accept_multiple_files=True,
-    )
+        uploaded_files = st.file_uploader(
+            "Choose one or more CSV files",
+            type="csv",
+            accept_multiple_files=True,
+        )
 
-    st.button(
-        "Process Files →",
-        type="primary",
-        on_click=process_files,
-        args=(uploaded_files,),
-        disabled=(not uploaded_files),
-    )
+        st.button(
+            "Process Files →",
+            type="primary",
+            on_click=process_files,
+            args=(uploaded_files,),
+            disabled=(not uploaded_files),
+        )
