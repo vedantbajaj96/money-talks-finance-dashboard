@@ -17,6 +17,7 @@ from config import load_config
 from stages.dashboard import show_dashboard_stage
 from stages.sanity_check import show_sanity_check_stage
 from stages.upload import show_upload_stage
+from storage import load_transactions
 
 # ---------------------------------------------------------------------------
 # Page config — must be the very first Streamlit call
@@ -38,6 +39,15 @@ if "df_transactions" not in st.session_state:
 
 if "pending_overrides" not in st.session_state:
     st.session_state["pending_overrides"] = {}
+
+# If no transactions in session yet, try loading from disk.
+# This means a page refresh resumes the dashboard instead of the upload screen.
+if st.session_state["df_transactions"] is None:
+    _persisted = load_transactions()
+    if _persisted is not None:
+        st.session_state["df_transactions"] = _persisted
+        if st.session_state["stage"] == "upload":
+            st.session_state["stage"] = "dashboard"
 
 # Load persisted API keys — config.json wins over environment variable
 _cfg = load_config()

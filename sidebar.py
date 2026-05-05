@@ -10,6 +10,7 @@ from __future__ import annotations
 import streamlit as st
 
 from config import save_config
+from storage import clear_transactions
 
 
 # ---------------------------------------------------------------------------
@@ -88,7 +89,8 @@ def _key_input_section(
 # ---------------------------------------------------------------------------
 
 def reset_session() -> None:
-    """Clear all transaction data and return to the upload stage."""
+    """Clear all transaction data (memory + disk) and return to the upload stage."""
+    clear_transactions()
     st.session_state["stage"] = "upload"
     st.session_state["df_transactions"] = None
     st.session_state["pending_overrides"] = {}

@@ -23,6 +23,8 @@ import streamlit as st
 from categorizer import ALL_CATEGORIES, INCOME_CATEGORIES
 from sidebar import show_settings_sidebar
 from stages.upload import add_more_files
+from storage import save_transactions
+from subscriptions import detect_recurring
 
 
 # ---------------------------------------------------------------------------
@@ -136,8 +138,21 @@ def _render_summary_metrics(
 def _render_spending_breakdown(df_expenses: pd.DataFrame) -> None:
     st.header("Spending Breakdown")
 
+    # Month filter — "All time" shows the full date range
+    available_months = sorted(df_expenses["month"].unique(), reverse=True)
+    month_options    = ["All time"] + available_months
+    selected_month   = st.selectbox(
+        "Month", options=month_options, index=0, key="breakdown_month"
+    )
+
+    filtered = (
+        df_expenses[df_expenses["month"] == selected_month]
+        if selected_month != "All time"
+        else df_expenses
+    )
+
     cat_totals = (
-        df_expenses.groupby("category")["expense_amount"]
+        filtered.groupby("category")["expense_amount"]
         .sum().sort_values(ascending=True).reset_index()
     )
     cat_totals.columns = ["Category", "Amount"]
@@ -166,6 +181,32 @@ def _render_spending_breakdown(df_expenses: pd.DataFrame) -> None:
         fig.update_layout(height=400, showlegend=False, margin=dict(l=10, r=10, t=20, b=20))
         st.plotly_chart(fig, use_container_width=True)
 
+    st.divider()
+
+
+def _render_subscriptions(df: pd.DataFrame) -> None:
+    recurring = detect_recurring(df)
+    if recurring.empty:
+        return
+
+    st.header("Subscriptions & Recurring")
+
+    total_monthly = recurring["est_monthly_cost"].sum()
+    st.metric("Total Monthly Recurring", f"${total_monthly:,.2f}")
+
+    display = recurring.rename(columns={
+        "description":      "Merchant",
+        "category":         "Category",
+        "amount":           "Charge ($)",
+        "frequency":        "Frequency",
+        "occurrences":      "Times Seen",
+        "last_charge":      "Last Charge",
+        "est_monthly_cost": "Est. Monthly ($)",
+    })
+    display["Charge ($)"]       = display["Charge ($)"].map("${:,.2f}".format)
+    display["Est. Monthly ($)"] = display["Est. Monthly ($)"].map("${:,.2f}".format)
+
+    st.dataframe(display, use_container_width=True, hide_index=True)
     st.divider()
 
 
@@ -331,6 +372,7 @@ def _render_transaction_search(df: pd.DataFrame) -> None:
         for pos in changed:
             orig_idx = int(edited.iloc[pos]["_orig_idx"])
             df_main.at[orig_idx, "category"] = edited.iloc[pos]["Category"]
+        save_transactions(df_main)
         st.session_state["df_transactions"] = df_main
         st.rerun()
 
@@ -417,6 +459,7 @@ def show_dashboard_stage() -> None:
     _render_burn_rate(df_expenses)
     _render_summary_metrics(df, df_expenses, total_spent)
     _render_spending_breakdown(df_expenses)
+    _render_subscriptions(df)
     _render_income_breakdown(df_income)
     _render_trendline(df_expenses, df_income)
     _render_transaction_search(df)

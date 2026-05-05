@@ -15,6 +15,7 @@ from categorizer import categorize_transactions, llm_categorize_all
 from config import get_active_api_key, get_active_provider
 from parsers import deduplicate, load_csv
 from sidebar import show_settings_sidebar
+from storage import save_transactions
 
 
 # ---------------------------------------------------------------------------
@@ -124,6 +125,7 @@ def process_files(uploaded_files) -> None:
 
     transactions = _run_llm(transactions)
 
+    save_transactions(transactions)
     st.session_state["df_transactions"]  = transactions
     st.session_state["pending_overrides"] = {}
 
@@ -174,6 +176,7 @@ def add_more_files(uploaded_files) -> None:
     transactions = _filter_and_label(combined)
     transactions = _run_llm(transactions)
 
+    save_transactions(transactions)
     st.session_state["df_transactions"] = transactions
     st.rerun()
 
