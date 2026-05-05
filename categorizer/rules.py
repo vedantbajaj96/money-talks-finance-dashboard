@@ -135,20 +135,26 @@ def categorize_transactions(df: pd.DataFrame) -> pd.DataFrame:
     """
     Add 'category' and 'suggested_category' columns to a transactions DataFrame.
 
-    Branches on expense_amount sign:
-      - Negative (income) → categorize_income()
-      - Positive (expense) → categorize()
+    Priority order:
+      1. User-defined rules (user_rules.py) — highest priority, always win
+      2. Income keyword matching for negative amounts
+      3. Expense keyword matching for positive amounts
 
     Returns a copy of df with the two new columns.
     """
+    from user_rules import apply_rules  # local import to avoid circular dependency
+
     df = df.copy()
 
-    results = df.apply(
-        lambda row: categorize_income(row["description"])
-        if row["expense_amount"] < 0
-        else categorize(row["description"]),
-        axis=1,
-    )
+    def _categorize_row(row):
+        rule_cat = apply_rules(row["description"])
+        if rule_cat is not None:
+            return (rule_cat, None)
+        if row["expense_amount"] < 0:
+            return categorize_income(row["description"])
+        return categorize(row["description"])
+
+    results = df.apply(_categorize_row, axis=1)
     df["category"] = results.apply(lambda t: t[0])
     df["suggested_category"] = results.apply(lambda t: t[1])
 

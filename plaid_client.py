@@ -27,6 +27,7 @@ from plaid.model.item_public_token_exchange_request import ItemPublicTokenExchan
 from plaid.model.link_token_create_request import LinkTokenCreateRequest
 from plaid.model.link_token_create_request_user import LinkTokenCreateRequestUser
 from plaid.model.products import Products
+from plaid.model.accounts_balance_get_request import AccountsBalanceGetRequest
 from plaid.model.transactions_sync_request import TransactionsSyncRequest
 
 from config import load_config
@@ -91,16 +92,26 @@ def create_link_token() -> str:
     """
     Create a short-lived link_token used to initialise Plaid Link in the browser.
     Raises on failure (caller should surface the error to the user).
+
+    redirect_uri is only passed in sandbox (where http://localhost is allowed).
+    In production, omit it — it is only required for OAuth-based institutions,
+    and Plaid requires an HTTPS URI there which can't be localhost.
     """
-    client  = _get_api_client()
-    request = LinkTokenCreateRequest(
+    cfg      = load_config()
+    env_name = cfg.get("plaid_environment", "sandbox")
+    client   = _get_api_client()
+
+    kwargs = dict(
         user=LinkTokenCreateRequestUser(client_user_id="local-user"),
         client_name="Finance Dashboard",
         products=[Products("transactions")],
         country_codes=[CountryCode("US")],
         language="en",
-        redirect_uri="http://localhost:8502/oauth_callback",
     )
+    if env_name == "sandbox":
+        kwargs["redirect_uri"] = "http://localhost:8502/oauth_callback"
+
+    request  = LinkTokenCreateRequest(**kwargs)
     response = client.link_token_create(request)
     return response["link_token"]
 
@@ -131,6 +142,44 @@ def get_connected_accounts() -> list[dict]:
         {"institution_name": i["institution_name"], "item_id": i["item_id"]}
         for i in _load_items()
     ]
+
+
+def get_account_balances() -> list[dict]:
+    """
+    Return current balances for all connected accounts.
+
+    Each entry:
+      {
+        "institution_name": str,
+        "account_name":     str,
+        "account_type":     str,   # depository / credit / loan / investment / other
+        "current_balance":  float,
+        "available_balance": float | None,
+      }
+
+    Depository accounts are assets (+), credit/loan accounts are liabilities (-).
+    """
+    client  = _get_api_client()
+    results = []
+
+    for item in _load_items():
+        try:
+            response = client.accounts_balance_get(
+                AccountsBalanceGetRequest(access_token=item["access_token"])
+            )
+            for acct in response["accounts"]:
+                balances = acct["balances"]
+                results.append({
+                    "institution_name":  item.get("institution_name", "Unknown"),
+                    "account_name":      acct.get("name", "Account"),
+                    "account_type":      str(acct.get("type", "other")),
+                    "current_balance":   float(balances.get("current") or 0),
+                    "available_balance": float(balances["available"]) if balances.get("available") is not None else None,
+                })
+        except Exception:
+            continue
+
+    return results
 
 
 def remove_account(item_id: str) -> None:

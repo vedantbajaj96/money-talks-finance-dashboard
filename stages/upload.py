@@ -15,6 +15,7 @@ from categorizer import categorize_transactions, llm_categorize_all
 from config import get_active_api_key, get_active_provider
 from parsers import deduplicate, load_csv
 from sidebar import show_settings_sidebar
+from merchants import add_merchant_column
 from storage import save_transactions
 
 
@@ -32,6 +33,7 @@ def _sync_plaid_from_upload() -> None:
     new_df = categorize_transactions(new_df)
     transactions = _filter_and_label(new_df)
     transactions = _run_llm(transactions)
+    transactions = add_merchant_column(transactions)
 
     save_transactions(transactions)
     st.session_state["df_transactions"] = transactions
@@ -146,6 +148,7 @@ def process_files(uploaded_files) -> None:
         return
 
     transactions = _run_llm(transactions)
+    transactions = add_merchant_column(transactions)
 
     save_transactions(transactions)
     st.session_state["df_transactions"]  = transactions
@@ -197,6 +200,7 @@ def add_more_files(uploaded_files) -> None:
 
     transactions = _filter_and_label(combined)
     transactions = _run_llm(transactions)
+    transactions = add_merchant_column(transactions)
 
     save_transactions(transactions)
     st.session_state["df_transactions"] = transactions

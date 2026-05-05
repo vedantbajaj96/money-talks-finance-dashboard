@@ -21,15 +21,18 @@ import plotly.express as px
 import streamlit as st
 
 from categorizer import ALL_CATEGORIES, INCOME_CATEGORIES, categorize_transactions
+from merchants import add_merchant_column, merchant_summary
+from user_rules import add_rule, delete_rule, load_rules
 from parsers import deduplicate
 from plaid_client import (
+    get_account_balances,
     get_connected_accounts,
     is_configured as plaid_is_configured,
     sync_all_transactions,
 )
 from sidebar import show_settings_sidebar
 from stages.upload import _filter_and_label, _run_llm, add_more_files
-from storage import save_transactions
+from storage import ensure_annotation_columns, save_transactions
 from subscriptions import detect_recurring
 
 
@@ -75,6 +78,36 @@ def parse_search_query(query: str) -> tuple[str, float | None, float | None]:
 # Section renderers — each takes the filtered df (or sub-df) and draws one
 # section of the dashboard.
 # ---------------------------------------------------------------------------
+
+def _render_net_worth() -> None:
+    """Show current account balances and net worth from Plaid."""
+    if not plaid_is_configured() or not get_connected_accounts():
+        return
+
+    balances = get_account_balances()
+    if not balances:
+        return
+
+    st.header("Net Worth")
+
+    assets      = sum(b["current_balance"] for b in balances if b["account_type"] == "depository")
+    liabilities = sum(b["current_balance"] for b in balances if b["account_type"] in ("credit", "loan"))
+    net_worth   = assets - liabilities
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Net Worth", f"${net_worth:,.0f}")
+    col2.metric("Assets (Cash & Savings)", f"${assets:,.0f}")
+    col3.metric("Liabilities (Credit & Loans)", f"${liabilities:,.0f}")
+
+    # Per-account breakdown
+    with st.expander("Account breakdown"):
+        for b in balances:
+            sign  = "-" if b["account_type"] in ("credit", "loan") else ""
+            label = f"{b['institution_name']} — {b['account_name']} ({b['account_type']})"
+            st.write(f"**{label}**: {sign}${b['current_balance']:,.2f}")
+
+    st.divider()
+
 
 def _render_cash_flow(df_expenses: pd.DataFrame, df_income: pd.DataFrame) -> None:
     st.header("Cash Flow")
@@ -316,8 +349,10 @@ def _render_transaction_search(df: pd.DataFrame) -> None:
         label_visibility="collapsed",
     )
 
+    df = ensure_annotation_columns(df)
+
     display_df = (
-        df[["date", "description", "expense_amount", "transaction_type", "category", "source"]]
+        df[["date", "description", "expense_amount", "transaction_type", "category", "source", "notes", "tags"]]
         .copy()
         .sort_values("date", ascending=False)
     )
@@ -343,13 +378,14 @@ def _render_transaction_search(df: pd.DataFrame) -> None:
     )
     editor_df = editor_df.rename(columns={
         "date": "Date", "description": "Description",
-        "transaction_type": "Type", "category": "Category", "source": "Account",
+        "transaction_type": "Type", "category": "Category",
+        "source": "Account", "notes": "Notes", "tags": "Tags",
     })
 
-    st.caption("✏️ Click any **Category** cell to recategorize a transaction.")
+    st.caption("✏️ Click **Category**, **Notes**, or **Tags** cells to edit inline.")
 
     edited = st.data_editor(
-        editor_df[["Date", "Description", "Amount ($)", "Type", "Category", "Account", "_orig_idx"]],
+        editor_df[["Date", "Description", "Amount ($)", "Type", "Category", "Account", "Notes", "Tags", "_orig_idx"]],
         column_config={
             "Date":        st.column_config.TextColumn("Date",         disabled=True),
             "Description": st.column_config.TextColumn("Description",  disabled=True),
@@ -361,23 +397,29 @@ def _render_transaction_search(df: pd.DataFrame) -> None:
                                required=True,
                            ),
             "Account":     st.column_config.TextColumn("Account",      disabled=True),
-            "_orig_idx":   None,  # hidden — used for write-back only
+            "Notes":       st.column_config.TextColumn("Notes",        max_chars=200),
+            "Tags":        st.column_config.TextColumn("Tags",         help="Comma-separated, e.g. business, tax"),
+            "_orig_idx":   None,
         },
         hide_index=True,
         use_container_width=True,
         key="txn_editor",
     )
 
-    # Persist any category changes to session state
+    # Persist category, notes, and tag changes
+    changed_cols = ["Category", "Notes", "Tags"]
     changed = [
-        i for i, (o, n) in enumerate(zip(editor_df["Category"].values, edited["Category"].values))
-        if o != n
+        i for i in range(len(editor_df))
+        if any(editor_df.iloc[i][c] != edited.iloc[i][c] for c in changed_cols)
     ]
     if changed:
         df_main = st.session_state["df_transactions"].copy()
+        df_main = ensure_annotation_columns(df_main)
         for pos in changed:
             orig_idx = int(edited.iloc[pos]["_orig_idx"])
             df_main.at[orig_idx, "category"] = edited.iloc[pos]["Category"]
+            df_main.at[orig_idx, "notes"]    = edited.iloc[pos]["Notes"] or ""
+            df_main.at[orig_idx, "tags"]     = edited.iloc[pos]["Tags"] or ""
         save_transactions(df_main)
         st.session_state["df_transactions"] = df_main
         st.rerun()
@@ -392,6 +434,91 @@ def _render_transaction_search(df: pd.DataFrame) -> None:
         mime="text/csv",
     )
     st.caption(f"Showing {len(display_df):,} of {total_before_search:,} transactions")
+
+
+# ---------------------------------------------------------------------------
+# Merchant summary
+# ---------------------------------------------------------------------------
+
+def _render_merchant_summary(df_expenses: pd.DataFrame) -> None:
+    st.header("Top Merchants")
+
+    if "merchant" not in df_expenses.columns:
+        df_expenses = add_merchant_column(df_expenses)
+
+    summary = merchant_summary(df_expenses)
+    if summary.empty:
+        st.info("No expense data to summarize.")
+        return
+
+    top_n = st.slider("Show top N merchants", min_value=5, max_value=30, value=15, key="merchant_top_n")
+    top   = summary.head(top_n)
+
+    fig = px.bar(
+        top,
+        x="total_spent",
+        y="merchant",
+        orientation="h",
+        text=top["total_spent"].apply(lambda v: f"${v:,.0f}"),
+        labels={"total_spent": "Total Spent ($)", "merchant": "Merchant"},
+        height=max(300, top_n * 28),
+    )
+    fig.update_traces(textposition="outside")
+    fig.update_layout(yaxis={"categoryorder": "total ascending"}, showlegend=False, margin={"l": 10})
+    st.plotly_chart(fig, use_container_width=True)
+
+    with st.expander("Full merchant table"):
+        display = summary.copy()
+        display["total_spent"]      = display["total_spent"].apply(lambda v: f"${v:,.2f}")
+        display["avg_transaction"]  = display["avg_transaction"].apply(lambda v: f"${v:,.2f}")
+        display.columns             = ["Merchant", "# Transactions", "Total Spent", "Avg Transaction"]
+        st.dataframe(display, use_container_width=True, hide_index=True)
+
+
+# ---------------------------------------------------------------------------
+# Custom rules manager
+# ---------------------------------------------------------------------------
+
+def _render_custom_rules(df_full: pd.DataFrame) -> None:
+    """UI to view, add, and delete user-defined categorization rules."""
+    st.header("Categorization Rules")
+    st.caption(
+        "Rules are applied before AI categorization. "
+        "The first matching rule wins. Changes take effect on the next sync or re-categorize."
+    )
+
+    rules = load_rules()
+
+    # ── Existing rules ────────────────────────────────────────────────────────
+    if rules:
+        for i, rule in enumerate(rules):
+            col_pat, col_type, col_cat, col_del = st.columns([3, 2, 3, 1])
+            col_pat.markdown(f"`{rule['pattern']}`")
+            col_type.write(rule["match_type"])
+            col_cat.write(rule["category"])
+            if col_del.button("✕", key=f"del_rule_{i}"):
+                delete_rule(i)
+                st.rerun()
+    else:
+        st.info("No rules yet. Add one below.")
+
+    # ── Add new rule ──────────────────────────────────────────────────────────
+    with st.expander("+ Add a rule"):
+        c1, c2, c3 = st.columns([3, 2, 3])
+        pattern    = c1.text_input("Pattern", placeholder="e.g. whole foods", key="rule_pattern")
+        match_type = c2.selectbox("Match type", ["contains", "starts_with", "exact"], key="rule_match")
+        category   = c3.selectbox("Category", ALL_CATEGORIES + INCOME_CATEGORIES, key="rule_cat")
+
+        if st.button("Add Rule", type="primary", disabled=not pattern.strip()):
+            add_rule(pattern, match_type, category)
+            # Re-apply all rules to existing transactions immediately
+            df_main = st.session_state["df_transactions"].copy()
+            from user_rules import apply_rules_to_df
+            df_main = apply_rules_to_df(df_main)
+            save_transactions(df_main)
+            st.session_state["df_transactions"] = df_main
+            st.success(f"Rule added — transactions recategorized.")
+            st.rerun()
 
 
 # ---------------------------------------------------------------------------
@@ -430,6 +557,7 @@ def _sync_plaid_transactions() -> None:
 
     transactions = _filter_and_label(combined)
     transactions = _run_llm(transactions)
+    transactions = add_merchant_column(transactions)
 
     save_transactions(transactions)
     st.session_state["df_transactions"] = transactions
@@ -516,6 +644,7 @@ def show_dashboard_stage() -> None:
     # ── Render sections ──────────────────────────────────────────────────────
     st.title("💰 Personal Finance Dashboard")
 
+    _render_net_worth()
     _render_cash_flow(df_expenses, df_income)
     _render_burn_rate(df_expenses)
     _render_summary_metrics(df, df_expenses, total_spent)
@@ -523,4 +652,6 @@ def show_dashboard_stage() -> None:
     _render_subscriptions(df)
     _render_income_breakdown(df_income)
     _render_trendline(df_expenses, df_income)
+    _render_merchant_summary(df_expenses)
     _render_transaction_search(df)
+    _render_custom_rules(df)
