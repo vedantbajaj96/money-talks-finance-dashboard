@@ -79,12 +79,18 @@ def parse_search_query(query: str) -> tuple[str, float | None, float | None]:
 # section of the dashboard.
 # ---------------------------------------------------------------------------
 
+@st.cache_data(ttl=300, show_spinner=False)
+def _cached_balances() -> list[dict]:
+    """Cache Plaid balance API call for 5 minutes to avoid re-fetching on every render."""
+    return get_account_balances()
+
+
 def _render_net_worth() -> None:
     """Show current account balances and net worth from Plaid."""
     if not plaid_is_configured() or not get_connected_accounts():
         return
 
-    balances = get_account_balances()
+    balances = _cached_balances()
     if not balances:
         return
 
@@ -647,9 +653,8 @@ def show_dashboard_stage() -> None:
                 label_visibility="collapsed",
                 key="time_month_sel",
             )
-            if chosen != all_periods[st.session_state["time_month_idx"]]:
-                st.session_state["time_month_idx"] = all_periods.index(chosen)
-                st.rerun()
+            # Sync index to selectbox without triggering an extra rerun
+            st.session_state["time_month_idx"] = all_periods.index(chosen)
         with col_next:
             if st.button("→", key="month_next") and st.session_state["time_month_idx"] > 0:
                 st.session_state["time_month_idx"] -= 1
