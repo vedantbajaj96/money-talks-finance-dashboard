@@ -56,7 +56,7 @@ if st.session_state["df_transactions"] is None:
             from categorizer import categorize_transactions
             from stages.upload import _filter_and_label, _run_llm
             from storage import save_transactions
-            _new_df = sync_all_transactions()
+            _new_df, _ = sync_all_transactions()
             if not _new_df.empty:
                 _new_df = categorize_transactions(_new_df)
                 _new_df = _filter_and_label(_new_df)

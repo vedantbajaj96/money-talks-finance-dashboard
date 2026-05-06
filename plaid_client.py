@@ -196,8 +196,8 @@ def sync_all_transactions(days_back: int = 365) -> pd.DataFrame:
     on the first call (no cursor), then only changes on subsequent calls.
     For simplicity we always do a full refresh (no cursor persistence).
 
-    Returns a DataFrame in the standard schema:
-      date, description, expense_amount, source, format, source_file
+    Returns (df, errors) where df is the standard transactions DataFrame and
+    errors is a list of per-institution error strings (empty on full success).
 
     Plaid amount convention: positive = money out (debit), negative = money in (credit).
     This matches our expense_amount sign convention directly — no flip needed.
@@ -209,10 +209,15 @@ def sync_all_transactions(days_back: int = 365) -> pd.DataFrame:
     client   = _get_api_client()
     all_rows = []
 
+    errors = []
     for item in items:
         access_token = item["access_token"]
         inst_name    = item.get("institution_name", "Plaid")
-        txns         = _fetch_item_transactions(client, access_token)
+        try:
+            txns = _fetch_item_transactions(client, access_token)
+        except Exception as exc:
+            errors.append(f"{inst_name}: {exc}")
+            continue
 
         for txn in txns:
             merchant = txn.get("merchant_name") or txn.get("name", "")
@@ -225,7 +230,8 @@ def sync_all_transactions(days_back: int = 365) -> pd.DataFrame:
                 "source_file":    f"plaid_{item['item_id']}",
             })
 
-    return pd.DataFrame(all_rows) if all_rows else pd.DataFrame()
+    df = pd.DataFrame(all_rows) if all_rows else pd.DataFrame()
+    return df, errors
 
 
 def _fetch_item_transactions(client: plaid_api.PlaidApi, access_token: str) -> list:

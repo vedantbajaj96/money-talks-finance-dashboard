@@ -528,10 +528,14 @@ def _render_custom_rules(df_full: pd.DataFrame) -> None:
 def _sync_plaid_transactions() -> None:
     """Pull fresh transactions from all connected Plaid accounts and merge."""
     with st.spinner("Fetching transactions from connected banks..."):
-        new_df = sync_all_transactions()
+        new_df, sync_errors = sync_all_transactions()
+
+    for err in sync_errors:
+        st.error(f"Sync error — {err}")
 
     if new_df.empty:
-        st.warning("No transactions returned from Plaid.")
+        if not sync_errors:
+            st.warning("No transactions returned. The account may still be initializing — try again in a minute.")
         return
 
     existing = st.session_state.get("df_transactions")
