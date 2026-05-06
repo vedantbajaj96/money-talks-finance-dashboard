@@ -11,7 +11,7 @@ add_more_files()     merges additional CSVs into an active dashboard session.
 import pandas as pd
 import streamlit as st
 
-from categorizer import categorize_transactions, llm_categorize_all
+from categorizer import categorize_transactions, llm_categorize_all, REIMBURSEMENT_CATEGORY
 from config import get_active_api_key, get_active_provider
 from parsers import deduplicate, load_csv
 from sidebar import show_settings_sidebar
@@ -54,11 +54,22 @@ def _sync_plaid_from_upload() -> None:
 # ---------------------------------------------------------------------------
 
 def _label_transaction_types(df: pd.DataFrame) -> pd.DataFrame:
-    """Add a 'transaction_type' column: 'income' if expense_amount < 0, else 'expense'."""
+    """
+    Add a 'transaction_type' column:
+      'reimbursement' — negative amount AND category is Reimbursements
+      'income'        — negative amount AND any other income category
+      'expense'       — positive amount
+    """
     df = df.copy()
-    df["transaction_type"] = df["expense_amount"].apply(
-        lambda x: "income" if x < 0 else "expense"
-    )
+
+    def _type(row):
+        if row["expense_amount"] >= 0:
+            return "expense"
+        if row.get("category") == REIMBURSEMENT_CATEGORY:
+            return "reimbursement"
+        return "income"
+
+    df["transaction_type"] = df.apply(_type, axis=1)
     return df
 
 

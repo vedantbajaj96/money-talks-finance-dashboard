@@ -8,13 +8,14 @@ Public API used by the rest of the app:
   llm_categorize_all(...)     — LLM-powered categorization (Claude or Gemini)
 """
 
-from .constants import ALL_CATEGORIES, INCOME_CATEGORIES
+from .constants import ALL_CATEGORIES, INCOME_CATEGORIES, REIMBURSEMENT_CATEGORY
 from .rules import categorize_transactions
 from .llm import llm_categorize_all
 
 __all__ = [
     "ALL_CATEGORIES",
     "INCOME_CATEGORIES",
+    "REIMBURSEMENT_CATEGORY",
     "categorize_transactions",
     "llm_categorize_all",
 ]

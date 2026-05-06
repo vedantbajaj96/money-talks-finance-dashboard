@@ -20,7 +20,7 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from categorizer import ALL_CATEGORIES, INCOME_CATEGORIES, categorize_transactions
+from categorizer import ALL_CATEGORIES, INCOME_CATEGORIES, REIMBURSEMENT_CATEGORY, categorize_transactions
 from merchants import add_merchant_column, merchant_summary
 from user_rules import add_rule, delete_rule, load_rules
 from plaid_client import (
@@ -115,17 +115,23 @@ def _render_net_worth() -> None:
     st.divider()
 
 
-def _render_cash_flow(df_expenses: pd.DataFrame, df_income: pd.DataFrame) -> None:
+def _render_cash_flow(
+    df_expenses: pd.DataFrame,
+    df_income: pd.DataFrame,
+    df_reimbursements: pd.DataFrame,
+) -> None:
     st.header("Cash Flow")
 
-    total_income = df_income["income_amount"].sum() if not df_income.empty else 0.0
-    total_spent  = df_expenses["expense_amount"].sum() if not df_expenses.empty else 0.0
-    net          = total_income - total_spent
+    total_income        = df_income["income_amount"].sum() if not df_income.empty else 0.0
+    total_spent         = df_expenses["expense_amount"].sum() if not df_expenses.empty else 0.0
+    total_reimbursed    = df_reimbursements["expense_amount"].abs().sum() if not df_reimbursements.empty else 0.0
+    net                 = total_income - total_spent
 
-    cf1, cf2, cf3 = st.columns(3)
-    cf1.metric("Total Income", f"${total_income:,.2f}")
-    cf2.metric("Total Spent",  f"${total_spent:,.2f}")
-    cf3.metric(
+    cf1, cf2, cf3, cf4 = st.columns(4)
+    cf1.metric("Income (Employer)", f"${total_income:,.2f}")
+    cf2.metric("Reimbursements",    f"${total_reimbursed:,.2f}")
+    cf3.metric("Total Spent",       f"${total_spent:,.2f}")
+    cf4.metric(
         "Net",
         f"${net:,.2f}",
         delta="surplus" if net >= 0 else "deficit",
@@ -386,7 +392,7 @@ def _render_transaction_search(df: pd.DataFrame) -> None:
             "Type":        st.column_config.TextColumn("Type",         disabled=True),
             "Category":    st.column_config.SelectboxColumn(
                                "Category",
-                               options=ALL_CATEGORIES + INCOME_CATEGORIES,
+                               options=ALL_CATEGORIES + INCOME_CATEGORIES + [REIMBURSEMENT_CATEGORY],
                                required=True,
                            ),
             "Account":     st.column_config.TextColumn("Account",      disabled=True),
@@ -500,7 +506,7 @@ def _render_custom_rules(df_full: pd.DataFrame) -> None:
         c1, c2, c3 = st.columns([3, 2, 3])
         pattern    = c1.text_input("Pattern", placeholder="e.g. whole foods", key="rule_pattern")
         match_type = c2.selectbox("Match type", ["contains", "starts_with", "exact"], key="rule_match")
-        category   = c3.selectbox("Category", ALL_CATEGORIES + INCOME_CATEGORIES, key="rule_cat")
+        category   = c3.selectbox("Category", ALL_CATEGORIES + INCOME_CATEGORIES + [REIMBURSEMENT_CATEGORY], key="rule_cat")
 
         if st.button("Add Rule", type="primary", disabled=not pattern.strip()):
             add_rule(pattern, match_type, category)
@@ -679,16 +685,17 @@ def show_dashboard_stage() -> None:
     st.divider()
 
     # ── Prepare per-type sub-DataFrames ──────────────────────────────────────
-    df["month"]   = df["date"].dt.to_period("M").astype(str)
-    df_expenses   = df[df["transaction_type"] == "expense"].copy()
-    df_income     = df[df["transaction_type"] == "income"].copy()
+    df["month"]           = df["date"].dt.to_period("M").astype(str)
+    df_expenses           = df[df["transaction_type"] == "expense"].copy()
+    df_income             = df[df["transaction_type"] == "income"].copy()
+    df_reimbursements     = df[df["transaction_type"] == "reimbursement"].copy()
     df_income["income_amount"] = df_income["expense_amount"].abs()
 
     total_income = df_income["income_amount"].sum() if not df_income.empty else 0.0
     total_spent  = df_expenses["expense_amount"].sum() if not df_expenses.empty else 0.0
 
     _render_net_worth()
-    _render_cash_flow(df_expenses, df_income)
+    _render_cash_flow(df_expenses, df_income, df_reimbursements)
     _render_burn_rate(df_expenses)
     _render_summary_metrics(df, df_expenses, total_spent)
     _render_spending_breakdown(df_expenses)

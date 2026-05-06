@@ -36,9 +36,11 @@ INCOME_CATEGORIES = [
     "Paycheck & Salary",
     "Freelance & Side Income",
     "Investment & Dividend Income",
-    "Reimbursements",
     "Other Income",
 ]
+
+# Reimbursements are shown separately — not income, not expense
+REIMBURSEMENT_CATEGORY = "Reimbursements"
 
 # ---------------------------------------------------------------------------
 # Expense keyword dictionary.
@@ -236,6 +238,10 @@ INCOME_KEYWORDS = {
         # Pure account-to-account movements — filter these out
         "transfer", "ach transfer", "wire transfer", "savings transfer",
         "account transfer", "mobile deposit", "atm deposit",
+        # Credit card payments (neither income nor expense)
+        "payment thank you", "autopay", "credit card payment",
+        "online payment", "minimum payment", "cc payment",
+        "card payment", "payment received", "payment processed",
     ],
     "Paycheck & Salary": [
         "payroll", "direct deposit", "salary", "wages",
