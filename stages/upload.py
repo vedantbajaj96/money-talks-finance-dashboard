@@ -24,17 +24,20 @@ def _sync_plaid_from_upload() -> None:
     from plaid_client import sync_all_transactions
 
     with st.spinner("Fetching transactions from connected banks..."):
-        new_df, sync_errors = sync_all_transactions()
+        new_df, sync_errors, stats = sync_all_transactions()
 
     for err in sync_errors:
         st.error(f"Sync error — {err}")
 
-    if new_df.empty:
+    if new_df.empty or stats["added"] == 0:
         if not sync_errors:
             st.warning("No transactions returned. Make sure you have connected a bank account.")
         return
 
-    new_df = categorize_transactions(new_df)
+    new_mask = new_df["category"].isna()
+    if new_mask.any():
+        new_df = categorize_transactions(new_df)
+
     transactions = _filter_and_label(new_df)
     transactions = _run_llm(transactions)
     transactions = add_merchant_column(transactions)

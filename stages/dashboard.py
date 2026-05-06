@@ -23,11 +23,11 @@ import streamlit as st
 from categorizer import ALL_CATEGORIES, INCOME_CATEGORIES, categorize_transactions
 from merchants import add_merchant_column, merchant_summary
 from user_rules import add_rule, delete_rule, load_rules
-from parsers import deduplicate
 from plaid_client import (
     get_account_balances,
     get_connected_accounts,
     is_configured as plaid_is_configured,
+    refresh_all,
     sync_all_transactions,
 )
 from sidebar import show_settings_sidebar
@@ -512,58 +512,49 @@ def _render_custom_rules(df_full: pd.DataFrame) -> None:
 # Stage renderer
 # ---------------------------------------------------------------------------
 
-def _sync_plaid_transactions() -> None:
-    """Pull fresh transactions from all connected Plaid accounts and merge."""
-    with st.spinner("Fetching transactions from connected banks..."):
-        new_df, sync_errors = sync_all_transactions()
+def _sync_plaid_transactions(force_refresh: bool = False) -> None:
+    """
+    Incremental delta sync. Only fetches changes since the last cursor.
+    Historical months are stored locally and never re-fetched.
+    """
+    if force_refresh:
+        with st.spinner("Requesting latest data from banks (this takes a few seconds)..."):
+            refresh_errors = refresh_all()
+        for err in refresh_errors:
+            st.warning(f"Refresh warning — {err}")
+
+    existing = st.session_state.get("df_transactions")
+
+    with st.spinner("Syncing new transactions..."):
+        updated_df, sync_errors, stats = sync_all_transactions(existing)
 
     for err in sync_errors:
         st.error(f"Sync error — {err}")
 
-    if not new_df.empty:
-        counts = new_df.groupby("source").size().reset_index(name="count")
-        for _, row in counts.iterrows():
-            st.info(f"{row['source']}: {row['count']:,} raw transactions pulled")
-
-    if new_df.empty:
-        if not sync_errors:
-            st.warning("No transactions returned. The account may still be initializing — try again in a minute.")
+    if stats["added"] == 0 and stats["modified"] == 0 and stats["removed"] == 0:
+        st.info("Already up to date — no new transactions since last sync.")
         return
 
-    existing = st.session_state.get("df_transactions")
-    combined = (
-        pd.concat([existing, new_df], ignore_index=True)
-        if existing is not None
-        else new_df
-    )
+    # Categorize only the new rows (category=None)
+    new_mask = updated_df["category"].isna()
+    if new_mask.any():
+        new_sub = categorize_transactions(updated_df[new_mask].copy())
+        new_sub = _filter_and_label(new_sub)
+        new_sub = _run_llm(new_sub)
+        new_sub = add_merchant_column(new_sub)
+        updated_df = pd.concat(
+            [updated_df[~new_mask], new_sub], ignore_index=True
+        )
 
-    combined, removed = deduplicate(combined)
-    if removed:
-        st.info(f"Removed {removed:,} duplicate transaction(s).")
+    updated_df = ensure_annotation_columns(updated_df)
+    save_transactions(updated_df)
+    st.session_state["df_transactions"] = updated_df
 
-    # Categorize any rows that don't yet have a category
-    if "category" not in combined.columns:
-        combined = categorize_transactions(combined)
-    else:
-        new_mask = combined["category"].isna()
-        if new_mask.any():
-            sub = categorize_transactions(combined[new_mask].copy())
-            combined.loc[new_mask, "category"]           = sub["category"]
-            combined.loc[new_mask, "suggested_category"] = sub["suggested_category"]
-
-    transactions = _filter_and_label(combined)
-    transactions = _run_llm(transactions)
-    transactions = add_merchant_column(transactions)
-
-    save_transactions(transactions)
-    st.session_state["df_transactions"] = transactions
-
-    kept    = len(transactions)
-    raw     = len(combined)
-    removed = raw - kept
-    if removed > 0:
-        st.info(f"Filtered out {removed:,} transfers/zero-amount rows, kept {kept:,} transactions.")
-    st.success(f"Sync complete.")
+    parts = []
+    if stats["added"]:    parts.append(f"{stats['added']:,} new")
+    if stats["modified"]: parts.append(f"{stats['modified']:,} updated")
+    if stats["removed"]:  parts.append(f"{stats['removed']:,} removed")
+    st.success(f"Sync complete: {', '.join(parts)}")
     st.rerun()
 
 
@@ -596,8 +587,11 @@ def show_dashboard_stage() -> None:
                 with st.expander("🏦 Plaid — Connected Banks"):
                     for acct in accounts:
                         st.write(f"• {acct['institution_name']}")
-                    if st.button("🔄 Sync Transactions", type="primary", use_container_width=True):
-                        _sync_plaid_transactions()
+                    if st.button("⬇️ Sync New Transactions", type="primary", use_container_width=True):
+                        _sync_plaid_transactions(force_refresh=False)
+                    if st.button("🔄 Force Refresh + Sync", use_container_width=True,
+                                 help="Asks banks to push latest data first, then syncs. Slower but most current."):
+                        _sync_plaid_transactions(force_refresh=True)
             else:
                 st.info(
                     "No banks connected yet. "
