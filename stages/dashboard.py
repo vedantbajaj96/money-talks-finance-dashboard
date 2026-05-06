@@ -663,7 +663,11 @@ def show_dashboard_stage() -> None:
     # ── Render title + unified time filter ───────────────────────────────────
     st.title("💰 Personal Finance Dashboard")
 
-    all_periods = sorted(df["date"].dt.to_period("M").astype(str).unique(), reverse=True)
+    # Build period list — raw "2026-01" for date filtering, display "January 2026" for UI
+    raw_periods     = sorted(df["date"].dt.to_period("M").astype(str).unique(), reverse=True)
+    display_periods = [
+        pd.Period(p, "M").start_time.strftime("%B %Y") for p in raw_periods
+    ]
 
     filter_mode = st.radio(
         "Time filter", ["By Month", "Custom Range"],
@@ -672,31 +676,30 @@ def show_dashboard_stage() -> None:
     )
 
     if filter_mode == "By Month":
-        # ← / month selector / →
         if "time_month_idx" not in st.session_state or \
-                st.session_state.get("time_month_idx", 0) >= len(all_periods):
+                st.session_state.get("time_month_idx", 0) >= len(display_periods):
             st.session_state["time_month_idx"] = 0
 
         col_prev, col_sel, col_next = st.columns([1, 6, 1])
         with col_prev:
-            if st.button("←", key="month_prev") and st.session_state["time_month_idx"] < len(all_periods) - 1:
+            if st.button("←", key="month_prev") and st.session_state["time_month_idx"] < len(display_periods) - 1:
                 st.session_state["time_month_idx"] += 1
                 st.rerun()
         with col_sel:
-            chosen = st.selectbox(
-                "Month", all_periods,
+            chosen_display = st.selectbox(
+                "Month", display_periods,
                 index=st.session_state["time_month_idx"],
                 label_visibility="collapsed",
                 key="time_month_sel",
             )
-            # Sync index to selectbox without triggering an extra rerun
-            st.session_state["time_month_idx"] = all_periods.index(chosen)
+            st.session_state["time_month_idx"] = display_periods.index(chosen_display)
         with col_next:
             if st.button("→", key="month_next") and st.session_state["time_month_idx"] > 0:
                 st.session_state["time_month_idx"] -= 1
                 st.rerun()
 
-        period    = pd.Period(chosen, "M")
+        chosen     = raw_periods[st.session_state["time_month_idx"]]
+        period     = pd.Period(chosen, "M")
         time_start = period.start_time.date()
         time_end   = period.end_time.date()
     else:
