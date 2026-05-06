@@ -177,21 +177,8 @@ def _render_summary_metrics(
 def _render_spending_breakdown(df_expenses: pd.DataFrame) -> None:
     st.header("Spending Breakdown")
 
-    # Month filter — "All time" shows the full date range
-    available_months = sorted(df_expenses["month"].unique(), reverse=True)
-    month_options    = ["All time"] + available_months
-    selected_month   = st.selectbox(
-        "Month", options=month_options, index=0, key="breakdown_month"
-    )
-
-    filtered = (
-        df_expenses[df_expenses["month"] == selected_month]
-        if selected_month != "All time"
-        else df_expenses
-    )
-
     cat_totals = (
-        filtered.groupby("category")["expense_amount"]
+        df_expenses.groupby("category")["expense_amount"]
         .sum().sort_values(ascending=True).reset_index()
     )
     cat_totals.columns = ["Category", "Amount"]
@@ -533,6 +520,11 @@ def _sync_plaid_transactions() -> None:
     for err in sync_errors:
         st.error(f"Sync error — {err}")
 
+    if not new_df.empty:
+        counts = new_df.groupby("source").size().reset_index(name="count")
+        for _, row in counts.iterrows():
+            st.info(f"{row['source']}: {row['count']:,} raw transactions pulled")
+
     if new_df.empty:
         if not sync_errors:
             st.warning("No transactions returned. The account may still be initializing — try again in a minute.")
@@ -565,7 +557,13 @@ def _sync_plaid_transactions() -> None:
 
     save_transactions(transactions)
     st.session_state["df_transactions"] = transactions
-    st.success(f"Synced {len(new_df):,} transactions from Plaid.")
+
+    kept    = len(transactions)
+    raw     = len(combined)
+    removed = raw - kept
+    if removed > 0:
+        st.info(f"Filtered out {removed:,} transfers/zero-amount rows, kept {kept:,} transactions.")
+    st.success(f"Sync complete.")
     st.rerun()
 
 
@@ -610,23 +608,13 @@ def show_dashboard_stage() -> None:
         st.divider()
         st.header("Filters")
 
-        min_date = df["date"].min().date()
-        max_date = df["date"].max().date()
-        date_range = st.date_input(
-            "Date range", value=(min_date, max_date),
-            min_value=min_date, max_value=max_date,
-        )
-
-        all_cats    = sorted(df["category"].unique())
+        all_cats      = sorted(df["category"].unique())
         selected_cats = st.multiselect("Categories", options=all_cats, default=all_cats)
 
-        all_sources    = sorted(df["source"].unique())
+        all_sources      = sorted(df["source"].unique())
         selected_sources = st.multiselect("Accounts", options=all_sources, default=all_sources)
 
-    # ── Apply filters ────────────────────────────────────────────────────────
-    if len(date_range) == 2:
-        start, end = date_range
-        df = df[(df["date"].dt.date >= start) & (df["date"].dt.date <= end)]
+    # ── Apply category + account filters ─────────────────────────────────────
     if selected_cats:
         df = df[df["category"].isin(selected_cats)]
     if selected_sources:
@@ -636,6 +624,61 @@ def show_dashboard_stage() -> None:
         st.warning("No transactions match your current filters.")
         st.stop()
 
+    # ── Render title + unified time filter ───────────────────────────────────
+    st.title("💰 Personal Finance Dashboard")
+
+    all_periods = sorted(df["date"].dt.to_period("M").astype(str).unique(), reverse=True)
+
+    filter_mode = st.radio(
+        "Time filter", ["By Month", "Custom Range"],
+        horizontal=True, label_visibility="collapsed",
+        key="time_filter_mode",
+    )
+
+    if filter_mode == "By Month":
+        # ← / month selector / →
+        if "time_month_idx" not in st.session_state or \
+                st.session_state.get("time_month_idx", 0) >= len(all_periods):
+            st.session_state["time_month_idx"] = 0
+
+        col_prev, col_sel, col_next = st.columns([1, 6, 1])
+        with col_prev:
+            if st.button("←", key="month_prev") and st.session_state["time_month_idx"] < len(all_periods) - 1:
+                st.session_state["time_month_idx"] += 1
+                st.rerun()
+        with col_sel:
+            chosen = st.selectbox(
+                "Month", all_periods,
+                index=st.session_state["time_month_idx"],
+                label_visibility="collapsed",
+                key="time_month_sel",
+            )
+            if chosen != all_periods[st.session_state["time_month_idx"]]:
+                st.session_state["time_month_idx"] = all_periods.index(chosen)
+                st.rerun()
+        with col_next:
+            if st.button("→", key="month_next") and st.session_state["time_month_idx"] > 0:
+                st.session_state["time_month_idx"] -= 1
+                st.rerun()
+
+        period    = pd.Period(chosen, "M")
+        time_start = period.start_time.date()
+        time_end   = period.end_time.date()
+    else:
+        min_date = df["date"].min().date()
+        max_date = df["date"].max().date()
+        col1, col2 = st.columns(2)
+        time_start = col1.date_input("From", value=min_date, min_value=min_date, max_value=max_date, key="range_start")
+        time_end   = col2.date_input("To",   value=max_date, min_value=min_date, max_value=max_date, key="range_end")
+
+    df = df[(df["date"].dt.date >= time_start) & (df["date"].dt.date <= time_end)]
+
+    if df.empty:
+        st.warning("No transactions in this period.")
+        st.stop()
+
+    st.divider()
+
     # ── Prepare per-type sub-DataFrames ──────────────────────────────────────
     df["month"]   = df["date"].dt.to_period("M").astype(str)
     df_expenses   = df[df["transaction_type"] == "expense"].copy()
@@ -644,9 +687,6 @@ def show_dashboard_stage() -> None:
 
     total_income = df_income["income_amount"].sum() if not df_income.empty else 0.0
     total_spent  = df_expenses["expense_amount"].sum() if not df_expenses.empty else 0.0
-
-    # ── Render sections ──────────────────────────────────────────────────────
-    st.title("💰 Personal Finance Dashboard")
 
     _render_net_worth()
     _render_cash_flow(df_expenses, df_income)
