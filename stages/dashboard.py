@@ -188,6 +188,7 @@ def _render_summary_metrics(
 
 def _render_spending_breakdown(df_expenses: pd.DataFrame) -> None:
     st.header("Spending Breakdown")
+    st.caption("Click a bar or pie slice to see all transactions in that category.")
 
     cat_totals = (
         df_expenses.groupby("category")["expense_amount"]
@@ -199,25 +200,54 @@ def _render_spending_breakdown(df_expenses: pd.DataFrame) -> None:
 
     with col_left:
         st.subheader("By Category")
-        fig = px.bar(
+        bar_fig = px.bar(
             cat_totals, x="Amount", y="Category", orientation="h",
             text=cat_totals["Amount"].map("${:,.0f}".format),
             color="Amount", color_continuous_scale="Blues",
         )
-        fig.update_traces(textposition="outside")
-        fig.update_layout(
+        bar_fig.update_traces(textposition="outside")
+        bar_fig.update_layout(
             showlegend=False, coloraxis_showscale=False, height=400,
             xaxis_title="Amount ($)", yaxis_title="",
             margin=dict(l=10, r=80, t=20, b=20),
         )
-        st.plotly_chart(fig, use_container_width=True)
+        bar_event = st.plotly_chart(
+            bar_fig, use_container_width=True,
+            on_select="rerun", key="spending_bar",
+        )
 
     with col_right:
         st.subheader("Share of Total")
-        fig = px.pie(cat_totals, values="Amount", names="Category", hole=0.4)
-        fig.update_traces(textinfo="percent+label")
-        fig.update_layout(height=400, showlegend=False, margin=dict(l=10, r=10, t=20, b=20))
-        st.plotly_chart(fig, use_container_width=True)
+        pie_fig = px.pie(cat_totals, values="Amount", names="Category", hole=0.4)
+        pie_fig.update_traces(textinfo="percent+label")
+        pie_fig.update_layout(height=400, showlegend=False, margin=dict(l=10, r=10, t=20, b=20))
+        pie_event = st.plotly_chart(
+            pie_fig, use_container_width=True,
+            on_select="rerun", key="spending_pie",
+        )
+
+    # Detect which category was clicked (bar takes priority over pie)
+    selected_category = None
+    if bar_event and bar_event.selection and bar_event.selection.points:
+        selected_category = bar_event.selection.points[0].get("y")
+    elif pie_event and pie_event.selection and pie_event.selection.points:
+        selected_category = pie_event.selection.points[0].get("label")
+
+    if selected_category:
+        st.subheader(f"Transactions — {selected_category}")
+        cat_txns = df_expenses[df_expenses["category"] == selected_category].copy()
+        cat_txns = cat_txns.sort_values("date", ascending=False)
+        cat_txns["date"] = cat_txns["date"].dt.strftime("%Y-%m-%d")
+        cat_txns["expense_amount"] = cat_txns["expense_amount"].apply(lambda v: f"${v:,.2f}")
+        st.dataframe(
+            cat_txns[["date", "description", "expense_amount", "source"]].rename(columns={
+                "date": "Date", "description": "Description",
+                "expense_amount": "Amount", "source": "Account",
+            }),
+            use_container_width=True,
+            hide_index=True,
+        )
+        st.caption(f"{len(cat_txns):,} transactions · click elsewhere on the chart to deselect")
 
     st.divider()
 
