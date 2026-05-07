@@ -1,13 +1,21 @@
 """
 server.py — FastAPI backend for the Ledgerline React dashboard.
 
-Reads from data/transactions.parquet using DuckDB for all analytics queries.
-Pandas is used only for mutation operations (recategorisation, etc.).
+How it fits together
+--------------------
+The React frontend (ledgerline/) loads once and calls /api/fin to get all data.
+Everything else is mutation: uploading CSVs, editing transactions, syncing Plaid.
+
+Data flow:
+  CSV upload  →  parsers.py  →  categorizer/  →  transactions.parquet
+  Plaid sync  →  plaid_client.py              →  transactions.parquet
+  /api/fin    →  DuckDB reads parquet          →  JSON to frontend
+
+Read strategy: DuckDB queries the parquet file directly — fast, no full load.
+Write strategy: pandas reads, mutates, and saves back — simpler for row edits.
 
 Run:
     python3 server.py
-    # or
-    uvicorn server:app --port 8502 --reload
 """
 
 from __future__ import annotations
@@ -37,6 +45,14 @@ app = FastAPI(title="Finance Dashboard API")
 
 # ---------------------------------------------------------------------------
 # Category mapping
+#
+# The categorizer stores human-readable names in the parquet ("Dining & Drinks").
+# The frontend uses short IDs ("dining"). CAT_MAP bridges the two.
+#
+# Three sets of keys cover every variant we might see in stored data:
+#   1. Categorizer display names  ("Dining & Drinks")
+#   2. Slugified versions          ("dining-and-drinks")  — older rows
+#   3. Legacy Streamlit names      ("Food & Drink")        — oldest rows
 # ---------------------------------------------------------------------------
 
 CAT_MAP: dict[str, str] = {
@@ -112,7 +128,9 @@ CAT_META: dict[str, dict] = {
 ACCOUNT_COLORS = ["#5ec98a", "#67e8f9", "#d97757", "#a78bfa", "#fbbf24", "#6b8aab", "#f97316", "#e879f9"]
 
 
-# Description substrings that always mean "transfer" regardless of category
+# Substrings in the description that always mean "transfer", regardless of what
+# the categorizer said. Credit card autopayments often get tagged "Other Income"
+# by the LLM — this catches them first.
 _TRANSFER_DESC_PATTERNS = [
     "automatic payment",
     "payment - thank",
@@ -123,7 +141,7 @@ _TRANSFER_DESC_PATTERNS = [
     "ach transfer",
 ]
 
-# Categories that should stay as neutral "other" — not income, not expenses
+# Reimbursements are stored as "other" — they're not real income or expenses.
 _REIMBURSEMENT_CATS = {"reimbursements", "Reimbursements"}
 
 
@@ -134,14 +152,14 @@ def map_category(cat: str) -> str:
 
 
 def _resolve_category(description: str, raw_category: str, txn_type: str | None, expense_amount: float = 0.0) -> str:
-    """Determine the final Ledgerline category for a transaction.
+    """Map a raw parquet category to a frontend category ID.
 
-    Priority:
-      1. CC payments / account-verification patterns → transfer
-      2. Category already maps to transfer → transfer
-      3. Reimbursements → other  (refunds: not income, not expense)
-      4. transaction_type == income (or NULL with negative amount) → income
-      5. Everything else → mapped expense category
+    Called for every transaction in build_fin_data(). Priority order:
+      1. Description matches a transfer pattern  → "transfer"
+      2. Category maps to transfer               → "transfer"
+      3. Reimbursement category                  → "other"
+      4. transaction_type=income or amount < 0   → "income"
+      5. Everything else                         → expense category ID
     """
     desc_lower = description.lower()
     if any(p in desc_lower for p in _TRANSFER_DESC_PATTERNS):
@@ -165,10 +183,13 @@ def _resolve_category(description: str, raw_category: str, txn_type: str | None,
 
 # ---------------------------------------------------------------------------
 # DuckDB helpers
+#
+# We open a fresh in-memory connection for every request — cheap because DuckDB
+# reads directly from the parquet file without loading it all into RAM.
 # ---------------------------------------------------------------------------
 
 def _conn() -> duckdb.DuckDBPyConnection:
-    """Open a fresh in-memory DuckDB connection with the parquet file as a view."""
+    """Return a DuckDB connection with the parquet file registered as 'txns'."""
     c = duckdb.connect()
     path = str(DATA_FILE).replace("'", "''")
     c.execute(f"CREATE VIEW txns AS SELECT * FROM read_parquet('{path}')")
@@ -182,7 +203,7 @@ def _month_labels(key: str) -> tuple[str, str, str]:
 
 
 # ---------------------------------------------------------------------------
-# Config helpers
+# Config helpers  (config.json stores API keys — gitignored)
 # ---------------------------------------------------------------------------
 
 def load_config() -> dict:
@@ -202,7 +223,7 @@ def save_config(cfg: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Pandas write helpers (mutation operations only)
+# Pandas helpers  (only used for writes — reads go through DuckDB)
 # ---------------------------------------------------------------------------
 
 def load_df() -> pd.DataFrame | None:
@@ -221,7 +242,11 @@ def save_df(df: pd.DataFrame) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Build Ledgerline-shaped data using DuckDB
+# build_fin_data  — the heart of /api/fin
+#
+# Queries the parquet file with DuckDB and assembles the JSON object the
+# React frontend consumes. Called once per page load; everything the UI
+# needs (transactions, accounts, categories, recurring, net worth) is here.
 # ---------------------------------------------------------------------------
 
 def build_fin_data() -> dict:
@@ -398,7 +423,7 @@ def build_fin_data() -> dict:
 
 @app.get("/api/fin")
 def get_fin() -> dict:
-    """Return all financial data in Ledgerline format."""
+    """Main data endpoint — called once on page load by data.js."""
     if not DATA_FILE.exists():
         return {"hasData": False}
     try:
@@ -562,7 +587,7 @@ async def upload_csv(file: UploadFile = File(...)) -> dict:
 
 
 def _build_schema() -> str:
-    """Return a schema description of the txns view — no actual data values."""
+    """Describe the txns table for the LLM — shape only, no actual row values."""
     conn = _conn()
     date_min, date_max = conn.execute("SELECT MIN(date), MAX(date) FROM txns").fetchone()
     total = conn.execute("SELECT COUNT(*) FROM txns").fetchone()[0]
@@ -634,10 +659,13 @@ def _llm_call(messages: list[dict], system: str, cfg: dict, max_tokens: int = 51
 
 @app.post("/api/chat")
 async def chat(body: dict[str, Any]) -> dict:
-    """Text-to-SQL chat: schema → LLM writes SQL → run locally → LLM answers.
+    """Privacy-preserving chat via text-to-SQL.
 
-    Transaction data never leaves the machine. Only the table schema and
-    the query result rows are sent to the LLM.
+    Step 1: send schema (no data) to LLM → it writes a SELECT query
+    Step 2: run that query locally with DuckDB
+    Step 3: send only the result rows to LLM → it answers in plain English
+
+    Raw transaction data never leaves the machine.
     """
     messages = body.get("messages", [])
     cfg      = load_config()
@@ -707,15 +735,19 @@ Return ONLY the raw SQL — no explanation, no markdown, no code fences.
 
 
 # ---------------------------------------------------------------------------
-# Plaid routes
+# Data repair + Plaid routes
 # ---------------------------------------------------------------------------
 
 @app.post("/api/repair")
 async def repair_data() -> dict:
-    """Fix data quality issues in the parquet:
-    - Cast corrupted integer columns back to strings
-    - Derive missing transaction_type from expense_amount
-    - Run LLM categorization on any Pending Review rows
+    """One-shot data repair triggered from the Settings tab.
+
+    Fixes three common issues:
+    - Columns that became integers after a bad pandas concat (type fix)
+    - Rows missing transaction_type (derived from expense_amount sign)
+    - Rows still marked "Pending Review" (sent to LLM for categorization)
+
+    Skips any row where user_edited=True.
     """
     df = load_df()
     if df is None:
@@ -827,10 +859,11 @@ def plaid_accounts() -> dict:
 
 @app.post("/api/plaid/sync")
 async def plaid_sync(body: dict[str, Any] = {}) -> dict:
-    """Refresh and sync all connected Plaid accounts, then categorise new rows.
+    """Pull new transactions from all linked banks.
 
-    Pass {"full": true} to reset all cursors first — this re-pulls full
-    transaction history (useful when the initial sync was incomplete).
+    Normal sync: only fetches changes since the last cursor (fast, incremental).
+    Full re-sync {"full": true}: resets all cursors so the full history is
+    re-pulled from Plaid — user_edited categories are preserved by plaid_client.py.
     """
     try:
         from plaid_client import sync_all_transactions, refresh_all, _load_items, _save_items
@@ -872,7 +905,8 @@ async def plaid_remove_account(item_id: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Serve React frontend
+# Serve the React frontend as static files — must be last so /api/* routes
+# are registered before the catch-all StaticFiles handler.
 # ---------------------------------------------------------------------------
 
 app.mount("/", StaticFiles(directory=str(LL_DIR), html=True), name="static")
