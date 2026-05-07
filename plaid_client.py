@@ -1,5 +1,5 @@
 """
-plaid_client.py — Plaid API wrapper for the Finance Dashboard.
+plaid_client.py — Plaid API wrapper for MoneyTalks.
 
 Sync strategy — cursor-based incremental sync:
   - First sync per institution (no cursor): full history pulled once, cursor saved.
@@ -150,7 +150,7 @@ def create_link_token() -> str:
 
     kwargs = dict(
         user=LinkTokenCreateRequestUser(client_user_id="local-user"),
-        client_name="Finance Dashboard",
+        client_name="MoneyTalks",
         products=[Products("transactions"), Products("investments")],
         country_codes=[CountryCode("US")],
         language="en",

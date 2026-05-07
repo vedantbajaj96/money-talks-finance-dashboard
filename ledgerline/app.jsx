@@ -1,4 +1,4 @@
-// Main App component for Ledgerline — wired to real data via /api/fin.
+// Main App component for MoneyTalks — wired to real data via /api/fin.
 (function () {
 const { useState } = React;
 const { MONTHS } = window.FIN;
@@ -87,7 +87,7 @@ function Sidebar({ active, onChange, layout }) {
             <circle cx="19" cy="16" r="1.6" fill="currentColor" />
           </svg>
         </div>
-        {!collapsed && <div className="brand-name">Ledgerline</div>}
+        {!collapsed && <div className="brand-name">MoneyTalks</div>}
       </div>
 
       <nav className="nav">

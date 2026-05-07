@@ -1,4 +1,4 @@
-// data.js — Real data layer for Ledgerline.
+// data.js — Real data layer for MoneyTalks.
 // Fetches live transaction data from the FastAPI backend (/api/fin),
 // populates window.FIN with the same interface as the original mock data.js,
 // then dynamically loads and transpiles tabs.jsx + app.jsx so they see real data.

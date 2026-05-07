@@ -1,5 +1,5 @@
 """
-server.py — FastAPI backend for the Ledgerline React dashboard.
+server.py — FastAPI backend for the MoneyTalks dashboard.
 
 How it fits together
 --------------------
@@ -41,7 +41,7 @@ DATA_FILE   = BASE_DIR / "data" / "transactions.parquet"
 CONFIG_FILE = BASE_DIR / "config.json"
 LL_DIR      = BASE_DIR / "ledgerline"
 
-app = FastAPI(title="Finance Dashboard API")
+app = FastAPI(title="MoneyTalks API")
 
 # ---------------------------------------------------------------------------
 # Category mapping
@@ -917,6 +917,5 @@ app.mount("/", StaticFiles(directory=str(LL_DIR), html=True), name="static")
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    print("Starting Ledgerline dashboard at http://localhost:8502")
-    print("Keep the Streamlit app (port 8501) running for uploads.")
+    print("Starting MoneyTalks at http://localhost:8502")
     uvicorn.run(app, host="0.0.0.0", port=8502, log_level="info")
