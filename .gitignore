@@ -2,3 +2,10 @@ config.json
 data/
 __pycache__/
 *.pyc
+.DS_Store
+*.parquet
+*.db
+*.sqlite
+.env
+Design Ideas/
+.claude/

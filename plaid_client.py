@@ -97,27 +97,35 @@ def _fetch_delta(
         if next_cursor:
             kwargs["cursor"] = next_cursor
 
-        response     = client.transactions_sync(TransactionsSyncRequest(**kwargs))
-        added       += list(response["added"])
-        modified    += list(response["modified"])
-        removed     += list(response["removed"])
-        has_more     = response["has_more"]
-        next_cursor  = response["next_cursor"]
+        response = client.transactions_sync(TransactionsSyncRequest(**kwargs))
+        # Use attribute access + to_dict() so this works regardless of whether
+        # the SDK returns model objects or dict-like objects (varies by account type)
+        added    += [t.to_dict() for t in response.added]
+        modified += [t.to_dict() for t in response.modified]
+        removed  += [t.to_dict() for t in response.removed]
+        has_more    = response.has_more
+        next_cursor = response.next_cursor
 
     return added, modified, removed, next_cursor
 
 
 def _row_from_txn(txn: dict, inst_name: str, item_id: str) -> dict:
-    merchant = txn.get("merchant_name") or txn.get("name", "")
+    merchant = txn.get("merchant_name") or txn.get("name") or ""
+    # Investment transactions use "date" or "settlement_date"; regular use "date"
+    date_str = txn.get("date") or txn.get("settlement_date") or ""
+    # Plaid signs: positive = money out (expense), negative = money in (income)
+    # investment transactions use "amount" too
+    amount = txn.get("amount") or txn.get("quantity") or 0.0
+    txn_id = txn.get("transaction_id") or txn.get("investment_transaction_id") or ""
     return {
-        "date":              pd.to_datetime(str(txn["date"])),
-        "description":       merchant.strip(),
-        "expense_amount":    float(txn["amount"]),
-        "source":            f"Plaid – {inst_name}",
-        "format":            "plaid",
-        "source_file":       f"plaid_{item_id}",
-        "plaid_txn_id":      txn["transaction_id"],
-        "category":          None,
+        "date":               pd.to_datetime(str(date_str)),
+        "description":        str(merchant).strip(),
+        "expense_amount":     float(amount),
+        "source":             f"Plaid – {inst_name}",
+        "format":             "plaid",
+        "source_file":        f"plaid_{item_id}",
+        "plaid_txn_id":       txn_id,
+        "category":           None,
         "suggested_category": None,
     }
 
@@ -143,7 +151,7 @@ def create_link_token() -> str:
     kwargs = dict(
         user=LinkTokenCreateRequestUser(client_user_id="local-user"),
         client_name="Finance Dashboard",
-        products=[Products("transactions")],
+        products=[Products("transactions"), Products("investments")],
         country_codes=[CountryCode("US")],
         language="en",
     )
@@ -188,14 +196,14 @@ def get_account_balances() -> list[dict]:
             response = client.accounts_balance_get(
                 AccountsBalanceGetRequest(access_token=item["access_token"])
             )
-            for acct in response["accounts"]:
-                balances = acct["balances"]
+            for acct in response.accounts:
+                balances = acct.balances
                 results.append({
                     "institution_name":   item.get("institution_name", "Unknown"),
-                    "account_name":       acct.get("name", "Account"),
-                    "account_type":       str(acct.get("type", "other")),
-                    "current_balance":    float(balances.get("current") or 0),
-                    "available_balance":  float(balances["available"]) if balances.get("available") is not None else None,
+                    "account_name":       acct.name or "Account",
+                    "account_type":       str(acct.type),
+                    "current_balance":    float(balances.current or 0),
+                    "available_balance":  float(balances.available) if balances.available is not None else None,
                 })
         except Exception:
             continue
@@ -224,7 +232,11 @@ def refresh_all() -> list[str]:
                 TransactionsRefreshRequest(access_token=item["access_token"])
             )
         except Exception as exc:
-            errors.append(f"{item.get('institution_name', 'Unknown')}: {exc}")
+            # Investment-only items (e.g. Wealthfront) don't support transactions/refresh
+            # — this is expected, not an error worth surfacing
+            err_str = str(exc)
+            if "PRODUCTS_NOT_SUPPORTED" not in err_str and "NO_ACCOUNTS" not in err_str:
+                errors.append(f"{item.get('institution_name', 'Unknown')}: {exc}")
 
     return errors
 
@@ -275,8 +287,21 @@ def sync_all_transactions(
             continue
 
         # First sync for this item: drop all old rows from this institution
-        # so we cleanly replace them (avoids duplicates with old no-plaid_txn_id rows)
+        # so we cleanly replace them — but first save any user annotations
+        # (category, notes, tags) keyed by plaid_txn_id so we can restore them.
+        saved_annotations: dict[str, dict] = {}
         if cursor is None and not df.empty and "source" in df.columns:
+            old_rows = df[df["source"] == inst_source]
+            if "plaid_txn_id" in old_rows.columns:
+                for _, r in old_rows.iterrows():
+                    tid = r.get("plaid_txn_id")
+                    if tid:
+                        saved_annotations[str(tid)] = {
+                            "category":    r.get("category"),
+                            "notes":       r.get("notes"),
+                            "tags":        r.get("tags"),
+                            "user_edited": bool(r.get("user_edited", False)),
+                        }
             df = df[df["source"] != inst_source].copy()
 
         # Apply removals
@@ -285,20 +310,48 @@ def sync_all_transactions(
             df = df[~df["plaid_txn_id"].isin(remove_ids)].copy()
         total_removed += len(removed)
 
-        # Apply modifications (amount/description only; preserve category + annotations)
+        # Apply modifications (amount/description only; never touch user-edited categories)
         if modified and not df.empty and "plaid_txn_id" in df.columns:
+            has_user_edited = "user_edited" in df.columns
             for txn in modified:
                 mask = df["plaid_txn_id"] == txn["transaction_id"]
                 if mask.any():
                     merchant = txn.get("merchant_name") or txn.get("name", "")
                     df.loc[mask, "expense_amount"] = float(txn["amount"])
                     df.loc[mask, "description"]    = merchant.strip()
+                    # Never reset category for user-edited rows
+                    if has_user_edited:
+                        edited_mask = mask & df["user_edited"].fillna(False).astype(bool)
+                        non_edited  = mask & ~df["user_edited"].fillna(False).astype(bool)
+                    else:
+                        non_edited = mask
         total_modified += len(modified)
 
         # Apply additions (category=None — caller categorizes these)
         if added:
             new_rows = [_row_from_txn(t, inst_name, item["item_id"]) for t in added]
             new_df   = pd.DataFrame(new_rows)
+            # Restore annotations from before the full resync.
+            # user_edited rows are always restored; others only if they had a value.
+            if saved_annotations:
+                for col in ["notes", "tags", "user_edited"]:
+                    if col not in new_df.columns:
+                        new_df[col] = False if col == "user_edited" else None
+                for i, row in new_df.iterrows():
+                    tid = str(row.get("plaid_txn_id") or "")
+                    if tid not in saved_annotations:
+                        continue
+                    ann = saved_annotations[tid]
+                    was_user_edited = ann.get("user_edited", False)
+                    # Always restore user-edited rows; restore others only if non-empty
+                    if was_user_edited or ann.get("category"):
+                        new_df.at[i, "category"] = ann["category"]
+                    if ann.get("notes"):
+                        new_df.at[i, "notes"] = ann["notes"]
+                    if ann.get("tags"):
+                        new_df.at[i, "tags"] = ann["tags"]
+                    if was_user_edited:
+                        new_df.at[i, "user_edited"] = True
             df = pd.concat([df, new_df], ignore_index=True) if not df.empty else new_df
         total_added += len(added)
 

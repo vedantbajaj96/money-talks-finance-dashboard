@@ -82,7 +82,17 @@ def detect_recurring(
         occurrences, last_charge, est_monthly_cost.
         Returns an empty DataFrame if nothing is detected.
     """
-    expenses = df[df["transaction_type"] == "expense"].copy()
+    # Fall back to amount sign when transaction_type is missing
+    # (Plaid convention: positive expense_amount = money out)
+    has_types = (
+        "transaction_type" in df.columns
+        and df["transaction_type"].notna().any()
+        and df["transaction_type"].astype(str).ne("None").any()
+    )
+    if has_types:
+        expenses = df[df["transaction_type"] == "expense"].copy()
+    else:
+        expenses = df[df["expense_amount"] > 0].copy()
     if expenses.empty:
         return pd.DataFrame()
 
