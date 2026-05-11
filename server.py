@@ -99,6 +99,50 @@ for _f in JSX_FILES:
         print(f"  WARNING {_f}: {_e}", flush=True)
 print("JSX ready.", flush=True)
 
+# ---------------------------------------------------------------------------
+# Semantic search for categories (sentence-transformers, lazy-loaded)
+# ---------------------------------------------------------------------------
+
+_sem_model = None          # SentenceTransformer instance once loaded
+_sem_cat_cache: dict = {}  # {cache_key: (cat_list, embeddings_array)}
+
+
+def _get_sem_model():
+    """Lazily load the sentence-transformers model on first use."""
+    global _sem_model
+    if _sem_model is None:
+        try:
+            from sentence_transformers import SentenceTransformer
+            print("Loading embeddings model (all-MiniLM-L6-v2)…", flush=True)
+            _sem_model = SentenceTransformer("all-MiniLM-L6-v2")
+            print("Embeddings model ready.", flush=True)
+        except Exception as e:
+            print(f"sentence-transformers unavailable: {e}", flush=True)
+    return _sem_model
+
+
+def _semantic_rank(query: str, cats: list) -> list:
+    """Return cats re-ranked by semantic similarity to query.
+    Falls back to the original order if the model is unavailable."""
+    import numpy as np
+
+    model = _get_sem_model()
+    if model is None or not query.strip():
+        return cats
+
+    global _sem_cat_cache
+    cache_key = ",".join(c["id"] for c in cats)
+    if cache_key not in _sem_cat_cache:
+        texts = [f"{c['name']}" for c in cats]
+        embs = model.encode(texts, normalize_embeddings=True, show_progress_bar=False)
+        _sem_cat_cache[cache_key] = (cats, embs)
+
+    _, cat_embs = _sem_cat_cache[cache_key]
+    q_emb = model.encode([query.strip()], normalize_embeddings=True, show_progress_bar=False)[0]
+    scores = cat_embs @ q_emb                          # cosine similarity (normalized)
+    ranked = sorted(zip(cats, scores.tolist()), key=lambda x: -x[1])
+    return [c for c, _ in ranked]
+
 
 # ---------------------------------------------------------------------------
 # Category mapping
@@ -940,6 +984,18 @@ def _build_cat_list(cfg: dict) -> list:
 def get_categories(current_user: str = Depends(get_current_user)) -> dict:
     cfg = load_config(current_user)
     return {"categories": _build_cat_list(cfg)}
+
+
+@app.get("/api/categories/search")
+def search_categories(q: str = "", current_user: str = Depends(get_current_user)) -> dict:
+    """Return categories semantically ranked by query.
+    Used by the CategoryPicker search box."""
+    cfg  = load_config(current_user)
+    cats = [c for c in _build_cat_list(cfg) if c["id"] not in ("transfer", "savings")]
+    if not q.strip():
+        return {"categories": cats, "semantic": False}
+    ranked = _semantic_rank(q, cats)
+    return {"categories": ranked, "semantic": True}
 
 
 @app.post("/api/categories")

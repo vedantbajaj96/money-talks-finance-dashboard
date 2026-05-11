@@ -594,28 +594,56 @@ function TxnList({ txns, compact = false, onRecategorize }) {
 }
 
 // ─── Inline category picker ────────────────────────────────────────
+// ─── Inline category picker (with semantic search) ────────────────
 function CategoryPicker({ value, onChange }) {
-  const [open, setOpen] = useState(false);
-  const [q, setQ] = useState('');
+  const [open, setOpen]       = useState(false);
+  const [q, setQ]             = useState('');
+  const [results, setResults] = useState(null);   // null = show _liveCategories
+  const [loading, setLoading] = useState(false);
+  const debounceRef = React.useRef(null);
   const cat = catById(value);
 
   function handleOpen(e) {
     e.stopPropagation();
-    setOpen(!open);
-    if (!open) setQ('');
+    const opening = !open;
+    setOpen(opening);
+    if (opening) { setQ(''); setResults(null); }
   }
+
   function handlePick(id) {
     onChange(id);
     setOpen(false);
     setQ('');
+    setResults(null);
   }
 
-  const visible = q.trim()
-    ? _liveCategories.filter(c =>
-        c.name.toLowerCase().includes(q.toLowerCase()) ||
-        c.id.toLowerCase().includes(q.toLowerCase())
-      )
-    : _liveCategories;
+  function handleQuery(val) {
+    setQ(val);
+    clearTimeout(debounceRef.current);
+    if (!val.trim()) {
+      setResults(null);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/categories/search?q=${encodeURIComponent(val)}`);
+        const data = await res.json();
+        if (data.categories) setResults(data.categories);
+      } catch (e) {
+        // fallback to local substring filter
+        setResults(_liveCategories.filter(c =>
+          c.name.toLowerCase().includes(val.toLowerCase())
+        ));
+      }
+      setLoading(false);
+    }, 280);
+  }
+
+  const visible = results || (q.trim()
+    ? _liveCategories.filter(c => c.name.toLowerCase().includes(q.toLowerCase()))
+    : _liveCategories);
 
   return (
     <div className="cat-picker">
@@ -625,21 +653,28 @@ function CategoryPicker({ value, onChange }) {
       </button>
       {open && (
         <>
-          <div className="cat-overlay" onClick={() => { setOpen(false); setQ(''); }} />
+          <div className="cat-overlay" onClick={() => { setOpen(false); setQ(''); setResults(null); }} />
           <div className="cat-menu">
-            <div style={{ padding: '6px 8px 4px', borderBottom: '1px solid var(--line)' }}>
+            <div style={{ padding: '6px 8px 4px', borderBottom: '1px solid var(--line)', position: 'relative' }}>
               <input
                 autoFocus
                 placeholder="Search categories…"
                 value={q}
-                onChange={e => setQ(e.target.value)}
+                onChange={e => handleQuery(e.target.value)}
                 onClick={e => e.stopPropagation()}
                 style={{
                   width: '100%', border: '1px solid var(--line)', borderRadius: 6,
-                  padding: '4px 8px', fontSize: 12, background: 'var(--bg)',
+                  padding: '4px 26px 4px 8px', fontSize: 12, background: 'var(--bg)',
                   color: 'var(--ink)', outline: 'none', boxSizing: 'border-box',
                 }}
               />
+              {loading && (
+                <span style={{
+                  position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)',
+                  fontSize: 11, color: 'var(--muted)', display: 'inline-block',
+                  animation: 'spin 0.7s linear infinite',
+                }}>◌</span>
+              )}
             </div>
             {visible.map((c) => (
               <button key={c.id} className="cat-menu-item" onClick={() => handlePick(c.id)}>
@@ -647,7 +682,7 @@ function CategoryPicker({ value, onChange }) {
                 {c.name}
               </button>
             ))}
-            {visible.length === 0 && (
+            {visible.length === 0 && !loading && (
               <div style={{ padding: '8px 12px', fontSize: 12, color: 'var(--muted)' }}>No match</div>
             )}
           </div>
