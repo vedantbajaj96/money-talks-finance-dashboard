@@ -953,6 +953,8 @@ def get_config(current_user: str = Depends(get_current_user)) -> dict:
         "has_gemini":         bool(cfg.get("gemini_api_key")),
         "preferred_provider": cfg.get("preferred_provider", "claude"),
         "has_plaid":          bool(cfg.get("plaid_client_id") and cfg.get("plaid_secret")),
+        "plaid_environment":  cfg.get("plaid_environment", "sandbox"),
+        "plaid_redirect_uri": cfg.get("plaid_redirect_uri", ""),
     }
 
 
@@ -960,10 +962,14 @@ def get_config(current_user: str = Depends(get_current_user)) -> dict:
 async def update_config(body: dict[str, Any], current_user: str = Depends(get_current_user)) -> dict:
     cfg = load_config(current_user)
     allowed = {"anthropic_api_key", "gemini_api_key", "preferred_provider",
-               "plaid_client_id", "plaid_secret", "plaid_environment"}
+               "plaid_client_id", "plaid_secret", "plaid_environment",
+               "plaid_redirect_uri"}
     for k, v in body.items():
         if k in allowed:
-            cfg[k] = v
+            if v is None:
+                cfg.pop(k, None)   # remove key when value is explicitly null
+            else:
+                cfg[k] = v
     save_config(current_user, cfg)
     return {"ok": True}
 

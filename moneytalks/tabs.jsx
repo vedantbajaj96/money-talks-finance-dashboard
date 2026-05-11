@@ -2272,19 +2272,21 @@ function SettingsTab() {
   const [claudeKey, setClaudeKey]   = useState('');
   const [geminiKey, setGeminiKey]   = useState('');
   const [provider, setProvider]     = useState('claude');
-  const [plaidId, setPlaidId]       = useState('');
-  const [plaidSecret, setPlaidSecret] = useState('');
-  const [plaidEnv, setPlaidEnv]     = useState('sandbox');
-  const [saving, setSaving]         = useState(false);
-  const [saved, setSaved]           = useState(false);
-  const [repairing, setRepairing]   = useState(false);
-  const [repairResult, setRepairResult] = useState(null);
+  const [plaidId, setPlaidId]             = useState('');
+  const [plaidSecret, setPlaidSecret]     = useState('');
+  const [plaidEnv, setPlaidEnv]           = useState('sandbox');
+  const [plaidRedirect, setPlaidRedirect] = useState('');
+  const [saving, setSaving]               = useState(false);
+  const [saved, setSaved]                 = useState(false);
+  const [repairing, setRepairing]         = useState(false);
+  const [repairResult, setRepairResult]   = useState(null);
 
   useEffect(() => {
     fetch('/api/config').then(r => r.json()).then(d => {
       setCfg(d);
       setProvider(d.preferred_provider || 'claude');
       if (d.plaid_environment) setPlaidEnv(d.plaid_environment);
+      if (d.plaid_redirect_uri) setPlaidRedirect(d.plaid_redirect_uri);
     });
   }, []);
 
@@ -2312,10 +2314,11 @@ function SettingsTab() {
   async function saveConfig() {
     setSaving(true);
     const body = { preferred_provider: provider, plaid_environment: plaidEnv };
-    if (claudeKey)   body.anthropic_api_key = claudeKey;
-    if (geminiKey)   body.gemini_api_key    = geminiKey;
-    if (plaidId)     body.plaid_client_id   = plaidId;
-    if (plaidSecret) body.plaid_secret      = plaidSecret;
+    if (claudeKey)    body.anthropic_api_key  = claudeKey;
+    if (geminiKey)    body.gemini_api_key     = geminiKey;
+    if (plaidId)      body.plaid_client_id    = plaidId;
+    if (plaidSecret)  body.plaid_secret       = plaidSecret;
+    body.plaid_redirect_uri = plaidRedirect.trim() || null;
     await fetch('/api/config', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2474,6 +2477,19 @@ function SettingsTab() {
                   {env.charAt(0).toUpperCase() + env.slice(1)}
                 </button>
               ))}
+            </div>
+          </div>
+
+          <div>
+            <Label>OAuth Redirect URI <span style={{ fontWeight: 400, color: 'var(--muted)' }}>(required for AMEX, Chase, BofA, Capital One)</span></Label>
+            <input type="text" value={plaidRedirect} onChange={e => setPlaidRedirect(e.target.value)}
+              placeholder="https://your-domain.com/oauth_callback"
+              style={{ width: '100%', padding: '10px 14px', borderRadius: 10, boxSizing: 'border-box',
+                border: '1px solid var(--border)', fontSize: 14, fontFamily: 'inherit',
+                background: 'var(--bg)', color: 'var(--text)', outline: 'none' }} />
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 5, lineHeight: 1.5 }}>
+              Must match a URI registered in Plaid Dashboard → Developers → API → Allowed Redirect URIs.
+              Use <code>ngrok http 8502</code> for a quick HTTPS URL, or Tailscale.
             </div>
           </div>
 

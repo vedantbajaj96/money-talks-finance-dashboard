@@ -164,15 +164,25 @@ def is_configured(cfg: dict | None = None) -> bool:
     return bool(cfg.get("plaid_client_id")) and bool(cfg.get("plaid_secret"))
 
 
-def create_link_token(cfg: dict | None = None) -> str:
+def create_link_token(cfg: dict | None = None, redirect_uri: str | None = None) -> str:
     """
-    redirect_uri only passed in sandbox (http://localhost allowed).
-    Production omits it — OAuth banks need HTTPS which localhost can't provide.
+    Create a Plaid Link token.
+
+    OAuth institutions (AMEX, Chase, BofA, Capital One) require redirect_uri to be set
+    AND registered in your Plaid dashboard (Developers → API → Allowed Redirect URIs).
+    In production this must be an HTTPS URL — localhost won't work.
+    Pass redirect_uri explicitly, or set plaid_redirect_uri in config.
     """
     if cfg is None:
         cfg = _default_cfg()
     env_name = cfg.get("plaid_environment", "sandbox")
     client   = _get_api_client(cfg)
+
+    # Resolve redirect_uri: explicit arg > config value > sandbox default
+    if redirect_uri is None:
+        redirect_uri = cfg.get("plaid_redirect_uri") or (
+            "http://localhost:8502/oauth_callback" if env_name == "sandbox" else None
+        )
 
     kwargs = dict(
         user=LinkTokenCreateRequestUser(client_user_id="local-user"),
@@ -181,8 +191,8 @@ def create_link_token(cfg: dict | None = None) -> str:
         country_codes=[CountryCode("US")],
         language="en",
     )
-    if env_name == "sandbox":
-        kwargs["redirect_uri"] = "http://localhost:8502/oauth_callback"
+    if redirect_uri:
+        kwargs["redirect_uri"] = redirect_uri
 
     response = client.link_token_create(LinkTokenCreateRequest(**kwargs))
     return response["link_token"]
