@@ -558,7 +558,7 @@ function BottomNav({ active, onChange }) {
 // ─── App ──────────────────────────────────────────────────────────
 function App() {
   const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
-  const [tab, setTab]           = useState('overview');
+  const [tab, setTab]           = useState('review');
   // Default to most recent month in real data
   const [monthKey, setMonthKey] = useState(MONTHS[MONTHS.length - 1]?.key || '');
   const [search, setSearch]     = useState('');

@@ -110,6 +110,7 @@ function MonthlyTab({ monthKey }) {
 // ─── Overview Tab (month-agnostic, draggable widgets) ──────────────────────
 const OVERVIEW_WIDGETS = [
   { id: 'networth',  label: 'Net Worth'          },
+  { id: 'quality',   label: 'Data Quality'       },
   { id: 'anomalies', label: 'Spending Alerts'    },
   { id: 'merchants', label: 'Top Merchants'      },
   { id: 'trends',    label: 'Spending Trends'    },
@@ -263,6 +264,15 @@ function OverviewTab() {
   // Recent txns (last 10 across all time)
   const recentTxns = allTxns.slice(0, 10);
 
+  // Data quality stats — fetched from /api/review
+  const [reviewStats, setReviewStats] = useState(null);
+  useEffect(() => {
+    fetch('/api/review')
+      .then(r => r.json())
+      .then(d => setReviewStats(d))
+      .catch(() => {});
+  }, []);
+
   // ── Widget renderers ─────────────────────────────────────────────
   function renderWidget(id, index) {
     const label = OVERVIEW_WIDGETS.find(w => w.id === id)?.label || id;
@@ -294,6 +304,66 @@ function OverviewTab() {
         </div>
       </DragCard>
     );
+
+    if (id === 'quality') {
+      const { total = 0, approved = 0, remaining = 0, streak = 0, last_reviewed = null } = reviewStats || {};
+      const qPct   = total > 0 ? Math.round((approved / total) * 100) : (reviewStats ? 100 : 0);
+      const lowConf = TRANSACTIONS.filter(t => t.confidence === 'low').length;
+      const daysSince = last_reviewed
+        ? Math.floor((Date.now() - new Date(last_reviewed)) / 864e5)
+        : null;
+      const needsAttention = daysSince !== null && daysSince > 7;
+      return (
+        <DragCard key={id} id={id} index={index} order={order} onReorder={handleReorder} title="Data Quality">
+          {!reviewStats ? (
+            <div style={{ color: 'var(--muted)', fontSize: 13 }}>Loading…</div>
+          ) : (
+            <>
+              <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 14 }}>
+                <div>
+                  <div style={{ fontSize: 32, fontWeight: 700, color: qPct >= 90 ? 'var(--green)' : qPct >= 70 ? '#fbbf24' : 'var(--terra)',
+                    letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>{qPct}%</div>
+                  <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>transactions reviewed</div>
+                </div>
+                {streak > 0 && (
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: 20 }}>{streak >= 2 ? '🔥' : '✓'}</div>
+                    <div style={{ fontSize: 11, color: streak >= 4 ? '#f97316' : 'var(--muted)', fontWeight: 600 }}>
+                      {streak}w streak
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div style={{ height: 5, background: 'var(--line)', borderRadius: 3, overflow: 'hidden', marginBottom: 12 }}>
+                <div style={{ height: '100%', width: `${qPct}%`, borderRadius: 3,
+                  background: qPct >= 90 ? 'var(--green)' : qPct >= 70 ? '#fbbf24' : 'var(--terra)',
+                  transition: 'width 0.4s ease' }} />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 7, fontSize: 13 }}>
+                {remaining > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--ink-2)' }}>Awaiting review</span>
+                    <span style={{ fontWeight: 600, color: 'var(--terra)' }}>{remaining}</span>
+                  </div>
+                )}
+                {lowConf > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--ink-2)' }}>Low confidence</span>
+                    <span style={{ fontWeight: 600, color: '#d97706' }}>{lowConf}</span>
+                  </div>
+                )}
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: 'var(--ink-2)' }}>Last reviewed</span>
+                  <span style={{ fontWeight: 500, color: needsAttention ? 'var(--terra)' : 'var(--ink)' }}>
+                    {daysSince === null ? 'Never' : daysSince === 0 ? 'Today' : `${daysSince}d ago`}
+                  </span>
+                </div>
+              </div>
+            </>
+          )}
+        </DragCard>
+      );
+    }
 
     if (id === 'anomalies') return (
       <DragCard key={id} id={id} index={index} order={order} onReorder={handleReorder} title="Spending Alerts">
@@ -2516,9 +2586,19 @@ function ReviewTab() {
     </div>
   );
 
-  const { batch = [], total = 0, approved = 0, remaining = 0 } = state || {};
+  const { batch = [], total = 0, approved = 0, remaining = 0,
+          streak = 0, last_reviewed = null } = state || {};
   const pct = total > 0 ? Math.round((approved / total) * 100) : 100;
   const allDone = remaining === 0;
+
+  // Days since last review
+  const daysSince = last_reviewed
+    ? Math.floor((Date.now() - new Date(last_reviewed)) / 864e5)
+    : null;
+  const lastReviewedLabel = daysSince === null ? 'Never reviewed'
+    : daysSince === 0 ? 'Reviewed today'
+    : daysSince === 1 ? 'Reviewed yesterday'
+    : `Last reviewed ${daysSince}d ago`;
 
   return (
     <div className="tab-body" style={{ maxWidth: 680, margin: '0 auto' }}>
@@ -2536,10 +2616,25 @@ function ReviewTab() {
               {allDone ? 'All caught up!' : `${approved} of ${total} approved · ${remaining} remaining`}
             </div>
           </div>
-          <div style={{
-            fontSize: 22, fontWeight: 700, color: 'var(--accent)',
-            fontVariantNumeric: 'tabular-nums',
-          }}>{pct}%</div>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+            <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--accent)', fontVariantNumeric: 'tabular-nums' }}>
+              {pct}%
+            </div>
+            {streak > 0 && (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 4,
+                fontSize: 12, fontWeight: 600,
+                color: streak >= 4 ? '#f97316' : streak >= 2 ? '#fbbf24' : 'var(--muted)',
+              }}>
+                {streak >= 2 ? '🔥' : '✓'} {streak} week{streak !== 1 ? 's' : ''} in a row
+              </div>
+            )}
+            {daysSince !== null && (
+              <div style={{ fontSize: 11, color: daysSince > 7 ? 'var(--terra)' : 'var(--muted)' }}>
+                {lastReviewedLabel}
+              </div>
+            )}
+          </div>
         </div>
         {/* Progress bar */}
         <div style={{ height: 6, background: 'var(--line)', borderRadius: 3, overflow: 'hidden' }}>
@@ -2606,10 +2701,20 @@ function ReviewTab() {
                   {/* Description + category picker */}
                   <div style={{ minWidth: 0 }}>
                     <div style={{
-                      fontSize: 13, fontWeight: 500, color: 'var(--ink)',
-                      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                      marginBottom: 4,
-                    }}>{t.description}</div>
+                      display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4,
+                    }}>
+                      <div style={{
+                        fontSize: 13, fontWeight: 500, color: 'var(--ink)',
+                        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                        flex: 1, minWidth: 0,
+                      }}>{t.description}</div>
+                      {t.confidence === 'low' && (
+                        <span title="Needs your attention — category uncertain" style={{
+                          fontSize: 10, padding: '1px 6px', borderRadius: 8, flexShrink: 0,
+                          background: '#fef3c7', color: '#d97706', fontWeight: 600,
+                        }}>?</span>
+                      )}
+                    </div>
                     <CategoryPicker
                       value={cat}
                       onChange={(c) => setEdits(prev => ({ ...prev, [t.id]: c }))}

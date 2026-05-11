@@ -562,6 +562,15 @@ def build_fin_data(username: str) -> dict:
         ORDER BY date DESC
     """).fetchall()
 
+    # Pre-build approved / user_edited sets for confidence scoring
+    try:
+        _conf_df = pd.read_parquet(_data_file(username), columns=["txn_id", "approved", "user_edited"])
+        _approved_ids   = set(_conf_df.loc[_conf_df["approved"].fillna(False).astype(bool), "txn_id"].dropna())
+        _user_edited_ids = set(_conf_df.loc[_conf_df["user_edited"].fillna(False).astype(bool), "txn_id"].dropna())
+    except Exception:
+        _approved_ids = set()
+        _user_edited_ids = set()
+
     transactions = []
     for date, desc, expense_amount, category, source, txn_id, notes, tags, txn_type in rows:
         if not txn_id:
@@ -569,16 +578,25 @@ def build_fin_data(username: str) -> dict:
                 f"{date}|{desc}|{expense_amount}".encode()
             ).hexdigest()[:12]
         cat_id = _resolve_category(str(desc), str(category or "other"), txn_type, float(expense_amount or 0))
+        _tid = str(txn_id)
+        if _tid in _approved_ids or _tid in _user_edited_ids:
+            _conf = "high"
+        elif cat_id in ("other", "uncategorized"):
+            _conf = "low"
+        else:
+            _conf = "medium"
+
         transactions.append({
-            "id":       str(txn_id),
-            "date":     str(date)[:10],
-            "merchant": str(desc),
-            "category": cat_id,
-            "amount":   round(-float(expense_amount), 2),
-            "account":  str(source or ""),
-            "pending":  False,
-            "notes":    str(notes or ""),
-            "tags":     str(tags or ""),
+            "id":         _tid,
+            "date":       str(date)[:10],
+            "merchant":   str(desc),
+            "category":   cat_id,
+            "amount":     round(-float(expense_amount), 2),
+            "account":    str(source or ""),
+            "pending":    False,
+            "notes":      str(notes or ""),
+            "tags":       str(tags or ""),
+            "confidence": _conf,
         })
 
     # ── APPLY SPLITS ──────────────────────────────────────────────────────
@@ -1042,7 +1060,7 @@ def semantic_transaction_search(
     q_emb  = model.encode([q.strip()], normalize_embeddings=True, show_progress_bar=False)[0]
     scores = embs @ q_emb  # cosine similarity
 
-    threshold = 0.25
+    threshold = 0.30
     hits = [(m, float(s)) for m, s in zip(merchants, scores) if s > threshold]
     hits.sort(key=lambda x: -x[1])
 
@@ -1201,11 +1219,17 @@ def get_review_batch(current_user: str = Depends(get_current_user)) -> dict:
             "source":      str(row.get("source", "")),
         })
 
+    cfg              = load_config(current_user)
+    streak           = int(cfg.get("review_streak", 0))
+    last_reviewed    = cfg.get("last_reviewed_date")
+
     return {
-        "batch":     batch,
-        "total":     total,
-        "approved":  n_approved,
-        "remaining": remaining,
+        "batch":         batch,
+        "total":         total,
+        "approved":      n_approved,
+        "remaining":     remaining,
+        "streak":        streak,
+        "last_reviewed": last_reviewed,
     }
 
 
@@ -1261,14 +1285,48 @@ async def approve_batch(body: dict[str, Any], current_user: str = Depends(get_cu
 
     save_df(current_user, df)
 
-    # Return fresh stats
+    # ── Update review streak ───────────────────────────────────────────────
+    cfg = load_config(current_user)
+    today = datetime.date.today()
+    iso_week = today.isocalendar()[:2]   # (year, week)
+
+    last_week_str = cfg.get("last_reviewed_week")
+    streak        = int(cfg.get("review_streak", 0))
+
+    if last_week_str:
+        try:
+            ly, lw = map(int, last_week_str.split("-"))
+            last_iso = (ly, lw)
+        except Exception:
+            last_iso = None
+
+        if last_iso == iso_week:
+            pass  # same week — no change
+        else:
+            # Check if consecutive week
+            expected_prev = (today - datetime.timedelta(weeks=1)).isocalendar()[:2]
+            if last_iso == expected_prev:
+                streak += 1
+            else:
+                streak = 1  # gap — reset
+    else:
+        streak = 1
+
+    cfg["last_reviewed_week"] = f"{iso_week[0]}-{iso_week[1]}"
+    cfg["last_reviewed_date"] = today.isoformat()
+    cfg["review_streak"]      = streak
+    save_config(current_user, cfg)
+
+    # Return fresh stats + streak
     reviewable     = df[~df["category"].isin(["transfer", "Transfer", "Financial & Transfers",
                                                "savings", "Savings"])]
     n_approved     = int(reviewable["approved"].fillna(False).astype(bool).sum())
     return {
-        "ok":       True,
-        "approved": n_approved,
+        "ok":        True,
+        "approved":  n_approved,
         "remaining": len(reviewable) - n_approved,
+        "streak":    streak,
+        "last_reviewed": today.isoformat(),
     }
 
 
