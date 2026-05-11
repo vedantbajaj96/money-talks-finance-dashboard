@@ -1050,6 +1050,32 @@ function SpendingTab({ monthKey }) {
     };
   });
 
+  // By account — spending per account this month
+  const byAccount = {};
+  txns.forEach((t) => {
+    if (t.category === 'income' || t.category === 'transfer') return;
+    if (t.amount >= 0) return;
+    const acct = acctById(t.account);
+    if (!byAccount[t.account]) byAccount[t.account] = { name: acct.name, color: acct.color, amount: 0, count: 0 };
+    byAccount[t.account].amount += Math.abs(t.amount);
+    byAccount[t.account].count  += 1;
+  });
+  const accountBreakdown = Object.entries(byAccount)
+    .sort((a, b) => b[1].amount - a[1].amount)
+    .map(([id, a]) => ({ ...a, id, cat: a.name }));
+
+  // Stacked bar by account over last 6 months
+  const monthlyByAccount = MONTHS.map((m) => {
+    const tx = txnsForMonth(m.key);
+    const segments = accountBreakdown.map(a => {
+      const val = tx
+        .filter(t => t.account === a.id && t.category !== 'income' && t.category !== 'transfer' && t.amount < 0)
+        .reduce((s, t) => s + Math.abs(t.amount), 0);
+      return { key: a.id, name: a.name, value: val, color: a.color };
+    });
+    return { label: m.short, segments };
+  });
+
   return (
     <div className="tab-body">
       <div className="grid-3">
@@ -1083,12 +1109,50 @@ function SpendingTab({ monthKey }) {
         </div>
         <div className="card">
           <div className="card-head">
-            <h3>Spend distribution</h3>
-            <span className="muted">All categories</span>
+            <h3>By account</h3>
+            <span className="muted">{MONTHS.find((m) => m.key === monthKey).label}</span>
           </div>
-          <div className="donut-row centered">
-            <DonutChart data={breakdown} size={240} thickness={32} formatter={fmtMoney} />
+          {accountBreakdown.length === 0 ? (
+            <div className="empty">No spending data for this month.</div>
+          ) : (
+            <>
+              <BarList data={accountBreakdown} formatter={fmtMoney} />
+              <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {accountBreakdown.map(a => (
+                  <div key={a.name} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--muted)' }}>
+                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: a.color, flexShrink: 0 }} />
+                    <span style={{ flex: 1 }}>{a.name}</span>
+                    <span>{a.count} txn{a.count !== 1 ? 's' : ''}</span>
+                    <span style={{ fontVariantNumeric: 'tabular-nums', color: 'var(--ink)', fontWeight: 500, minWidth: 70, textAlign: 'right' }}>
+                      {fmtMoney(a.amount)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card-head">
+          <h3>Monthly spend by account</h3>
+          <div className="legend-inline">
+            {accountBreakdown.map(a => (
+              <span key={a.name}><i style={{ background: a.color }} /> {a.name}</span>
+            ))}
           </div>
+        </div>
+        <StackedBarChart data={monthlyByAccount} height={220} formatter={fmtAbbr} />
+      </div>
+
+      <div className="card">
+        <div className="card-head">
+          <h3>Spend distribution</h3>
+          <span className="muted">By category</span>
+        </div>
+        <div className="donut-row centered">
+          <DonutChart data={breakdown} size={240} thickness={32} formatter={fmtMoney} />
         </div>
       </div>
     </div>
