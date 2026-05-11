@@ -183,12 +183,12 @@ function OverviewTab() {
 
   const allTxns = TRANSACTIONS.filter(t => t.category !== 'transfer');
 
-  // Net worth from account balances
+  // Net worth from account balances (balance already signed: negative = liability)
   const netWorth = useMemo(() => {
     let assets = 0, liabilities = 0;
     ACCOUNTS.forEach(a => {
-      if (a.type === 'credit') liabilities += Math.abs(a.balance);
-      else assets += Math.max(a.balance, 0);
+      if (a.balance >= 0) assets      += a.balance;
+      else                liabilities += Math.abs(a.balance);
     });
     return { total: assets - liabilities, assets, liabilities };
   }, []);
@@ -296,8 +296,8 @@ function OverviewTab() {
                 <span style={{ width: 8, height: 8, borderRadius: '50%', background: a.color, display: 'inline-block', flexShrink: 0 }} />
                 <span style={{ color: 'var(--ink-2)' }}>{a.inst || a.name}</span>
               </div>
-              <span style={{ fontWeight: 500, color: a.type === 'credit' ? 'var(--terra)' : 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>
-                {a.type === 'credit' ? '−' : ''}{fmt(Math.abs(a.balance), { decimals: 0 })}
+              <span style={{ fontWeight: 500, color: a.balance < 0 ? 'var(--terra)' : 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>
+                {fmt(a.balance, { decimals: 0, sign: false })}
               </span>
             </div>
           ))}

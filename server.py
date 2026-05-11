@@ -501,11 +501,15 @@ def build_fin_data(username: str) -> dict:
         if is_configured(cfg):
             data_dir = str(_user_dir(username))
             for b in get_account_balances(cfg=cfg, data_dir=data_dir):
-                inst = b["institution_name"]
-                key  = f"Plaid – {inst}"
+                inst     = b["institution_name"]
+                key      = f"Plaid – {inst}"
+                acct_type = b["account_type"]
+                bal       = float(b["current_balance"] or 0)
+                # Credit/loan balances are liabilities — store as negative
+                signed_bal = -bal if acct_type in ("credit", "loan") else bal
                 if key not in plaid_balances:
-                    plaid_balances[key] = {"balance": 0.0, "type": b["account_type"]}
-                plaid_balances[key]["balance"] += b["current_balance"]
+                    plaid_balances[key] = {"balance": 0.0}
+                plaid_balances[key]["balance"] += signed_bal
     except Exception:
         pass
 
@@ -519,7 +523,8 @@ def build_fin_data(username: str) -> dict:
             "id":      s,
             "name":    s,
             "inst":    s,
-            "type":    plaid_balances.get(s, {}).get("type", "checking"),
+            # type is derived from the net signed balance: negative = liability, positive = asset
+            "type":    "credit" if plaid_balances.get(s, {}).get("balance", 0.0) < 0 else "checking",
             "last4":   "????",
             "balance": plaid_balances.get(s, {}).get("balance", 0.0),
             "color":   ACCOUNT_COLORS[i % len(ACCOUNT_COLORS)],
