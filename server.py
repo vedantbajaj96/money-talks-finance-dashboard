@@ -100,26 +100,27 @@ for _f in JSX_FILES:
 print("JSX ready.", flush=True)
 
 # ---------------------------------------------------------------------------
-# Semantic search for categories (sentence-transformers, lazy-loaded)
+# Semantic search — sentence-transformers model, loaded at startup
 # ---------------------------------------------------------------------------
 
-_sem_model = None          # SentenceTransformer instance once loaded
+_sem_model = None          # SentenceTransformer instance
 _sem_cat_cache: dict = {}  # {cache_key: (cat_list, embeddings_array)}
 _sem_txn_cache: dict = {}  # {username: {"mtime": float, "merchants": list, "embs": ndarray}}
 
 
 def _get_sem_model():
-    """Lazily load the sentence-transformers model on first use."""
-    global _sem_model
-    if _sem_model is None:
-        try:
-            from sentence_transformers import SentenceTransformer
-            print("Loading embeddings model (all-MiniLM-L6-v2)…", flush=True)
-            _sem_model = SentenceTransformer("all-MiniLM-L6-v2")
-            print("Embeddings model ready.", flush=True)
-        except Exception as e:
-            print(f"sentence-transformers unavailable: {e}", flush=True)
+    """Return the pre-loaded model (or None if unavailable)."""
     return _sem_model
+
+
+# Load immediately at startup so the first search is instant
+try:
+    from sentence_transformers import SentenceTransformer
+    print("Loading embeddings model (all-MiniLM-L6-v2)…", flush=True)
+    _sem_model = SentenceTransformer("all-MiniLM-L6-v2")
+    print("Embeddings model ready.", flush=True)
+except Exception as _sem_err:
+    print(f"sentence-transformers unavailable — semantic search disabled: {_sem_err}", flush=True)
 
 
 def _semantic_rank(query: str, cats: list) -> list:
