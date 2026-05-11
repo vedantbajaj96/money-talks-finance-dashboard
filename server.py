@@ -7,12 +7,21 @@ The React frontend (ledgerline/) loads once and calls /api/fin to get all data.
 Everything else is mutation: uploading CSVs, editing transactions, syncing Plaid.
 
 Data flow:
-  CSV upload  →  parsers.py  →  categorizer/  →  transactions.parquet
-  Plaid sync  →  plaid_client.py              →  transactions.parquet
+  CSV upload  →  parsers.py  →  categorizer/  →  data/{user}/transactions.parquet
+  Plaid sync  →  plaid_client.py              →  data/{user}/transactions.parquet
   /api/fin    →  DuckDB reads parquet          →  JSON to frontend
 
-Read strategy: DuckDB queries the parquet file directly — fast, no full load.
-Write strategy: pandas reads, mutates, and saves back — simpler for row edits.
+Auth:
+  - Users stored in data/users.json (bcrypt-style PBKDF2 hashes)
+  - Sessions in-memory dict with 7-day TTL, token stored in HTTP-only cookie
+  - First user to register becomes admin; admins can create/delete other users
+  - All /api/* routes require a valid session cookie (401 otherwise)
+  - /api/auth/* and /login are public
+
+Per-user data:
+  data/{username}/transactions.parquet  — transactions
+  data/{username}/config.json           — API keys (Plaid, Claude, Gemini)
+  data/{username}/plaid_items.json      — Plaid linked institutions
 
 Run:
     python3 server.py
@@ -22,24 +31,29 @@ from __future__ import annotations
 
 import datetime
 import hashlib
+import re
 import json
+import secrets
 from pathlib import Path
 from typing import Any
 
 import duckdb
 import pandas as pd
 import uvicorn
-from fastapi import FastAPI, HTTPException, UploadFile, File
-from fastapi.staticfiles import StaticFiles
+from fastapi import Depends, FastAPI, HTTPException, Request, Response, UploadFile, File
+from fastapi.responses import FileResponse, RedirectResponse
 
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
 
-BASE_DIR    = Path(__file__).parent
-DATA_FILE   = BASE_DIR / "data" / "transactions.parquet"
-CONFIG_FILE = BASE_DIR / "config.json"
-LL_DIR      = BASE_DIR / "ledgerline"
+BASE_DIR = Path(__file__).parent
+DATA_DIR = BASE_DIR / "data"
+LL_DIR   = BASE_DIR / "ledgerline"
+
+USERS_FILE     = DATA_DIR / "users.json"
+SESSION_COOKIE = "mt_session"
+SESSION_TTL    = datetime.timedelta(days=7)
 
 app = FastAPI(title="MoneyTalks API")
 
@@ -48,11 +62,6 @@ app = FastAPI(title="MoneyTalks API")
 #
 # The categorizer stores human-readable names in the parquet ("Dining & Drinks").
 # The frontend uses short IDs ("dining"). CAT_MAP bridges the two.
-#
-# Three sets of keys cover every variant we might see in stored data:
-#   1. Categorizer display names  ("Dining & Drinks")
-#   2. Slugified versions          ("dining-and-drinks")  — older rows
-#   3. Legacy Streamlit names      ("Food & Drink")        — oldest rows
 # ---------------------------------------------------------------------------
 
 CAT_MAP: dict[str, str] = {
@@ -69,7 +78,9 @@ CAT_MAP: dict[str, str] = {
     "Dining & Drinks":              "dining",
     "Fitness & Active":             "health",
     "Health & Medical":             "health",
-    "Professional Development":     "other",
+    "Professional Development":     "self_dev",
+    "Education":                    "education",
+    "Self Development":             "self_dev",
     "Shopping & Retail":            "shopping",
     "Travel & Getaways":            "travel",
     "Reimbursements":               "other",
@@ -86,7 +97,9 @@ CAT_MAP: dict[str, str] = {
     "dining-and-drinks":              "dining",
     "fitness-and-active":             "health",
     "health-and-medical":             "health",
-    "professional-development":       "other",
+    "professional-development":       "self_dev",
+    "education":                      "education",
+    "self-development":               "self_dev",
     "shopping-and-retail":            "shopping",
     "travel-and-getaways":            "travel",
     "reimbursements":                 "other",
@@ -109,39 +122,48 @@ CAT_MAP: dict[str, str] = {
 }
 
 CAT_META: dict[str, dict] = {
-    "income":        {"name": "Income",          "group": "income",   "color": "#5ec98a", "icon": "↗"},
-    "rent":          {"name": "Rent & Housing",  "group": "fixed",    "color": "#6b8aab", "icon": "◧"},
-    "groceries":     {"name": "Groceries",       "group": "variable", "color": "#a3e635", "icon": "◉"},
-    "dining":        {"name": "Dining & Bars",   "group": "variable", "color": "#d97757", "icon": "◔"},
-    "transport":     {"name": "Transport",       "group": "variable", "color": "#67e8f9", "icon": "◇"},
-    "utilities":     {"name": "Utilities",       "group": "fixed",    "color": "#fbbf24", "icon": "◐"},
-    "subs":          {"name": "Subscriptions",   "group": "fixed",    "color": "#a78bfa", "icon": "◑"},
-    "shopping":      {"name": "Shopping",        "group": "variable", "color": "#ec4899", "icon": "◕"},
-    "health":        {"name": "Health & Fitness","group": "variable", "color": "#22d3ee", "icon": "◙"},
-    "travel":        {"name": "Travel",          "group": "variable", "color": "#f97316", "icon": "◭"},
-    "entertainment": {"name": "Entertainment",   "group": "variable", "color": "#e879f9", "icon": "◬"},
-    "transfer":      {"name": "Transfers",       "group": "transfer", "color": "#64748b", "icon": "⇄"},
-    "savings":       {"name": "Savings",         "group": "transfer", "color": "#34d399", "icon": "⊕"},
-    "other":         {"name": "Other",           "group": "variable", "color": "#94a3b8", "icon": "○"},
+    "income":        {"name": "Income",           "group": "income",   "color": "#5ec98a", "icon": "↗"},
+    "rent":          {"name": "Rent & Housing",   "group": "fixed",    "color": "#6b8aab", "icon": "◧"},
+    "groceries":     {"name": "Groceries",        "group": "variable", "color": "#a3e635", "icon": "◉"},
+    "dining":        {"name": "Dining & Bars",    "group": "variable", "color": "#d97757", "icon": "◔"},
+    "transport":     {"name": "Transport",        "group": "variable", "color": "#67e8f9", "icon": "◇"},
+    "utilities":     {"name": "Utilities",        "group": "fixed",    "color": "#fbbf24", "icon": "◐"},
+    "subs":          {"name": "Subscriptions",    "group": "fixed",    "color": "#a78bfa", "icon": "◑"},
+    "shopping":      {"name": "Shopping",         "group": "variable", "color": "#ec4899", "icon": "◕"},
+    "health":        {"name": "Health & Fitness", "group": "variable", "color": "#22d3ee", "icon": "◙"},
+    "travel":        {"name": "Travel",           "group": "variable", "color": "#f97316", "icon": "◭"},
+    "entertainment": {"name": "Entertainment",    "group": "variable", "color": "#e879f9", "icon": "◬"},
+    "transfer":      {"name": "Transfers",        "group": "transfer", "color": "#64748b", "icon": "⇄"},
+    "savings":       {"name": "Savings",          "group": "transfer", "color": "#34d399", "icon": "⊕"},
+    "education":     {"name": "Education",         "group": "variable", "color": "#818cf8", "icon": "◈"},
+    "self_dev":      {"name": "Self Development",  "group": "variable", "color": "#fb7185", "icon": "◍"},
+    "other":         {"name": "Other",            "group": "variable", "color": "#94a3b8", "icon": "○"},
 }
 
 ACCOUNT_COLORS = ["#5ec98a", "#67e8f9", "#d97757", "#a78bfa", "#fbbf24", "#6b8aab", "#f97316", "#e879f9"]
 
-
 # Substrings in the description that always mean "transfer", regardless of what
-# the categorizer said. Credit card autopayments often get tagged "Other Income"
-# by the LLM — this catches them first.
+# the categorizer said. Credit card autopayments often get tagged "Other Income".
 _TRANSFER_DESC_PATTERNS = [
     "automatic payment",
     "payment - thank",
     "payment thank you",
+    "payment-thank",
+    "online transfer from",
+    "online transfer to",
+    "payment to chase",
+    "payment to discover",
+    "payment to amex",
+    "payment to citi",
+    "payment to bank of america",
+    "payment to wells fargo",
+    "e-payment",
     "acctverify",
     "penny test",
     "account transfer",
     "ach transfer",
 ]
 
-# Reimbursements are stored as "other" — they're not real income or expenses.
 _REIMBURSEMENT_CATS = {"reimbursements", "Reimbursements"}
 
 
@@ -154,7 +176,7 @@ def map_category(cat: str) -> str:
 def _resolve_category(description: str, raw_category: str, txn_type: str | None, expense_amount: float = 0.0) -> str:
     """Map a raw parquet category to a frontend category ID.
 
-    Called for every transaction in build_fin_data(). Priority order:
+    Priority order:
       1. Description matches a transfer pattern  → "transfer"
       2. Category maps to transfer               → "transfer"
       3. Reimbursement category                  → "other"
@@ -173,7 +195,6 @@ def _resolve_category(description: str, raw_category: str, txn_type: str | None,
     if raw_category in _REIMBURSEMENT_CATS or cat_id == "reimbursements":
         return "other"
 
-    # Derive income/expense from amount when transaction_type is missing
     is_income = (txn_type == "income") or (txn_type is None and expense_amount < 0)
     if is_income:
         return "income"
@@ -182,16 +203,116 @@ def _resolve_category(description: str, raw_category: str, txn_type: str | None,
 
 
 # ---------------------------------------------------------------------------
-# DuckDB helpers
+# Authentication
 #
-# We open a fresh in-memory connection for every request — cheap because DuckDB
-# reads directly from the parquet file without loading it all into RAM.
+# Passwords: PBKDF2-HMAC-SHA256, 200k iterations, random 16-byte hex salt.
+# Sessions:  random 32-byte hex token stored in an HTTP-only cookie.
+#            In-memory dict; server restart invalidates all sessions (acceptable
+#            for a local family app).
+# Roles:     first registered user becomes admin; admins create/delete others.
 # ---------------------------------------------------------------------------
 
-def _conn() -> duckdb.DuckDBPyConnection:
-    """Return a DuckDB connection with the parquet file registered as 'txns'."""
+# In-memory session store: {token: {"username": str, "is_admin": bool, "expires": datetime}}
+_sessions: dict[str, dict] = {}
+
+
+def _hash_password(password: str, salt: str | None = None) -> tuple[str, str]:
+    """Return (hex_hash, salt). If salt is None, a new random one is generated."""
+    if salt is None:
+        salt = secrets.token_hex(16)
+    dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 200_000)
+    return dk.hex(), salt
+
+
+def _verify_password(password: str, stored_hash: str, salt: str) -> bool:
+    h, _ = _hash_password(password, salt)
+    return secrets.compare_digest(h, stored_hash)
+
+
+def _load_users() -> dict:
+    """Load users registry from disk. Keys are usernames."""
+    if USERS_FILE.exists():
+        try:
+            return json.loads(USERS_FILE.read_text())
+        except Exception:
+            pass
+    return {}
+
+
+def _save_users(users: dict) -> None:
+    USERS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    USERS_FILE.write_text(json.dumps(users, indent=2))
+
+
+def _create_session(username: str, is_admin: bool) -> str:
+    """Create a new session token and register it in-memory."""
+    token = secrets.token_hex(32)
+    _sessions[token] = {
+        "username": username,
+        "is_admin": is_admin,
+        "expires":  datetime.datetime.utcnow() + SESSION_TTL,
+    }
+    return token
+
+
+def get_current_user(request: Request) -> str:
+    """FastAPI dependency — returns username or raises 401.
+
+    Used on all /api/* routes except /api/auth/*.
+    """
+    token = request.cookies.get(SESSION_COOKIE)
+    if not token:
+        raise HTTPException(401, "Not authenticated")
+    session = _sessions.get(token)
+    if not session:
+        raise HTTPException(401, "Invalid session")
+    if datetime.datetime.utcnow() > session["expires"]:
+        del _sessions[token]
+        raise HTTPException(401, "Session expired")
+    return session["username"]
+
+
+def get_admin_user(request: Request) -> str:
+    """FastAPI dependency — returns username or raises 403 if not admin."""
+    token = request.cookies.get(SESSION_COOKIE)
+    if not token:
+        raise HTTPException(401, "Not authenticated")
+    session = _sessions.get(token)
+    if not session or datetime.datetime.utcnow() > session["expires"]:
+        raise HTTPException(401, "Invalid or expired session")
+    if not session.get("is_admin"):
+        raise HTTPException(403, "Admin access required")
+    return session["username"]
+
+
+# ---------------------------------------------------------------------------
+# Per-user path helpers
+# ---------------------------------------------------------------------------
+
+def _user_dir(username: str) -> Path:
+    return DATA_DIR / username
+
+def _data_file(username: str) -> Path:
+    return _user_dir(username) / "transactions.parquet"
+
+def _config_file(username: str) -> Path:
+    return _user_dir(username) / "config.json"
+
+def _plaid_items_file(username: str) -> Path:
+    return _user_dir(username) / "plaid_items.json"
+
+
+# ---------------------------------------------------------------------------
+# DuckDB helpers
+#
+# One fresh in-memory connection per request — cheap because DuckDB reads
+# directly from the parquet file without loading it all into RAM.
+# ---------------------------------------------------------------------------
+
+def _conn(username: str) -> duckdb.DuckDBPyConnection:
+    """Return a DuckDB connection with the user's parquet registered as 'txns'."""
     c = duckdb.connect()
-    path = str(DATA_FILE).replace("'", "''")
+    path = str(_data_file(username)).replace("'", "''")
     c.execute(f"CREATE VIEW txns AS SELECT * FROM read_parquet('{path}')")
     return c
 
@@ -206,39 +327,41 @@ def _month_labels(key: str) -> tuple[str, str, str]:
 # Config helpers  (config.json stores API keys — gitignored)
 # ---------------------------------------------------------------------------
 
-def load_config() -> dict:
-    if CONFIG_FILE.exists():
+def load_config(username: str) -> dict:
+    f = _config_file(username)
+    if f.exists():
         try:
-            return json.loads(CONFIG_FILE.read_text())
+            return json.loads(f.read_text())
         except Exception:
             pass
     return {}
 
 
-def save_config(cfg: dict) -> None:
-    try:
-        CONFIG_FILE.write_text(json.dumps(cfg, indent=2))
-    except Exception:
-        pass
+def save_config(username: str, cfg: dict) -> None:
+    f = _config_file(username)
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(json.dumps(cfg, indent=2))
 
 
 # ---------------------------------------------------------------------------
 # Pandas helpers  (only used for writes — reads go through DuckDB)
 # ---------------------------------------------------------------------------
 
-def load_df() -> pd.DataFrame | None:
-    if not DATA_FILE.exists():
+def load_df(username: str) -> pd.DataFrame | None:
+    f = _data_file(username)
+    if not f.exists():
         return None
     try:
-        df = pd.read_parquet(DATA_FILE)
+        df = pd.read_parquet(f)
         return df if not df.empty else None
     except Exception:
         return None
 
 
-def save_df(df: pd.DataFrame) -> None:
-    DATA_FILE.parent.mkdir(exist_ok=True)
-    df.to_parquet(DATA_FILE, index=False)
+def save_df(username: str, df: pd.DataFrame) -> None:
+    f = _data_file(username)
+    f.parent.mkdir(parents=True, exist_ok=True)
+    df.to_parquet(f, index=False)
 
 
 # ---------------------------------------------------------------------------
@@ -249,8 +372,8 @@ def save_df(df: pd.DataFrame) -> None:
 # needs (transactions, accounts, categories, recurring, net worth) is here.
 # ---------------------------------------------------------------------------
 
-def build_fin_data() -> dict:
-    conn = _conn()
+def build_fin_data(username: str) -> dict:
+    conn = _conn(username)
 
     # ── MONTHS ────────────────────────────────────────────────────────────
     month_keys = [
@@ -267,12 +390,15 @@ def build_fin_data() -> dict:
     # Try to fetch live balances from Plaid; fall back gracefully
     plaid_balances: dict[str, dict] = {}
     try:
+        import sys
+        sys.path.insert(0, str(BASE_DIR))
         from plaid_client import get_account_balances, is_configured
-        if is_configured():
-            for b in get_account_balances():
+        cfg = load_config(username)
+        if is_configured(cfg):
+            data_dir = str(_user_dir(username))
+            for b in get_account_balances(cfg=cfg, data_dir=data_dir):
                 inst = b["institution_name"]
                 key  = f"Plaid – {inst}"
-                # Aggregate balances per institution (sum sub-accounts)
                 if key not in plaid_balances:
                     plaid_balances[key] = {"balance": 0.0, "type": b["account_type"]}
                 plaid_balances[key]["balance"] += b["current_balance"]
@@ -301,7 +427,7 @@ def build_fin_data() -> dict:
     raw_cats = [
         r[0] for r in conn.execute("SELECT DISTINCT category FROM txns").fetchall()
     ]
-    seen_cat_ids: set[str] = {"income"}  # always include income
+    seen_cat_ids: set[str] = {"income"}
     dynamic_cats: dict[str, dict] = {}
     for raw_cat in raw_cats:
         cat_id = map_category(str(raw_cat))
@@ -312,19 +438,14 @@ def build_fin_data() -> dict:
                 "color": "#94a3b8", "icon": "○",
             }
     all_meta = {**CAT_META, **dynamic_cats}
-    categories = [{"id": k, **v} for k, v in all_meta.items() if k in seen_cat_ids]
+    categories = [{"id": k, **v} for k, v in all_meta.items()]
 
     # ── TRANSACTIONS ──────────────────────────────────────────────────────
-    # Check which optional columns exist
     col_names = {r[0] for r in conn.execute("DESCRIBE txns").fetchall()}
-    select_txn_id = "txn_id" if "txn_id" in col_names else "NULL"
-    select_notes  = "notes"  if "notes"  in col_names else "NULL"
-    select_tags   = "tags"   if "tags"   in col_names else "NULL"
-
-    transactions = []
-    # Fetch transaction_type if available (used to reliably identify income)
-    has_txn_type = "transaction_type" in col_names
-    select_txn_type = "transaction_type" if has_txn_type else "NULL"
+    select_txn_id  = "txn_id"           if "txn_id"           in col_names else "NULL"
+    select_notes   = "notes"            if "notes"            in col_names else "NULL"
+    select_tags    = "tags"             if "tags"             in col_names else "NULL"
+    select_txn_type = "transaction_type" if "transaction_type" in col_names else "NULL"
 
     rows = conn.execute(f"""
         SELECT
@@ -349,7 +470,7 @@ def build_fin_data() -> dict:
             "date":     str(date)[:10],
             "merchant": str(desc),
             "category": cat_id,
-            "amount":   round(-float(expense_amount), 2),  # flip: expense→negative, income→positive
+            "amount":   round(-float(expense_amount), 2),
             "account":  str(source or ""),
             "pending":  False,
             "notes":    str(notes or ""),
@@ -388,7 +509,7 @@ def build_fin_data() -> dict:
         import sys
         sys.path.insert(0, str(BASE_DIR))
         from subscriptions import detect_recurring
-        df = pd.read_parquet(DATA_FILE)
+        df = pd.read_parquet(_data_file(username))
         rec_df = detect_recurring(df)
         if not rec_df.empty:
             for _, row in rec_df.iterrows():
@@ -417,24 +538,221 @@ def build_fin_data() -> dict:
     }
 
 
+def _migrate_legacy_data(user_dir: Path) -> None:
+    """Move pre-auth data files (data/transactions.parquet, config.json,
+    data/plaid_items.json) into the first user's directory, if they exist
+    and the destination doesn't already have data."""
+    import shutil
+
+    legacy_txn    = DATA_DIR / "transactions.parquet"
+    legacy_cfg    = BASE_DIR / "config.json"
+    legacy_plaid  = DATA_DIR / "plaid_items.json"
+
+    if legacy_txn.exists() and not (user_dir / "transactions.parquet").exists():
+        shutil.copy2(legacy_txn, user_dir / "transactions.parquet")
+
+    if legacy_cfg.exists() and not (user_dir / "config.json").exists():
+        shutil.copy2(legacy_cfg, user_dir / "config.json")
+
+    if legacy_plaid.exists() and not (user_dir / "plaid_items.json").exists():
+        shutil.copy2(legacy_plaid, user_dir / "plaid_items.json")
+
+
 # ---------------------------------------------------------------------------
-# API routes
+# Auth routes  (no session cookie required)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/auth/status")
+def auth_status() -> dict:
+    """Return whether any users exist yet (drives first-run setup on the login page)."""
+    users = _load_users()
+    return {"needs_setup": len(users) == 0}
+
+
+@app.post("/api/auth/setup")
+async def auth_setup(body: dict[str, Any], response: Response) -> dict:
+    """Create the first admin account. Only works when no users exist yet."""
+    users = _load_users()
+    if users:
+        raise HTTPException(400, "Setup already completed")
+    username = (body.get("username") or "").strip().lower()
+    password = body.get("password") or ""
+    if not username or not password:
+        raise HTTPException(400, "Username and password are required")
+    if len(password) < 6:
+        raise HTTPException(400, "Password must be at least 6 characters")
+
+    pw_hash, salt = _hash_password(password)
+    users[username] = {
+        "hash":         pw_hash,
+        "salt":         salt,
+        "is_admin":     True,
+        "display_name": username,
+        "created_at":   datetime.datetime.utcnow().isoformat(),
+    }
+    _save_users(users)
+    user_dir = _user_dir(username)
+    user_dir.mkdir(parents=True, exist_ok=True)
+
+    # Migrate pre-auth data files into the first user's directory
+    _migrate_legacy_data(user_dir)
+
+    token = _create_session(username, is_admin=True)
+    response.set_cookie(SESSION_COOKIE, token, httponly=True, samesite="lax", max_age=int(SESSION_TTL.total_seconds()))
+    return {"ok": True, "username": username, "is_admin": True}
+
+
+@app.post("/api/auth/login")
+async def auth_login(body: dict[str, Any], response: Response) -> dict:
+    """Authenticate a user and set a session cookie."""
+    username = (body.get("username") or "").strip().lower()
+    password = body.get("password") or ""
+    users = _load_users()
+    user = users.get(username)
+    if not user or not _verify_password(password, user["hash"], user["salt"]):
+        raise HTTPException(401, "Invalid username or password")
+
+    token = _create_session(username, is_admin=bool(user.get("is_admin")))
+    response.set_cookie(SESSION_COOKIE, token, httponly=True, samesite="lax", max_age=int(SESSION_TTL.total_seconds()))
+    return {"ok": True, "username": username, "is_admin": bool(user.get("is_admin"))}
+
+
+@app.post("/api/auth/logout")
+async def auth_logout(request: Request, response: Response) -> dict:
+    """Invalidate the current session."""
+    token = request.cookies.get(SESSION_COOKIE)
+    if token and token in _sessions:
+        del _sessions[token]
+    response.delete_cookie(SESSION_COOKIE)
+    return {"ok": True}
+
+
+@app.get("/api/auth/me")
+def auth_me(request: Request, current_user: str = Depends(get_current_user)) -> dict:
+    """Return info about the currently logged-in user."""
+    token = request.cookies.get(SESSION_COOKIE)
+    session = _sessions.get(token, {})
+    users = _load_users()
+    user = users.get(current_user, {})
+    return {
+        "username":     current_user,
+        "display_name": user.get("display_name") or current_user,
+        "is_admin":     bool(session.get("is_admin")),
+    }
+
+
+@app.patch("/api/auth/me")
+async def update_me(body: dict[str, Any], current_user: str = Depends(get_current_user)) -> dict:
+    """Update the current user's display name."""
+    display_name = (body.get("display_name") or "").strip()
+    if not display_name:
+        raise HTTPException(400, "Display name cannot be empty")
+    if len(display_name) > 40:
+        raise HTTPException(400, "Display name must be 40 characters or fewer")
+    users = _load_users()
+    users[current_user]["display_name"] = display_name
+    _save_users(users)
+    return {"ok": True, "display_name": display_name}
+
+
+# ── User management (admin only) ──────────────────────────────────────────
+
+@app.post("/api/auth/register")
+async def auth_register(body: dict[str, Any], admin: str = Depends(get_admin_user)) -> dict:
+    """Admin: create a new user account."""
+    username = (body.get("username") or "").strip().lower()
+    password = body.get("password") or ""
+    if not username or not password:
+        raise HTTPException(400, "Username and password are required")
+    if len(password) < 6:
+        raise HTTPException(400, "Password must be at least 6 characters")
+
+    users = _load_users()
+    if username in users:
+        raise HTTPException(400, f"User '{username}' already exists")
+
+    pw_hash, salt = _hash_password(password)
+    users[username] = {
+        "hash":         pw_hash,
+        "salt":         salt,
+        "is_admin":     bool(body.get("is_admin", False)),
+        "display_name": username,
+        "created_at":   datetime.datetime.utcnow().isoformat(),
+    }
+    _save_users(users)
+    _user_dir(username).mkdir(parents=True, exist_ok=True)
+    return {"ok": True, "username": username}
+
+
+@app.get("/api/auth/users")
+def auth_list_users(admin: str = Depends(get_admin_user)) -> dict:
+    """Admin: list all registered users."""
+    users = _load_users()
+    return {
+        "users": [
+            {"username": u, "is_admin": bool(v.get("is_admin")), "created_at": v.get("created_at")}
+            for u, v in users.items()
+        ]
+    }
+
+
+@app.delete("/api/auth/users/{username}")
+async def auth_delete_user(username: str, admin: str = Depends(get_admin_user)) -> dict:
+    """Admin: delete a user account (cannot delete yourself)."""
+    if username == admin:
+        raise HTTPException(400, "Cannot delete your own account")
+    users = _load_users()
+    if username not in users:
+        raise HTTPException(404, f"User '{username}' not found")
+    del users[username]
+    _save_users(users)
+    # Invalidate any active sessions for the deleted user
+    for token, s in list(_sessions.items()):
+        if s["username"] == username:
+            del _sessions[token]
+    return {"ok": True}
+
+
+@app.post("/api/auth/change-password")
+async def auth_change_password(body: dict[str, Any], current_user: str = Depends(get_current_user)) -> dict:
+    """Change the current user's password."""
+    old_pw = body.get("old_password") or ""
+    new_pw = body.get("new_password") or ""
+    if not old_pw or not new_pw:
+        raise HTTPException(400, "old_password and new_password are required")
+    if len(new_pw) < 6:
+        raise HTTPException(400, "Password must be at least 6 characters")
+
+    users = _load_users()
+    user = users[current_user]
+    if not _verify_password(old_pw, user["hash"], user["salt"]):
+        raise HTTPException(401, "Current password is incorrect")
+
+    pw_hash, salt = _hash_password(new_pw)
+    users[current_user]["hash"] = pw_hash
+    users[current_user]["salt"] = salt
+    _save_users(users)
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Protected API routes — all require a valid session cookie
 # ---------------------------------------------------------------------------
 
 @app.get("/api/fin")
-def get_fin() -> dict:
+def get_fin(current_user: str = Depends(get_current_user)) -> dict:
     """Main data endpoint — called once on page load by data.js."""
-    if not DATA_FILE.exists():
+    if not _data_file(current_user).exists():
         return {"hasData": False}
     try:
-        return build_fin_data()
+        return build_fin_data(current_user)
     except Exception:
         return {"hasData": False}
 
 
 @app.get("/api/config")
-def get_config() -> dict:
-    cfg = load_config()
+def get_config(current_user: str = Depends(get_current_user)) -> dict:
+    cfg = load_config(current_user)
     return {
         "has_anthropic":      bool(cfg.get("anthropic_api_key")),
         "has_gemini":         bool(cfg.get("gemini_api_key")),
@@ -444,21 +762,274 @@ def get_config() -> dict:
 
 
 @app.post("/api/config")
-async def update_config(body: dict[str, Any]) -> dict:
-    cfg = load_config()
+async def update_config(body: dict[str, Any], current_user: str = Depends(get_current_user)) -> dict:
+    cfg = load_config(current_user)
     allowed = {"anthropic_api_key", "gemini_api_key", "preferred_provider",
                "plaid_client_id", "plaid_secret", "plaid_environment"}
     for k, v in body.items():
         if k in allowed:
             cfg[k] = v
-    save_config(cfg)
+    save_config(current_user, cfg)
     return {"ok": True}
 
 
+# ---------------------------------------------------------------------------
+# Custom categories CRUD
+# ---------------------------------------------------------------------------
+# Categories CRUD + reorder
+# ---------------------------------------------------------------------------
+
+def _build_cat_list(cfg: dict) -> list:
+    """Return the full ordered category list with user overrides applied."""
+    custom      = {c["id"]: c for c in (cfg.get("custom_categories") or [])}
+    overrides   = cfg.get("category_overrides") or {}
+    order       = cfg.get("category_order") or []
+
+    # Merge: builtin + custom
+    all_cats = {}
+    for kid, v in CAT_META.items():
+        entry = {"id": kid, **v, "builtin": True}
+        if kid in overrides:
+            entry.update({k: v2 for k, v2 in overrides[kid].items() if k in ("name","color")})
+        all_cats[kid] = entry
+    for cid, c in custom.items():
+        all_cats[cid] = {"builtin": False, **c}
+
+    # Apply order: ordered first, then remaining alphabetically
+    ordered = [all_cats[i] for i in order if i in all_cats]
+    rest    = [all_cats[i] for i in all_cats if i not in order]
+    return ordered + rest
+
+
+@app.get("/api/categories")
+def get_categories(current_user: str = Depends(get_current_user)) -> dict:
+    cfg = load_config(current_user)
+    return {"categories": _build_cat_list(cfg)}
+
+
+@app.post("/api/categories")
+async def create_category(body: dict[str, Any], current_user: str = Depends(get_current_user)) -> dict:
+    name = (body.get("name") or "").strip()
+    if not name:
+        raise HTTPException(400, "name required")
+    cat_id = re.sub(r"[^a-z0-9_]", "_", name.lower().strip())[:32]
+    cfg    = load_config(current_user)
+    custom = cfg.get("custom_categories") or []
+    if cat_id in CAT_META or any(c["id"] == cat_id for c in custom):
+        raise HTTPException(409, "category already exists")
+    entry = {"id": cat_id, "name": name,
+             "color": body.get("color") or "#94a3b8",
+             "icon":  body.get("icon")  or "○",
+             "group": body.get("group") or "variable"}
+    custom.append(entry)
+    cfg["custom_categories"] = custom
+    # Append to end of order
+    order = cfg.get("category_order") or []
+    order.append(cat_id)
+    cfg["category_order"] = order
+    save_config(current_user, cfg)
+    return {"ok": True, "category": {**entry, "builtin": False}}
+
+
+@app.patch("/api/categories/{cat_id}")
+async def update_category(cat_id: str, body: dict[str, Any], current_user: str = Depends(get_current_user)) -> dict:
+    cfg = load_config(current_user)
+    if cat_id in CAT_META:
+        # Store override for built-in
+        overrides = cfg.get("category_overrides") or {}
+        if cat_id not in overrides:
+            overrides[cat_id] = {}
+        if "name"  in body: overrides[cat_id]["name"]  = body["name"]
+        if "color" in body: overrides[cat_id]["color"] = body["color"]
+        cfg["category_overrides"] = overrides
+        save_config(current_user, cfg)
+        return {"ok": True}
+    # Custom category
+    custom = cfg.get("custom_categories") or []
+    for c in custom:
+        if c["id"] == cat_id:
+            if "name"  in body: c["name"]  = body["name"]
+            if "color" in body: c["color"] = body["color"]
+            if "group" in body: c["group"] = body["group"]
+            cfg["custom_categories"] = custom
+            save_config(current_user, cfg)
+            return {"ok": True}
+    raise HTTPException(404, "category not found")
+
+
+@app.post("/api/categories/reorder")
+async def reorder_categories(body: dict[str, Any], current_user: str = Depends(get_current_user)) -> dict:
+    order = body.get("order") or []
+    cfg   = load_config(current_user)
+    cfg["category_order"] = order
+    save_config(current_user, cfg)
+    return {"ok": True}
+
+
+@app.delete("/api/categories/{cat_id}")
+async def delete_category(cat_id: str, current_user: str = Depends(get_current_user)) -> dict:
+    if cat_id in CAT_META:
+        raise HTTPException(403, "cannot delete built-in categories")
+    # Check if any transactions use this category
+    df = load_df(current_user)
+    if df is not None and not df.empty:
+        used = df["category"].astype(str).str.lower() == cat_id.lower()
+        # Also check raw category names that map to this id
+        count = int(used.sum())
+        if count > 0:
+            raise HTTPException(409, f"{count} transaction{'s' if count != 1 else ''} use this category — reassign them first")
+    cfg    = load_config(current_user)
+    custom = cfg.get("custom_categories") or []
+    new_custom = [c for c in custom if c["id"] != cat_id]
+    if len(new_custom) == len(custom):
+        raise HTTPException(404, "category not found")
+    cfg["custom_categories"] = new_custom
+    # Remove from order too
+    cfg["category_order"] = [i for i in (cfg.get("category_order") or []) if i != cat_id]
+    save_config(current_user, cfg)
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Transaction Review (weekly approve workflow)
+# ---------------------------------------------------------------------------
+
+REVIEW_BATCH_SIZE = 10
+
+@app.get("/api/review")
+def get_review_batch(current_user: str = Depends(get_current_user)) -> dict:
+    """Return the next batch of unapproved transactions (oldest first) + progress stats."""
+    df = load_df(current_user)
+    if df is None or df.empty:
+        return {"batch": [], "total": 0, "approved": 0, "remaining": 0}
+
+    if "approved" not in df.columns:
+        df["approved"] = False
+        save_df(current_user, df)
+
+    if "txn_id" not in df.columns:
+        df["txn_id"] = df.apply(
+            lambda r: hashlib.md5(
+                f"{r['date']}|{r['description']}|{r['expense_amount']}".encode()
+            ).hexdigest()[:12],
+            axis=1,
+        )
+        save_df(current_user, df)
+
+    # Exclude transfers and savings from the review queue
+    reviewable = df[~df["category"].isin(["transfer", "Transfer", "Financial & Transfers",
+                                           "savings", "Savings"])]
+    approved_mask = reviewable["approved"].fillna(False).astype(bool)
+    total     = len(reviewable)
+    n_approved = int(approved_mask.sum())
+    remaining  = total - n_approved
+
+    batch_df = (
+        reviewable[~approved_mask]
+        .sort_values("date")
+        .head(REVIEW_BATCH_SIZE)
+    )
+
+    def _resolve(row) -> str:
+        return _resolve_category(
+            row.get("description", ""),
+            row.get("category", "other"),
+            row.get("transaction_type"),
+            row.get("expense_amount", 0.0),
+        )
+
+    batch = []
+    for _, row in batch_df.iterrows():
+        batch.append({
+            "id":          row.get("txn_id", ""),
+            "date":        str(row["date"])[:10],
+            "description": str(row.get("description", "")),
+            "amount":      float(row.get("expense_amount", 0)),
+            "category":    _resolve(row),
+            "source":      str(row.get("source", "")),
+        })
+
+    return {
+        "batch":     batch,
+        "total":     total,
+        "approved":  n_approved,
+        "remaining": remaining,
+    }
+
+
+@app.post("/api/review/approve")
+async def approve_batch(body: dict[str, Any], current_user: str = Depends(get_current_user)) -> dict:
+    """Mark a list of transaction IDs as approved (with optional category overrides)."""
+    txn_ids   = body.get("ids", [])
+    overrides = body.get("overrides", {})   # {txn_id: new_category}
+
+    if not txn_ids:
+        raise HTTPException(400, "ids required")
+
+    df = load_df(current_user)
+    if df is None:
+        raise HTTPException(404, "No data")
+
+    if "txn_id" not in df.columns:
+        df["txn_id"] = df.apply(
+            lambda r: hashlib.md5(
+                f"{r['date']}|{r['description']}|{r['expense_amount']}".encode()
+            ).hexdigest()[:12],
+            axis=1,
+        )
+    if "approved" not in df.columns:
+        df["approved"] = False
+    if "user_edited" not in df.columns:
+        df["user_edited"] = False
+
+    reverse_map = {v: k for k, v in CAT_MAP.items()}
+
+    for txn_id in txn_ids:
+        mask = df["txn_id"] == txn_id
+        if not mask.any():
+            continue
+        df.loc[mask, "approved"] = True
+        if txn_id in overrides:
+            ll_cat = overrides[txn_id]
+            df.loc[mask, "category"]    = reverse_map.get(ll_cat, ll_cat)
+            df.loc[mask, "user_edited"] = True
+
+            # Auto-learn: apply to similar unapproved transactions
+            source_desc = df.loc[mask, "description"].iloc[0]
+            def _fp(s: str) -> str:
+                s = re.sub(r"\b\d[\d/\-]*\d\b", "", str(s).lower())
+                s = re.sub(r"[^a-z ]+", " ", s)
+                return " ".join(s.split()[:4])
+            fp = _fp(source_desc)
+            if fp:
+                not_approved = ~df["approved"].fillna(False).astype(bool)
+                similar = df["description"].apply(_fp) == fp
+                df.loc[similar & not_approved & ~mask, "category"]    = reverse_map.get(ll_cat, ll_cat)
+                df.loc[similar & not_approved & ~mask, "user_edited"] = True
+
+    save_df(current_user, df)
+
+    # Return fresh stats
+    reviewable     = df[~df["category"].isin(["transfer", "Transfer", "Financial & Transfers",
+                                               "savings", "Savings"])]
+    n_approved     = int(reviewable["approved"].fillna(False).astype(bool).sum())
+    return {
+        "ok":       True,
+        "approved": n_approved,
+        "remaining": len(reviewable) - n_approved,
+    }
+
+
+
 @app.patch("/api/transactions/{txn_id}")
-async def update_transaction(txn_id: str, body: dict[str, Any]) -> dict:
-    """Update category / notes / tags for a single transaction."""
-    df = load_df()
+async def update_transaction(
+    txn_id: str,
+    body: dict[str, Any],
+    current_user: str = Depends(get_current_user),
+) -> dict:
+    """Update category / notes / tags for a single transaction. Marks it user_edited=True
+    so resyncs never overwrite this row."""
+    df = load_df(current_user)
     if df is None:
         raise HTTPException(404, "No data")
 
@@ -487,18 +1058,41 @@ async def update_transaction(txn_id: str, body: dict[str, Any]) -> dict:
             df["tags"] = ""
         df.loc[mask, "tags"] = body["tags"]
 
-    # Mark as user-edited so resyncs never overwrite this row
     if "user_edited" not in df.columns:
         df["user_edited"] = False
     df.loc[mask, "user_edited"] = True
 
-    save_df(df)
-    return {"ok": True}
+    # ── Auto-learn: apply same category to similar unedited transactions ──
+    auto_applied = 0
+    if "category" in body:
+        source_desc = df.loc[mask, "description"].iloc[0]
+        ll_cat      = body["category"]
+        new_raw_cat = reverse_map.get(ll_cat, ll_cat)
+        # Normalise description to a short fingerprint for fuzzy matching:
+        # strip numbers/dates/IDs so "NETFLIX 1234" matches "NETFLIX 9999".
+        def _fingerprint(s: str) -> str:
+            s = re.sub(r"\b\d[\d/\-]*\d\b", "", str(s).lower())
+            s = re.sub(r"[^a-z ]+", " ", s)
+            return " ".join(s.split()[:4])
+
+        fp_source = _fingerprint(source_desc)
+        if fp_source:
+            not_approved = ~df["approved"].fillna(False).astype(bool) if "approved" in df.columns else pd.Series(True, index=df.index)
+            unedited = ~(df.get("user_edited", False).fillna(False).astype(bool)) | mask
+            similar_mask = df["description"].apply(_fingerprint) == fp_source
+            apply_mask   = similar_mask & ~mask & unedited & not_approved
+            if apply_mask.any():
+                df.loc[apply_mask, "category"]    = new_raw_cat
+                df.loc[apply_mask, "user_edited"] = True
+                auto_applied = int(apply_mask.sum())
+
+    save_df(current_user, df)
+    return {"ok": True, "auto_applied": auto_applied}
 
 
 @app.post("/api/query")
-async def run_query(body: dict[str, Any]) -> dict:
-    """Run a read-only DuckDB SQL query against transaction data.
+async def run_query(body: dict[str, Any], current_user: str = Depends(get_current_user)) -> dict:
+    """Run a read-only DuckDB SQL query against the user's transaction data.
 
     The view 'txns' is available with all transaction columns.
     Only SELECT statements are permitted.
@@ -506,10 +1100,10 @@ async def run_query(body: dict[str, Any]) -> dict:
     sql = body.get("sql", "").strip()
     if not sql.upper().startswith("SELECT"):
         raise HTTPException(400, "Only SELECT queries are allowed")
-    if not DATA_FILE.exists():
+    if not _data_file(current_user).exists():
         raise HTTPException(404, "No data")
     try:
-        conn = _conn()
+        conn = _conn(current_user)
         result = conn.execute(sql).df()
         return {
             "columns": list(result.columns),
@@ -520,20 +1114,21 @@ async def run_query(body: dict[str, Any]) -> dict:
 
 
 @app.post("/api/upload")
-async def upload_csv(file: UploadFile = File(...)) -> dict:
+async def upload_csv(
+    file: UploadFile = File(...),
+    current_user: str = Depends(get_current_user),
+) -> dict:
     """Accept a bank CSV, parse, categorize, deduplicate, and merge into storage."""
     import io
     import sys
     sys.path.insert(0, str(BASE_DIR))
 
-    # Read uploaded bytes
     content = await file.read()
     try:
         raw_df = pd.read_csv(io.BytesIO(content))
     except Exception as e:
         raise HTTPException(400, f"Could not read CSV: {e}")
 
-    # Parse
     from parsers import detect_format, parse_chase_bank, parse_chase_cc, parse_amex, deduplicate
     fmt = detect_format(raw_df)
     if fmt == "chase_bank":
@@ -549,46 +1144,41 @@ async def upload_csv(file: UploadFile = File(...)) -> dict:
     if parsed.empty:
         raise HTTPException(400, "No valid transactions found in file")
 
-    # Rule-based categorization first (fast, no API call)
     from categorizer.rules import categorize_transactions
     parsed = categorize_transactions(parsed)
 
-    # LLM categorization for anything still uncategorized / pending review
-    cfg = load_config()
-    claude_key  = cfg.get("anthropic_api_key", "")
-    gemini_key  = cfg.get("gemini_api_key", "")
+    cfg = load_config(current_user)
+    claude_key = cfg.get("anthropic_api_key", "")
+    gemini_key = cfg.get("gemini_api_key", "")
     uncategorized = parsed[parsed["category"].isin(["Pending Review", "", None])]
     if not uncategorized.empty and (claude_key or gemini_key):
         try:
             from categorizer.llm import llm_categorize_all
             llm_categorize_all(parsed, anthropic_key=claude_key, gemini_key=gemini_key)
         except Exception:
-            pass  # fall back to rule-based results
+            pass
 
-    # Merge with existing data, deduplicate
-    existing = load_df()
+    existing = load_df(current_user)
     if existing is not None:
         combined = pd.concat([existing, parsed], ignore_index=True)
     else:
         combined = parsed.copy()
 
     combined, dupes_removed = deduplicate(combined)
-    save_df(combined)
+    save_df(current_user, combined)
 
-    new_rows = len(parsed)
-    total    = len(combined)
     return {
-        "ok":            True,
-        "format":        fmt,
-        "new":           new_rows,
-        "duplicates":    dupes_removed,
-        "total":         total,
+        "ok":         True,
+        "format":     fmt,
+        "new":        len(parsed),
+        "duplicates": dupes_removed,
+        "total":      len(combined),
     }
 
 
-def _build_schema() -> str:
+def _build_schema(username: str) -> str:
     """Describe the txns table for the LLM — shape only, no actual row values."""
-    conn = _conn()
+    conn = _conn(username)
     date_min, date_max = conn.execute("SELECT MIN(date), MAX(date) FROM txns").fetchone()
     total = conn.execute("SELECT COUNT(*) FROM txns").fetchone()[0]
     categories = [r[0] for r in conn.execute(
@@ -658,7 +1248,7 @@ def _llm_call(messages: list[dict], system: str, cfg: dict, max_tokens: int = 51
 
 
 @app.post("/api/chat")
-async def chat(body: dict[str, Any]) -> dict:
+async def chat(body: dict[str, Any], current_user: str = Depends(get_current_user)) -> dict:
     """Privacy-preserving chat via text-to-SQL.
 
     Step 1: send schema (no data) to LLM → it writes a SELECT query
@@ -668,20 +1258,20 @@ async def chat(body: dict[str, Any]) -> dict:
     Raw transaction data never leaves the machine.
     """
     messages = body.get("messages", [])
-    cfg      = load_config()
+    cfg      = load_config(current_user)
 
     if not cfg.get("anthropic_api_key") and not cfg.get("gemini_api_key"):
         return {"reply": "No AI provider configured. Add a Claude or Gemini API key in Settings."}
 
-    if not DATA_FILE.exists():
+    if not _data_file(current_user).exists():
         return {"reply": "No transaction data found. Upload a CSV first."}
 
-    schema = _build_schema()
+    schema = _build_schema(current_user)
     user_question = next(
         (m["content"] for m in reversed(messages) if m["role"] == "user"), ""
     )
 
-    # ── Step 1: LLM writes the SQL query ──────────────────────────────────
+    # Step 1: LLM writes the SQL query
     sql_system = f"""You are a DuckDB SQL expert for a personal finance app.
 Write a single SELECT query that answers the user's question.
 Return ONLY the raw SQL — no explanation, no markdown, no code fences.
@@ -690,16 +1280,15 @@ Return ONLY the raw SQL — no explanation, no markdown, no code fences.
 
     raw_sql = _llm_call(messages, sql_system, cfg, max_tokens=256).strip()
 
-    # Strip accidental markdown fences
     if raw_sql.startswith("```"):
         raw_sql = raw_sql.strip("`").lstrip("sql").strip()
 
-    # ── Step 2: Run query locally with DuckDB ─────────────────────────────
+    # Step 2: Run query locally with DuckDB
     sql_error = None
     result_text = ""
     row_count = 0
     try:
-        conn = _conn()
+        conn = _conn(current_user)
         result_df = conn.execute(raw_sql).df()
         row_count = len(result_df)
         result_text = result_df.to_string(index=False, max_rows=50)
@@ -707,7 +1296,7 @@ Return ONLY the raw SQL — no explanation, no markdown, no code fences.
         sql_error = str(e)
         result_text = f"Query failed: {sql_error}"
 
-    # ── Step 3: LLM interprets the results ────────────────────────────────
+    # Step 3: LLM interprets the results
     interpret_system = (
         "You are a personal finance assistant. "
         "Answer the user's question based only on the SQL query results provided. "
@@ -727,11 +1316,7 @@ Return ONLY the raw SQL — no explanation, no markdown, no code fences.
     if not answer:
         answer = "Could not get a response from the AI provider."
 
-    return {
-        "reply": answer,
-        "sql":   raw_sql,
-        "rows":  row_count,
-    }
+    return {"reply": answer, "sql": raw_sql, "rows": row_count}
 
 
 # ---------------------------------------------------------------------------
@@ -739,7 +1324,7 @@ Return ONLY the raw SQL — no explanation, no markdown, no code fences.
 # ---------------------------------------------------------------------------
 
 @app.post("/api/repair")
-async def repair_data() -> dict:
+async def repair_data(current_user: str = Depends(get_current_user)) -> dict:
     """One-shot data repair triggered from the Settings tab.
 
     Fixes three common issues:
@@ -749,30 +1334,26 @@ async def repair_data() -> dict:
 
     Skips any row where user_edited=True.
     """
-    df = load_df()
+    df = load_df(current_user)
     if df is None:
         raise HTTPException(404, "No data")
 
-    # Fix column types — these end up as integer NaN columns when rows are missing the field
     for col in ["transaction_type", "notes", "tags", "txn_id", "merchant"]:
         if col in df.columns:
             df[col] = df[col].astype(object).where(df[col].notna(), None)
             df[col] = df[col].apply(lambda v: str(v) if v not in (None, "None", "nan") else None)
 
-    # Derive transaction_type from expense_amount where missing
     if "transaction_type" not in df.columns:
         df["transaction_type"] = None
     mask_missing = df["transaction_type"].isna() | (df["transaction_type"] == "None")
     df.loc[mask_missing & (df["expense_amount"] < 0), "transaction_type"] = "income"
     df.loc[mask_missing & (df["expense_amount"] >= 0), "transaction_type"] = "expense"
 
-    # Ensure required string columns exist
     for col in ["notes", "tags"]:
         if col not in df.columns or df[col].isna().all():
             df[col] = ""
         df[col] = df[col].fillna("")
 
-    # Generate txn_id where missing
     if "txn_id" not in df.columns or df["txn_id"].isna().all():
         df["txn_id"] = df.apply(
             lambda r: hashlib.md5(
@@ -781,14 +1362,12 @@ async def repair_data() -> dict:
             axis=1,
         )
 
-    # Never re-categorize user-edited rows
     user_edited_mask = df.get("user_edited", pd.Series(False, index=df.index)).fillna(False).astype(bool)
     pending = (df["category"].isin(["Pending Review", None, ""]) | df["category"].isna()) & ~user_edited_mask
     pending_count = int(pending.sum())
 
-    # Run LLM categorization on pending rows if API key available
     llm_done = 0
-    cfg = load_config()
+    cfg = load_config(current_user)
     if pending_count > 0 and (cfg.get("anthropic_api_key") or cfg.get("gemini_api_key")):
         try:
             from categorizer.llm import llm_categorize_all
@@ -797,8 +1376,8 @@ async def repair_data() -> dict:
             descs = pending_df["description"].tolist()
             types = pending_df["transaction_type"].fillna("expense").tolist()
 
-            provider   = cfg.get("preferred_provider", "claude")
-            api_key    = cfg.get("anthropic_api_key") if provider == "claude" else cfg.get("gemini_api_key")
+            provider = cfg.get("preferred_provider", "claude")
+            api_key  = cfg.get("anthropic_api_key") if provider == "claude" else cfg.get("gemini_api_key")
             if not api_key:
                 provider = "gemini" if provider == "claude" else "claude"
                 api_key  = cfg.get("gemini_api_key") or cfg.get("anthropic_api_key")
@@ -812,7 +1391,7 @@ async def repair_data() -> dict:
         except Exception:
             pass
 
-    save_df(df)
+    save_df(current_user, df)
     return {
         "ok": True,
         "total": len(df),
@@ -823,42 +1402,52 @@ async def repair_data() -> dict:
 
 
 @app.post("/api/plaid/link-token")
-async def plaid_link_token() -> dict:
+async def plaid_link_token(current_user: str = Depends(get_current_user)) -> dict:
     """Create a Plaid link_token to initialise the Link widget."""
-    cfg = load_config()
+    cfg = load_config(current_user)
     if not cfg.get("plaid_client_id") or not cfg.get("plaid_secret"):
         raise HTTPException(400, "Plaid keys not configured — add them in Settings")
     try:
         import sys; sys.path.insert(0, str(BASE_DIR))
         from plaid_client import create_link_token
-        return {"link_token": create_link_token()}
+        return {"link_token": create_link_token(cfg=cfg)}
     except Exception as e:
         raise HTTPException(500, str(e))
 
 
 @app.post("/api/plaid/exchange")
-async def plaid_exchange(body: dict[str, Any]) -> dict:
+async def plaid_exchange(body: dict[str, Any], current_user: str = Depends(get_current_user)) -> dict:
     """Exchange a one-time public_token for a stored access_token."""
     try:
         from plaid_client import exchange_and_save
-        exchange_and_save(body["public_token"], body.get("institution_name", "Unknown"))
+        exchange_and_save(
+            body["public_token"],
+            body.get("institution_name", "Unknown"),
+            cfg=load_config(current_user),
+            data_dir=str(_user_dir(current_user)),
+        )
         return {"ok": True}
     except Exception as e:
         raise HTTPException(500, str(e))
 
 
 @app.get("/api/plaid/accounts")
-def plaid_accounts() -> dict:
-    """List connected Plaid institutions."""
+def plaid_accounts(current_user: str = Depends(get_current_user)) -> dict:
+    """List connected Plaid institutions for this user."""
     try:
         from plaid_client import get_connected_accounts, is_configured
-        return {"configured": is_configured(), "accounts": get_connected_accounts()}
+        cfg = load_config(current_user)
+        data_dir = str(_user_dir(current_user))
+        return {
+            "configured": is_configured(cfg),
+            "accounts":   get_connected_accounts(data_dir=data_dir),
+        }
     except Exception as e:
         return {"configured": False, "accounts": [], "error": str(e)}
 
 
 @app.post("/api/plaid/sync")
-async def plaid_sync(body: dict[str, Any] = {}) -> dict:
+async def plaid_sync(body: dict[str, Any] = {}, current_user: str = Depends(get_current_user)) -> dict:
     """Pull new transactions from all linked banks.
 
     Normal sync: only fetches changes since the last cursor (fast, incremental).
@@ -869,47 +1458,130 @@ async def plaid_sync(body: dict[str, Any] = {}) -> dict:
         from plaid_client import sync_all_transactions, refresh_all, _load_items, _save_items
         from categorizer.rules import categorize_transactions
 
+        cfg      = load_config(current_user)
+        data_dir = str(_user_dir(current_user))
+
         if body.get("full"):
-            items = _load_items()
+            items = _load_items(data_dir=data_dir)
             for item in items:
                 item["cursor"] = None
-            _save_items(items)
+            _save_items(items, data_dir=data_dir)
 
-        refresh_all()
-        existing = load_df()
-        df, errors, stats = sync_all_transactions(existing)
+        refresh_all(cfg=cfg, data_dir=data_dir)
+        existing = load_df(current_user)
+        df, errors, stats = sync_all_transactions(existing, cfg=cfg, data_dir=data_dir)
         if stats["added"] > 0:
             df = categorize_transactions(df)
-            # Derive transaction_type from amount sign for rows missing it
-            # (Plaid: positive expense_amount = money out = expense)
             if "transaction_type" not in df.columns:
                 df["transaction_type"] = None
             mask = df["transaction_type"].isna() | (df["transaction_type"].astype(str) == "None")
             df.loc[mask & (df["expense_amount"] >= 0), "transaction_type"] = "expense"
             df.loc[mask & (df["expense_amount"] < 0),  "transaction_type"] = "income"
-            save_df(df)
+            save_df(current_user, df)
         return {"ok": True, "stats": stats, "errors": errors}
     except Exception as e:
         raise HTTPException(500, str(e))
 
 
 @app.delete("/api/plaid/accounts/{item_id}")
-async def plaid_remove_account(item_id: str) -> dict:
+async def plaid_remove_account(item_id: str, current_user: str = Depends(get_current_user)) -> dict:
     """Unlink a Plaid institution by item_id."""
     try:
         from plaid_client import remove_account
-        remove_account(item_id)
+        remove_account(item_id, data_dir=str(_user_dir(current_user)))
         return {"ok": True}
     except Exception as e:
         raise HTTPException(500, str(e))
 
 
 # ---------------------------------------------------------------------------
-# Serve the React frontend as static files — must be last so /api/* routes
-# are registered before the catch-all StaticFiles handler.
+# Feedback
 # ---------------------------------------------------------------------------
 
-app.mount("/", StaticFiles(directory=str(LL_DIR), html=True), name="static")
+FEEDBACK_FILE = DATA_DIR / "feedback.json"
+
+def _load_feedback() -> list:
+    if FEEDBACK_FILE.exists():
+        return json.loads(FEEDBACK_FILE.read_text())
+    return []
+
+def _save_feedback(entries: list) -> None:
+    FEEDBACK_FILE.write_text(json.dumps(entries, indent=2))
+
+@app.post("/api/feedback")
+async def submit_feedback(body: dict[str, Any], current_user: str = Depends(get_current_user)) -> dict:
+    message = (body.get("message") or "").strip()
+    if not message:
+        raise HTTPException(400, "message required")
+    users = json.loads(USERS_FILE.read_text()) if USERS_FILE.exists() else {}
+    display_name = users.get(current_user, {}).get("display_name") or current_user
+    entry = {
+        "id":           secrets.token_hex(6),
+        "username":     current_user,
+        "display_name": display_name,
+        "category":     body.get("category") or "general",
+        "message":      message,
+        "timestamp":    datetime.datetime.utcnow().isoformat() + "Z",
+    }
+    entries = _load_feedback()
+    entries.append(entry)
+    _save_feedback(entries)
+    return {"ok": True}
+
+@app.get("/api/feedback")
+def get_feedback(current_user: str = Depends(get_current_user)) -> dict:
+    users = json.loads(USERS_FILE.read_text()) if USERS_FILE.exists() else {}
+    is_admin = users.get(current_user, {}).get("is_admin", False)
+    entries = _load_feedback()
+    if not is_admin:
+        entries = [e for e in entries if e.get("username") == current_user]
+    return {"entries": entries, "is_admin": is_admin}
+
+
+# ---------------------------------------------------------------------------
+# Serve the React frontend — must be last so /api/* routes take priority.
+#
+# Auth rules:
+#   /login        — always public (the login page itself)
+#   /*.js/jsx/css — always served (static assets; API 401s handle the rest)
+#   everything else — redirect to /login if no valid session
+# ---------------------------------------------------------------------------
+
+@app.get("/login")
+def serve_login() -> FileResponse:
+    return FileResponse(LL_DIR / "login.html")
+
+
+@app.get("/{filename:path}")
+def serve_frontend(filename: str = "", request: Request = None) -> Response:
+    path = LL_DIR / filename if filename else LL_DIR / "index.html"
+
+    # Require auth for HTML page requests; static assets (js/css/jsx) are open
+    is_asset = path.suffix in (".js", ".jsx", ".css", ".png", ".ico", ".svg", ".woff", ".woff2")
+    if not is_asset:
+        token   = request.cookies.get(SESSION_COOKIE) if request else None
+        session = _sessions.get(token) if token else None
+        if not session or datetime.datetime.utcnow() > session.get("expires", datetime.datetime.min):
+            return RedirectResponse("/login")
+
+    # For .jsx requests, serve the pre-compiled .js.compiled file (auto-recompile if stale)
+    if path.suffix == ".jsx" and path.name in JSX_FILES:
+        try:
+            compiled = _ensure_compiled(path.name)
+            resp = FileResponse(compiled, media_type="application/javascript")
+            resp.headers["Cache-Control"] = "no-store"
+            return resp
+        except Exception as e:
+            print(f"Compile error for {path.name}: {e}")
+            # Fall through to serve raw JSX as fallback
+
+    if not path.exists() or not path.is_file():
+        path = LL_DIR / "index.html"
+
+    resp = FileResponse(path)
+    if path.suffix in (".js", ".jsx", ".css"):
+        resp.headers["Cache-Control"] = "no-store"
+    return resp
 
 
 # ---------------------------------------------------------------------------

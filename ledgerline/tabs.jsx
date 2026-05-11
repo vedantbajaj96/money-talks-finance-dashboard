@@ -6,6 +6,19 @@ const { ACCOUNTS, CATEGORIES, MONTHS, TRANSACTIONS, RECURRING, NET_WORTH_HISTORY
   txnsForMonth, sumByCategory, monthSummary, fmt, catById, acctById } = window.FIN;
 const { DonutChart, StackedBarChart, AreaChart, Sparkline, BarList } = window;
 
+// Live categories cache — initialized from bootstrap data, refreshed after edits.
+// CategoryPicker reads this so reorders/renames show immediately without page reload.
+let _liveCategories = [...CATEGORIES];
+async function refreshLiveCategories() {
+  try {
+    const res  = await fetch('/api/categories');
+    const data = await res.json();
+    if (data.categories) {
+      _liveCategories = data.categories.filter(c => c.id !== 'transfer' && c.id !== 'savings');
+    }
+  } catch(e) { /* keep existing */ }
+}
+
 const fmtMoney = (v) => fmt(v, { decimals: 0 });
 const fmtMoney2 = (v) => fmt(v, { decimals: 2 });
 const fmtAbbr = (v) => fmt(v, { decimals: 0, abbr: true });
@@ -170,7 +183,7 @@ function CategoryPicker({ value, onChange }) {
         <>
           <div className="cat-overlay" onClick={() => setOpen(false)} />
           <div className="cat-menu">
-            {CATEGORIES.filter((c) => c.id !== 'transfer').map((c) => (
+            {_liveCategories.map((c) => (
               <button key={c.id} className="cat-menu-item" onClick={() => { onChange(c.id); setOpen(false); }}>
                 <span className="cat-dot" style={{ background: c.color }} />
                 {c.name}
@@ -205,10 +218,31 @@ function TransactionsTab({ monthKey, txnOverrides, setTxnOverrides, search: glob
     return true;
   });
 
-  const totalIn = filtered.filter((t) => t.amount > 0).reduce((s, t) => s + t.amount, 0);
-  const totalOut = filtered.filter((t) => t.amount < 0).reduce((s, t) => s + Math.abs(t.amount), 0);
+  const nonTransfer = filtered.filter((t) => t.category !== 'transfer');
+  const totalIn  = nonTransfer.filter((t) => t.amount > 0).reduce((s, t) => s + t.amount, 0);
+  const totalOut = nonTransfer.filter((t) => t.amount < 0).reduce((s, t) => s + Math.abs(t.amount), 0);
 
-  const recat = (id, cat) => setTxnOverrides({ ...txnOverrides, [id]: cat });
+  const [autoMsg, setAutoMsg] = React.useState(null);
+
+  const recat = async (id, cat) => {
+    // Optimistic update
+    setTxnOverrides(prev => ({ ...prev, [id]: cat }));
+    try {
+      const res = await fetch(`/api/transactions/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ category: cat }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.auto_applied > 0) {
+          setAutoMsg(`Also updated ${data.auto_applied} similar transaction${data.auto_applied > 1 ? 's' : ''}`);
+          // Reload after a moment so auto-applied changes are visible
+          setTimeout(() => window.location.reload(), 2000);
+        }
+      }
+    } catch(e) { /* optimistic, ignore */ }
+  };
 
   return (
     <div className="tab-body">
@@ -224,7 +258,7 @@ function TransactionsTab({ monthKey, txnOverrides, setTxnOverrides, search: glob
           </div>
           <select value={catFilter} onChange={(e) => setCatFilter(e.target.value)}>
             <option value="all">All categories</option>
-            {CATEGORIES.map((c) => (
+            {_liveCategories.map((c) => (
               <option key={c.id} value={c.id}>{c.name}</option>
             ))}
           </select>
@@ -243,6 +277,17 @@ function TransactionsTab({ monthKey, txnOverrides, setTxnOverrides, search: glob
         <TxnList txns={filtered} onRecategorize={recat} />
         {filtered.length === 0 && <div className="empty">No transactions match your filters.</div>}
       </div>
+      {autoMsg && (
+        <div style={{
+          position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)',
+          background: 'var(--surface)', border: '1px solid var(--accent)',
+          borderRadius: 12, padding: '10px 20px', fontSize: 13, fontWeight: 500,
+          color: 'var(--ink)', boxShadow: '0 4px 20px rgba(0,0,0,0.15)', zIndex: 9999,
+          display: 'flex', alignItems: 'center', gap: 8,
+        }}>
+          <span style={{ color: 'var(--accent)' }}>✓</span> {autoMsg}
+        </div>
+      )}
     </div>
   );
 }
@@ -591,6 +636,10 @@ function AccountsTab() {
       });
       const data = await res.json();
       setSyncResult({ ...data, full });
+      // Reload the page after a successful sync so window.FIN reflects new transactions
+      if (data.ok && (data.stats?.added > 0 || data.stats?.modified > 0 || data.stats?.removed > 0)) {
+        setTimeout(() => window.location.reload(), 1200);
+      }
     } catch (e) {
       setSyncResult({ ok: false, error: String(e) });
     } finally {
@@ -1126,6 +1175,330 @@ function ChatTab() {
   );
 }
 
+// ─── Plaid sync card — lives in Settings, defined outside to avoid remounting
+function PlaidSyncCard() {
+  const { useState } = React;
+  const [syncing, setSyncing]   = useState(false);
+  const [result,  setResult]    = useState(null);
+
+  async function sync(full = false) {
+    setSyncing(true); setResult(null);
+    try {
+      const res  = await fetch('/api/plaid/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ full }),
+      });
+      const data = await res.json();
+      setResult({ ...data, full });
+      if (data.ok && (data.stats?.added > 0 || data.stats?.modified > 0 || data.stats?.removed > 0)) {
+        setTimeout(() => window.location.reload(), 1200);
+      }
+    } catch (e) {
+      setResult({ ok: false, error: String(e) });
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  return (
+    <SettingsCard title="Plaid — Sync Transactions">
+      <div style={{ display: 'grid', gap: 12 }}>
+        <div style={{ fontSize: 13, color: 'var(--ink-3)', lineHeight: 1.6 }}>
+          Pull the latest transactions from all your linked bank accounts.
+          <strong> Sync now</strong> fetches only new changes (fast).
+          <strong> Full re-sync</strong> re-pulls your entire history.
+        </div>
+
+        {result && (
+          <div style={{
+            padding: '12px 16px', borderRadius: 10, fontSize: 13,
+            background: result.ok ? 'rgba(94,201,138,0.08)' : 'rgba(239,68,68,0.08)',
+            border: `1px solid ${result.ok ? 'rgba(94,201,138,0.3)' : 'rgba(239,68,68,0.3)'}`,
+            color: result.ok ? 'var(--ink)' : '#f87171',
+          }}>
+            {result.ok
+              ? `✓ ${result.full ? 'Full re-sync' : 'Synced'} — ${result.stats?.added ?? 0} new, ${result.stats?.modified ?? 0} updated, ${result.stats?.removed ?? 0} removed${result.stats?.added > 0 ? ' — reloading…' : ''}`
+              : `⚠ ${result.error || 'Sync failed'}`}
+            {result.ok && result.errors?.length > 0 && (
+              <div style={{ marginTop: 6, color: 'var(--ink-3)' }}>
+                {result.errors.map((e, i) => <div key={i}>{e}</div>)}
+              </div>
+            )}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button onClick={() => sync(false)} disabled={syncing} style={{
+            flex: 1, background: 'var(--accent)', color: '#052015', border: 'none',
+            borderRadius: 10, padding: '11px 0', fontWeight: 600, fontSize: 14,
+            fontFamily: 'inherit', cursor: syncing ? 'default' : 'pointer', opacity: syncing ? 0.6 : 1,
+          }}>{syncing ? 'Syncing…' : 'Sync now'}</button>
+          <button onClick={() => sync(true)} disabled={syncing} style={{
+            flex: 1, background: 'transparent', color: 'var(--ink-2)',
+            border: '1px solid var(--line)', borderRadius: 10, padding: '11px 0',
+            fontWeight: 500, fontSize: 14, fontFamily: 'inherit',
+            cursor: syncing ? 'default' : 'pointer', opacity: syncing ? 0.6 : 1,
+          }}>Full re-sync</button>
+        </div>
+      </div>
+    </SettingsCard>
+  );
+}
+
+// ─── Settings helpers — defined OUTSIDE SettingsTab so their identity is
+//     stable across renders. If defined inside, React remounts children
+//     (including focused inputs) on every state update.
+function SettingsCard({ title, children }) {
+  return (
+    <div style={{
+      background: 'var(--surface)', borderRadius: 16,
+      border: '1px solid var(--line)', padding: '24px 28px', marginBottom: 20,
+    }}>
+      <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 20, color: 'var(--ink)' }}>
+        {title}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function SettingsLabel({ children }) {
+  return (
+    <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-3)', marginBottom: 6, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+      {children}
+    </div>
+  );
+}
+
+function StatusDot({ active }) {
+  return (
+    <span style={{
+      display: 'inline-block', width: 7, height: 7, borderRadius: '50%',
+      background: active ? 'var(--accent)' : 'var(--line-2)', marginRight: 6,
+    }} />
+  );
+}
+
+// ─── Categories Manager Card ────────────────────────────────────────────────
+function CategoriesManagerCard() {
+  const { useState, useEffect, useRef } = React;
+  const COLORS = ['#818cf8','#fb7185','#5ec98a','#67e8f9','#d97757','#a3e635','#fbbf24',
+                  '#a78bfa','#ec4899','#22d3ee','#f97316','#e879f9','#34d399','#6b8aab','#94a3b8'];
+  const SYSTEM_IDS = new Set(['transfer','savings','income']);
+
+  const [cats, setCats]         = useState([]);
+  const [editId, setEditId]     = useState(null);  // which row is open for color picker
+  const [newName, setNewName]   = useState('');
+  const [newColor, setNewColor] = useState('#818cf8');
+  const [addErr, setAddErr]     = useState('');
+  const [delErr, setDelErr]     = useState({});    // {cat_id: message}
+  const [saving, setSaving]     = useState({});
+
+  useEffect(() => {
+    fetch('/api/categories').then(r => r.json()).then(d => {
+      setCats((d.categories || []).filter(c => !SYSTEM_IDS.has(c.id)));
+    });
+  }, []);
+
+  // ── Helpers ──────────────────────────────────────────────────────
+  async function patchCat(id, patch) {
+    setSaving(p => ({...p, [id]: true}));
+    await fetch(`/api/categories/${id}`, {
+      method: 'PATCH', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(patch),
+    });
+    setSaving(p => ({...p, [id]: false}));
+    refreshLiveCategories();
+  }
+
+  function updateLocal(id, patch) {
+    setCats(prev => prev.map(c => c.id === id ? {...c, ...patch} : c));
+  }
+
+  async function move(idx, dir) {
+    const next = [...cats];
+    const swap = idx + dir;
+    if (swap < 0 || swap >= next.length) return;
+    [next[idx], next[swap]] = [next[swap], next[idx]];
+    setCats(next);
+    await fetch('/api/categories/reorder', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ order: next.map(c => c.id) }),
+    });
+    refreshLiveCategories();
+  }
+
+  async function addCat() {
+    if (!newName.trim()) return;
+    setAddErr('');
+    const res  = await fetch('/api/categories', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ name: newName.trim(), color: newColor, group: 'variable' }),
+    });
+    const data = await res.json();
+    if (!res.ok) { setAddErr(data.detail || 'Failed'); return; }
+    setCats(prev => [...prev, data.category]);
+    setNewName(''); setNewColor('#818cf8');
+    refreshLiveCategories();
+  }
+
+  async function deleteCat(id) {
+    setDelErr(p => ({...p, [id]: ''}));
+    const res  = await fetch(`/api/categories/${id}`, { method: 'DELETE' });
+    const data = await res.json();
+    if (!res.ok) {
+      setDelErr(p => ({...p, [id]: data.detail || 'Cannot delete'}));
+      return;
+    }
+    setCats(prev => prev.filter(c => c.id !== id));
+    refreshLiveCategories();
+  }
+
+  const rowStyle = {
+    display: 'grid', gridTemplateColumns: '28px 1fr 36px 36px 28px',
+    alignItems: 'center', gap: 8, padding: '8px 12px',
+    borderBottom: '1px solid var(--line)',
+  };
+
+  return (
+    <SettingsCard title="Categories">
+      <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>
+        Click the color dot to change color. Edit the name inline. Use ↑↓ to reorder.
+        Built-in categories can be renamed and recolored but not deleted.
+      </div>
+
+      <div style={{ borderRadius: 10, border: '1px solid var(--line)', overflow: 'hidden' }}>
+
+        {cats.map((c, idx) => (
+          <div key={c.id}>
+            <div style={{...rowStyle, background: idx % 2 === 0 ? 'var(--bg)' : 'transparent'}}>
+
+              {/* Color swatch — click to toggle picker */}
+              <button onClick={() => setEditId(editId === c.id ? null : c.id)} style={{
+                width: 22, height: 22, borderRadius: 6, background: c.color,
+                border: editId === c.id ? `2px solid var(--ink)` : '2px solid transparent',
+                cursor: 'pointer', flexShrink: 0,
+              }} title="Change color" />
+
+              {/* Name input */}
+              <input
+                defaultValue={c.name}
+                onBlur={e => {
+                  const v = e.target.value.trim();
+                  if (v && v !== c.name) { updateLocal(c.id, {name: v}); patchCat(c.id, {name: v}); }
+                }}
+                style={{
+                  background: 'transparent', border: 'none', outline: 'none',
+                  fontSize: 14, color: 'var(--ink)', fontFamily: 'inherit',
+                  fontWeight: 500, width: '100%',
+                }}
+              />
+
+              {/* Up / Down */}
+              <button onClick={() => move(idx, -1)} disabled={idx === 0} style={{
+                background: 'none', border: 'none', cursor: idx === 0 ? 'default' : 'pointer',
+                color: idx === 0 ? 'var(--line-2)' : 'var(--muted)', fontSize: 14, padding: 0,
+              }}>↑</button>
+              <button onClick={() => move(idx, 1)} disabled={idx === cats.length - 1} style={{
+                background: 'none', border: 'none',
+                cursor: idx === cats.length - 1 ? 'default' : 'pointer',
+                color: idx === cats.length - 1 ? 'var(--line-2)' : 'var(--muted)', fontSize: 14, padding: 0,
+              }}>↓</button>
+
+              {/* Delete — only for custom */}
+              {!c.builtin ? (
+                <button onClick={() => deleteCat(c.id)} title="Delete category" style={{
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  color: 'var(--muted)', fontSize: 16, padding: 0, lineHeight: 1,
+                }}>×</button>
+              ) : (
+                <div style={{ width: 28 }} />
+              )}
+            </div>
+
+            {/* Inline color picker */}
+            {editId === c.id && (
+              <div style={{
+                padding: '10px 12px', background: 'var(--surface)',
+                borderBottom: '1px solid var(--line)',
+                display: 'flex', flexWrap: 'wrap', gap: 6,
+              }}>
+                {COLORS.map(col => (
+                  <button key={col} onClick={() => {
+                    updateLocal(c.id, {color: col});
+                    patchCat(c.id, {color: col});
+                    setEditId(null);
+                  }} style={{
+                    width: 24, height: 24, borderRadius: 6, background: col, border: 'none',
+                    cursor: 'pointer', outline: c.color === col ? `2px solid ${col}` : 'none',
+                    outlineOffset: 2, opacity: c.color === col ? 1 : 0.65,
+                  }} />
+                ))}
+              </div>
+            )}
+
+            {/* Delete error */}
+            {delErr[c.id] && (
+              <div style={{
+                padding: '6px 12px', fontSize: 12, color: '#ef4444',
+                background: 'rgba(239,68,68,0.06)', borderBottom: '1px solid var(--line)',
+              }}>⚠ {delErr[c.id]}</div>
+            )}
+          </div>
+        ))}
+
+        {/* Add new row */}
+        <div style={{...rowStyle, gridTemplateColumns: '28px 1fr auto', background: 'var(--surface)'}}>
+          <button onClick={() => setEditId(editId === '__new__' ? null : '__new__')} style={{
+            width: 22, height: 22, borderRadius: 6, background: newColor,
+            border: editId === '__new__' ? '2px solid var(--ink)' : '2px solid transparent',
+            cursor: 'pointer', flexShrink: 0,
+          }} />
+          <input
+            value={newName} onChange={e => { setNewName(e.target.value); setAddErr(''); }}
+            onKeyDown={e => e.key === 'Enter' && addCat()}
+            placeholder="Add a category…"
+            style={{
+              background: 'transparent', border: 'none', outline: 'none',
+              fontSize: 14, color: 'var(--ink)', fontFamily: 'inherit',
+              fontWeight: 400, width: '100%',
+            }}
+          />
+          <button onClick={addCat} disabled={!newName.trim()} style={{
+            background: newName.trim() ? 'var(--accent)' : 'var(--line)',
+            color: newName.trim() ? '#052015' : 'var(--muted)',
+            border: 'none', borderRadius: 8, padding: '5px 12px',
+            fontSize: 12, fontWeight: 600, cursor: newName.trim() ? 'pointer' : 'default',
+            fontFamily: 'inherit', whiteSpace: 'nowrap',
+          }}>Add</button>
+        </div>
+
+        {editId === '__new__' && (
+          <div style={{
+            padding: '10px 12px', background: 'var(--surface)',
+            borderTop: '1px solid var(--line)',
+            display: 'flex', flexWrap: 'wrap', gap: 6,
+          }}>
+            {COLORS.map(col => (
+              <button key={col} onClick={() => { setNewColor(col); setEditId(null); }} style={{
+                width: 24, height: 24, borderRadius: 6, background: col, border: 'none',
+                cursor: 'pointer', outline: newColor === col ? `2px solid ${col}` : 'none',
+                outlineOffset: 2, opacity: newColor === col ? 1 : 0.65,
+              }} />
+            ))}
+          </div>
+        )}
+
+        {addErr && (
+          <div style={{ padding: '6px 12px', fontSize: 12, color: '#ef4444',
+            background: 'rgba(239,68,68,0.06)' }}>⚠ {addErr}</div>
+        )}
+      </div>
+    </SettingsCard>
+  );
+}
+
 // ─── Settings Tab ─────────────────────────────────────────────────────────
 function SettingsTab() {
   const { useState, useEffect, useRef } = React;
@@ -1202,30 +1575,10 @@ function SettingsTab() {
     setTimeout(() => setSaved(false), 2500);
   }
 
-  const Card = ({ title, children }) => (
-    <div style={{
-      background: 'var(--surface)', borderRadius: 16,
-      border: '1px solid var(--border)', padding: '24px 28px', marginBottom: 20,
-    }}>
-      <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 20, color: 'var(--text)' }}>
-        {title}
-      </div>
-      {children}
-    </div>
-  );
-
-  const Label = ({ children }) => (
-    <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)', marginBottom: 6, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
-      {children}
-    </div>
-  );
-
-  const StatusDot = ({ active }) => (
-    <span style={{
-      display: 'inline-block', width: 7, height: 7, borderRadius: '50%',
-      background: active ? 'var(--accent)' : 'var(--border)', marginRight: 6,
-    }} />
-  );
+  // Card, Label, StatusDot are defined outside this function (above) so
+  // React doesn't remount them — and their children — on every state change.
+  const Card = SettingsCard;
+  const Label = SettingsLabel;
 
   return (
     <div style={{ maxWidth: 640, padding: '8px 0' }}>
@@ -1378,6 +1731,9 @@ function SettingsTab() {
           </button>
         </div>
       </Card>
+      <PlaidSyncCard />
+      <CategoriesManagerCard />
+
       <Card title="Data Quality">
         <div style={{ display: 'grid', gap: 16 }}>
           <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.6 }}>
@@ -1424,6 +1780,331 @@ function SettingsTab() {
           </button>
         </div>
       </Card>
+
+    </div>
+  );
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// REVIEW TAB
+// ═══════════════════════════════════════════════════════════════════
+function ReviewTab() {
+  const { useState, useEffect, useCallback } = React;
+
+  const [state, setState]     = useState(null);   // {batch, total, approved, remaining}
+  const [edits, setEdits]     = useState({});      // {txn_id: new_category}
+  const [approving, setApp]   = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    fetch('/api/review')
+      .then(r => r.json())
+      .then(d => { setState(d); setEdits({}); })
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function approveBatch() {
+    if (!state?.batch?.length) return;
+    setApp(true);
+    const ids = state.batch.map(t => t.id);
+    await fetch('/api/review/approve', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids, overrides: edits }),
+    });
+    setApp(false);
+    load();
+  }
+
+  if (loading) return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 300, color: 'var(--muted)', fontSize: 14 }}>
+      Loading…
+    </div>
+  );
+
+  const { batch = [], total = 0, approved = 0, remaining = 0 } = state || {};
+  const pct = total > 0 ? Math.round((approved / total) * 100) : 100;
+  const allDone = remaining === 0;
+
+  return (
+    <div className="tab-body" style={{ maxWidth: 680, margin: '0 auto' }}>
+
+      {/* Progress header */}
+      <div style={{
+        background: 'var(--surface)', borderRadius: 16,
+        border: '1px solid var(--line)', padding: '20px 24px',
+        marginBottom: 20,
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)' }}>Transaction Review</div>
+            <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 2 }}>
+              {allDone ? 'All caught up!' : `${approved} of ${total} approved · ${remaining} remaining`}
+            </div>
+          </div>
+          <div style={{
+            fontSize: 22, fontWeight: 700, color: 'var(--accent)',
+            fontVariantNumeric: 'tabular-nums',
+          }}>{pct}%</div>
+        </div>
+        {/* Progress bar */}
+        <div style={{ height: 6, background: 'var(--line)', borderRadius: 3, overflow: 'hidden' }}>
+          <div style={{
+            height: '100%', width: `${pct}%`, borderRadius: 3,
+            background: 'linear-gradient(90deg, var(--accent), var(--accent2, var(--accent)))',
+            transition: 'width 0.4s ease',
+          }} />
+        </div>
+      </div>
+
+      {allDone ? (
+        <div style={{
+          background: 'var(--surface)', borderRadius: 16,
+          border: '1px solid var(--line)', padding: '48px 24px',
+          textAlign: 'center',
+        }}>
+          <div style={{ fontSize: 40, marginBottom: 12 }}>🎉</div>
+          <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)', marginBottom: 6 }}>You're all caught up!</div>
+          <div style={{ fontSize: 13, color: 'var(--muted)' }}>
+            All {total} transactions reviewed. New ones will appear here after your next sync.
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* Batch card */}
+          <div style={{
+            background: 'var(--surface)', borderRadius: 16,
+            border: '1px solid var(--line)', overflow: 'hidden',
+            marginBottom: 16,
+          }}>
+            <div style={{
+              padding: '14px 20px',
+              borderBottom: '1px solid var(--line)',
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>
+                Next {batch.length} transactions
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+                Set category, then approve
+              </div>
+            </div>
+
+            {batch.map((t, i) => {
+              const cat = edits[t.id] || t.category;
+              const catInfo = FIN.catById(cat);
+              const isExpense = t.amount >= 0;
+              return (
+                <div key={t.id} style={{
+                  display: 'grid',
+                  gridTemplateColumns: '80px 1fr auto',
+                  alignItems: 'center',
+                  gap: 12,
+                  padding: '12px 20px',
+                  borderBottom: i < batch.length - 1 ? '1px solid var(--line)' : 'none',
+                  background: i % 2 === 0 ? 'transparent' : 'color-mix(in srgb, var(--line) 30%, transparent)',
+                }}>
+                  {/* Date */}
+                  <div style={{ fontSize: 12, color: 'var(--muted)', fontVariantNumeric: 'tabular-nums' }}>
+                    {t.date.slice(5)}
+                  </div>
+
+                  {/* Description + category picker */}
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{
+                      fontSize: 13, fontWeight: 500, color: 'var(--ink)',
+                      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                      marginBottom: 4,
+                    }}>{t.description}</div>
+                    <CategoryPicker
+                      value={cat}
+                      onChange={(c) => setEdits(prev => ({ ...prev, [t.id]: c }))}
+                    />
+                  </div>
+
+                  {/* Amount */}
+                  <div style={{
+                    fontSize: 14, fontWeight: 600,
+                    color: isExpense ? 'var(--ink)' : 'var(--accent)',
+                    fontVariantNumeric: 'tabular-nums',
+                    whiteSpace: 'nowrap',
+                  }}>
+                    {isExpense ? '−' : '+'}{FIN.fmt(Math.abs(t.amount))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Approve button */}
+          <button onClick={approveBatch} disabled={approving} style={{
+            width: '100%', padding: '14px 0',
+            background: 'var(--accent)', color: '#052015',
+            border: 'none', borderRadius: 14,
+            fontSize: 15, fontWeight: 700,
+            fontFamily: 'inherit', cursor: approving ? 'default' : 'pointer',
+            opacity: approving ? 0.7 : 1,
+            letterSpacing: '0.01em',
+          }}>
+            {approving ? 'Saving…' : `✓ Approve these ${batch.length} transactions`}
+          </button>
+          <div style={{ textAlign: 'center', marginTop: 10, fontSize: 12, color: 'var(--muted)' }}>
+            Approved transactions are locked and won't be changed by the system
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// FEEDBACK TAB
+// ═══════════════════════════════════════════════════════════════════
+function FeedbackTab() {
+  const { useState, useEffect } = React;
+
+  const CATS = [
+    { id: 'bug',     label: '🐛 Bug',            desc: 'Something is broken or wrong' },
+    { id: 'feature', label: '✨ Feature request', desc: "Something you'd like to see" },
+    { id: 'general', label: '💬 General',         desc: 'Anything else' },
+  ];
+
+  const [cat, setCat]         = useState('general');
+  const [msg, setMsg]         = useState('');
+  const [sending, setSending] = useState(false);
+  const [sent, setSent]       = useState(false);
+  const [err, setErr]         = useState('');
+  const [entries, setEntries] = useState([]);
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    fetch('/api/feedback')
+      .then(r => r.json())
+      .then(d => { setEntries(d.entries || []); setIsAdmin(d.is_admin); });
+  }, [sent]);
+
+  async function submit() {
+    if (!msg.trim()) return;
+    setSending(true); setErr('');
+    try {
+      const res = await fetch('/api/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ category: cat, message: msg.trim() }),
+      });
+      if (res.ok) { setSent(true); setMsg(''); setTimeout(() => setSent(false), 3000); }
+      else { const d = await res.json(); setErr(d.detail || 'Failed to send'); }
+    } catch(e) { setErr(String(e)); }
+    finally { setSending(false); }
+  }
+
+  const catColors = { bug: '#ef4444', feature: '#a78bfa', general: '#67e8f9' };
+  const catLabel  = { bug: 'Bug', feature: 'Feature', general: 'General' };
+
+  return (
+    <div className="tab-body" style={{ maxWidth: 680, margin: '0 auto' }}>
+
+      {/* Submit form */}
+      <div style={{
+        background: 'var(--surface)', borderRadius: 16,
+        border: '1px solid var(--line)', padding: '24px 28px', marginBottom: 20,
+      }}>
+        <div style={{ fontWeight: 600, fontSize: 15, color: 'var(--ink)', marginBottom: 18 }}>
+          Share feedback
+        </div>
+
+        {/* Category selector */}
+        <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+          {CATS.map(c => (
+            <button key={c.id} onClick={() => setCat(c.id)} style={{
+              padding: '7px 14px', borderRadius: 20, fontSize: 13, fontWeight: 500,
+              border: `1px solid ${cat === c.id ? catColors[c.id] : 'var(--line)'}`,
+              background: cat === c.id ? catColors[c.id] + '18' : 'transparent',
+              color: cat === c.id ? catColors[c.id] : 'var(--muted)',
+              cursor: 'pointer', fontFamily: 'inherit',
+            }}>{c.label}</button>
+          ))}
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>
+          {CATS.find(c => c.id === cat)?.desc}
+        </div>
+
+        <textarea
+          value={msg}
+          onChange={e => setMsg(e.target.value)}
+          placeholder="Describe what you'd like to share…"
+          rows={4}
+          style={{
+            width: '100%', padding: '12px 14px', borderRadius: 10, fontSize: 14,
+            border: '1px solid var(--line)', background: 'var(--bg)', color: 'var(--ink)',
+            fontFamily: 'inherit', resize: 'vertical', outline: 'none',
+            boxSizing: 'border-box', lineHeight: 1.5,
+          }}
+        />
+
+        {err && <div style={{ fontSize: 12, color: '#ef4444', marginTop: 6 }}>{err}</div>}
+
+        <button onClick={submit} disabled={sending || !msg.trim()} style={{
+          marginTop: 12, width: '100%', padding: '12px 0',
+          background: sent ? 'color-mix(in srgb, var(--accent) 15%, transparent)' : 'var(--accent)',
+          color: sent ? 'var(--accent)' : '#052015',
+          border: sent ? '1px solid var(--accent)' : 'none',
+          borderRadius: 10, fontSize: 14, fontWeight: 600,
+          fontFamily: 'inherit', cursor: sending || !msg.trim() ? 'default' : 'pointer',
+          opacity: sending || !msg.trim() ? 0.5 : 1,
+        }}>
+          {sending ? 'Sending…' : sent ? '✓ Sent — thanks!' : 'Send feedback'}
+        </button>
+      </div>
+
+      {/* Inbox — admin sees all, users see their own */}
+      {entries.length > 0 && (
+        <div style={{
+          background: 'var(--surface)', borderRadius: 16,
+          border: '1px solid var(--line)', overflow: 'hidden',
+        }}>
+          <div style={{
+            padding: '14px 20px', borderBottom: '1px solid var(--line)',
+            fontSize: 13, fontWeight: 600, color: 'var(--ink)',
+          }}>
+            {isAdmin ? `All feedback (${entries.length})` : `Your submissions (${entries.length})`}
+          </div>
+          {[...entries].reverse().map((e, i) => (
+            <div key={e.id} style={{
+              padding: '14px 20px',
+              borderBottom: i < entries.length - 1 ? '1px solid var(--line)' : 'none',
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {isAdmin && (
+                    <span style={{
+                      fontSize: 12, fontWeight: 600, color: 'var(--ink)',
+                      background: 'var(--bg)', border: '1px solid var(--line)',
+                      borderRadius: 6, padding: '2px 7px',
+                    }}>{e.display_name}</span>
+                  )}
+                  <span style={{
+                    fontSize: 11, fontWeight: 500,
+                    color: catColors[e.category] || 'var(--muted)',
+                    background: (catColors[e.category] || '#94a3b8') + '18',
+                    border: `1px solid ${(catColors[e.category] || '#94a3b8')}40`,
+                    borderRadius: 10, padding: '2px 8px',
+                  }}>{catLabel[e.category] || e.category}</span>
+                </div>
+                <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+                  {new Date(e.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                </span>
+              </div>
+              <div style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.6 }}>{e.message}</div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -1431,6 +2112,6 @@ function SettingsTab() {
 Object.assign(window, {
   OverviewTab, TransactionsTab, SpendingTab, IncomeTab, CashFlowTab,
   NetWorthTab, AccountsTab, RecurringTab, CategoriesTab, TrendsTab,
-  ChatTab, SettingsTab, TxnList, AccountList,
+  ChatTab, SettingsTab, TxnList, AccountList, ReviewTab, FeedbackTab,
 });
 })();

@@ -68,8 +68,8 @@ function acctById(id) {
 
 async function loadJSX(url) {
   const res  = await fetch(url);
-  const src  = await res.text();
-  const code = Babel.transform(src, { presets: ['react'] }).code;
+  // Server pre-compiles JSX → plain JS; we just eval the result directly.
+  const code = await res.text();
   // eslint-disable-next-line no-eval
   eval(code);
 }
@@ -98,6 +98,7 @@ async function bootstrap() {
   let data;
   try {
     const res = await fetch('/api/fin');
+    if (res.status === 401) { window.location.href = '/login'; return; }
     data = await res.json();
   } catch (e) {
     document.getElementById('root').innerHTML = `
@@ -111,34 +112,15 @@ async function bootstrap() {
     return;
   }
 
-  if (!data.hasData) {
-    document.getElementById('root').innerHTML = `
-      <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;
-        height:100vh;gap:16px;font-family:Inter,sans-serif;background:#f6f5f2;">
-        <div style="width:64px;height:64px;border-radius:16px;background:#f3f4f6;
-          display:flex;align-items:center;justify-content:center;font-size:32px;">📁</div>
-        <div style="text-align:center;">
-          <h2 style="color:#14181f;margin:0 0 6px 0;">No transactions yet</h2>
-          <p style="color:#7a8090;margin:0 0 20px 0;">Upload a bank CSV to get started.</p>
-          <a href="http://localhost:8501" target="_blank" style="
-            display:inline-block;background:#5ec98a;color:#052015;
-            padding:11px 22px;border-radius:9px;text-decoration:none;
-            font-weight:600;font-size:14px;font-family:Inter,sans-serif;
-          ">Open Upload App →</a>
-        </div>
-      </div>
-    `;
-    return;
-  }
-
-  // Populate window.FIN with real data + helper functions
+  // Populate window.FIN — use empty arrays when there's no data yet so the
+  // full app loads and the user can reach Settings to upload or connect Plaid.
   window.FIN = {
-    ACCOUNTS:          data.ACCOUNTS,
-    CATEGORIES:        data.CATEGORIES,
-    MONTHS:            data.MONTHS,
-    TRANSACTIONS:      data.TRANSACTIONS,
-    RECURRING:         data.RECURRING,
-    NET_WORTH_HISTORY: data.NET_WORTH_HISTORY,
+    ACCOUNTS:          data.ACCOUNTS          || [],
+    CATEGORIES:        data.CATEGORIES        || [],
+    MONTHS:            data.MONTHS            || [{ key: '', label: 'No data', short: '—' }],
+    TRANSACTIONS:      data.TRANSACTIONS      || [],
+    RECURRING:         data.RECURRING         || [],
+    NET_WORTH_HISTORY: data.NET_WORTH_HISTORY || [],
     txnsForMonth,
     sumByCategory,
     monthSummary,
@@ -148,10 +130,23 @@ async function bootstrap() {
   };
 
   // Load React components now that FIN is ready
-  await loadJSX('tweaks-panel.jsx');
-  await loadJSX('charts.jsx');
-  await loadJSX('tabs.jsx');
-  await loadJSX('app.jsx');
+  const files = ['tweaks-panel.jsx', 'charts.jsx', 'tabs.jsx', 'app.jsx'];
+  for (const file of files) {
+    try {
+      await loadJSX(file);
+    } catch (e) {
+      document.getElementById('root').innerHTML = `
+        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;
+          height:100vh;gap:12px;font-family:Inter,sans-serif;background:#f6f5f2;padding:20px;box-sizing:border-box;">
+          <div style="font-size:32px;">⚠️</div>
+          <h2 style="color:#14181f;margin:0;">Failed to load ${file}</h2>
+          <pre style="color:#ef4444;font-size:12px;background:#fff;padding:16px;border-radius:8px;
+            max-width:600px;overflow:auto;white-space:pre-wrap;">${String(e)}</pre>
+        </div>
+      `;
+      return;
+    }
+  }
 }
 
 bootstrap();
