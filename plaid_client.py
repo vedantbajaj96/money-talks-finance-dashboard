@@ -187,7 +187,8 @@ def create_link_token(cfg: dict | None = None, redirect_uri: str | None = None) 
     kwargs = dict(
         user=LinkTokenCreateRequestUser(client_user_id="local-user"),
         client_name="MoneyTalks",
-        products=[Products("transactions"), Products("investments")],
+        products=[Products("transactions")],
+        optional_products=[Products("investments")],
         country_codes=[CountryCode("US")],
         language="en",
     )
