@@ -3,7 +3,7 @@ server.py — FastAPI backend for the MoneyTalks dashboard.
 
 How it fits together
 --------------------
-The React frontend (ledgerline/) loads once and calls /api/fin to get all data.
+The React frontend (moneytalks/) loads once and calls /api/fin to get all data.
 Everything else is mutation: uploading CSVs, editing transactions, syncing Plaid.
 
 Data flow:
@@ -49,7 +49,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 
 BASE_DIR = Path(__file__).parent
 DATA_DIR = BASE_DIR / "data"
-LL_DIR   = BASE_DIR / "ledgerline"
+LL_DIR   = BASE_DIR / "moneytalks"
 
 USERS_FILE     = DATA_DIR / "users.json"
 SESSION_COOKIE = "mt_session"
@@ -344,6 +344,21 @@ def _config_file(username: str) -> Path:
 def _plaid_items_file(username: str) -> Path:
     return _user_dir(username) / "plaid_items.json"
 
+def _splits_file(username: str) -> Path:
+    return _user_dir(username) / "splits.json"
+
+def _load_splits(username: str) -> dict:
+    f = _splits_file(username)
+    if f.exists():
+        try:
+            return json.loads(f.read_text())
+        except Exception:
+            return {}
+    return {}
+
+def _save_splits(username: str, data: dict) -> None:
+    _splits_file(username).write_text(json.dumps(data, indent=2))
+
 
 # ---------------------------------------------------------------------------
 # DuckDB helpers
@@ -520,6 +535,28 @@ def build_fin_data(username: str) -> dict:
             "tags":     str(tags or ""),
         })
 
+    # ── APPLY SPLITS ──────────────────────────────────────────────────────
+    splits_data = _load_splits(username)
+    if splits_data:
+        expanded = []
+        for t in transactions:
+            if t["id"] in splits_data:
+                parts = splits_data[t["id"]]
+                for i, s in enumerate(parts):
+                    expanded.append({
+                        **t,
+                        "id":          f"{t['id']}_s{i}",
+                        "category":    s["category"],
+                        "amount":      round(float(s["amount"]), 2),
+                        "notes":       s.get("notes", ""),
+                        "is_split":    True,
+                        "parent_id":   t["id"],
+                        "split_label": f"{s.get('notes', '') or s['category']} ({i+1}/{len(parts)})",
+                    })
+            else:
+                expanded.append(t)
+        transactions = expanded
+
     # ── NET WORTH HISTORY ─────────────────────────────────────────────────
     nw_rows = conn.execute("""
         WITH monthly AS (
@@ -549,23 +586,74 @@ def build_fin_data(username: str) -> dict:
     # ── RECURRING ─────────────────────────────────────────────────────────
     recurring = []
     try:
-        import sys
+        import sys, calendar as _cal
         sys.path.insert(0, str(BASE_DIR))
         from subscriptions import detect_recurring
         df = pd.read_parquet(_data_file(username))
         rec_df = detect_recurring(df)
         if not rec_df.empty:
+            today = datetime.date.today()
             for _, row in rec_df.iterrows():
                 cat_id = map_category(str(row.get("category", "other")))
                 matches = df[df["description"] == row["description"]]
+                freq    = str(row.get("frequency", "Monthly"))
+                last    = row.get("last_charge")
+                # Convert last_charge to date object
+                if last is None:
+                    last_date = today
+                elif hasattr(last, 'date'):
+                    last_date = last.date()
+                elif hasattr(last, 'year'):
+                    last_date = last
+                else:
+                    try:
+                        last_date = datetime.date.fromisoformat(str(last))
+                    except Exception:
+                        last_date = today
+                # Compute next charge date
+                try:
+                    if freq == "Weekly":
+                        next_date = last_date + datetime.timedelta(days=7)
+                    elif freq == "Bi-weekly":
+                        next_date = last_date + datetime.timedelta(days=14)
+                    elif freq == "Monthly":
+                        m = last_date.month % 12 + 1
+                        y = last_date.year + (1 if last_date.month == 12 else 0)
+                        d = min(last_date.day, _cal.monthrange(y, m)[1])
+                        next_date = datetime.date(y, m, d)
+                    elif freq == "Quarterly":
+                        next_date = last_date + datetime.timedelta(days=91)
+                    elif freq == "Annual":
+                        try:
+                            next_date = datetime.date(last_date.year + 1, last_date.month, last_date.day)
+                        except ValueError:
+                            next_date = datetime.date(last_date.year + 1, last_date.month, last_date.day - 1)
+                    else:
+                        next_date = last_date + datetime.timedelta(days=30)
+                    # If already past, advance by one period until it's in the future
+                    while next_date < today:
+                        if freq == "Weekly":
+                            next_date += datetime.timedelta(days=7)
+                        elif freq == "Bi-weekly":
+                            next_date += datetime.timedelta(days=14)
+                        elif freq in ("Monthly", "Quarterly", "Annual"):
+                            next_date += datetime.timedelta(days=30)
+                        else:
+                            next_date += datetime.timedelta(days=30)
+                except Exception:
+                    next_date = today + datetime.timedelta(days=30)
+
                 recurring.append({
-                    "merchant": str(row["description"]),
-                    "category": cat_id,
-                    "amount":   float(row["amount"]),
-                    "freq":     str(row.get("frequency", "monthly")),
-                    "account":  str(matches["source"].iloc[0]) if not matches.empty else "",
-                    "next":     "",
-                    "day":      1,
+                    "merchant":    str(row["description"]),
+                    "category":    cat_id,
+                    "amount":      float(row["amount"]),
+                    "freq":        freq,
+                    "account":     str(matches["source"].iloc[0]) if not matches.empty else "",
+                    "next":        next_date.isoformat(),
+                    "day":         next_date.day,
+                    "occurrences": int(row.get("occurrences", 0)),
+                    "est_monthly": float(row.get("est_monthly_cost", float(row["amount"]))),
+                    "last_charge": last_date.isoformat(),
                 })
     except Exception:
         pass
@@ -1145,6 +1233,73 @@ async def update_transaction(
 
     save_df(current_user, df)
     return {"ok": True, "auto_applied": auto_applied}
+
+
+@app.post("/api/transactions/{txn_id}/split")
+async def split_transaction(
+    txn_id: str,
+    body: dict[str, Any],
+    current_user: str = Depends(get_current_user),
+) -> dict:
+    """Split a transaction into multiple category/amount parts.
+    Body: { splits: [{category, amount, notes?}, ...] }
+    The amounts must sum to the original transaction amount (within $0.02).
+    """
+    splits = body.get("splits", [])
+    if len(splits) < 2:
+        raise HTTPException(400, "Need at least 2 splits")
+
+    # Find the original transaction to validate amounts
+    df = load_df(current_user)
+    if df is None:
+        raise HTTPException(404, "No data")
+
+    if "txn_id" not in df.columns:
+        df["txn_id"] = df.apply(
+            lambda r: hashlib.md5(
+                f"{r['date']}|{r['description']}|{r['expense_amount']}".encode()
+            ).hexdigest()[:12],
+            axis=1,
+        )
+
+    mask = df["txn_id"] == txn_id
+    if not mask.any():
+        raise HTTPException(404, f"Transaction {txn_id} not found")
+
+    original_amount = abs(float(df.loc[mask, "expense_amount"].iloc[0]))
+    split_total = sum(abs(float(s["amount"])) for s in splits)
+    if abs(split_total - original_amount) > 0.02:
+        raise HTTPException(400, f"Split amounts ({split_total:.2f}) must equal transaction amount ({original_amount:.2f})")
+
+    if not all(s.get("category") for s in splits):
+        raise HTTPException(400, "Each split must have a category")
+
+    # Store splits — amounts stored as negative (expense sign convention)
+    normalized = [
+        {
+            "category": s["category"],
+            "amount":   -abs(float(s["amount"])),
+            "notes":    s.get("notes", ""),
+        }
+        for s in splits
+    ]
+    data = _load_splits(current_user)
+    data[txn_id] = normalized
+    _save_splits(current_user, data)
+    return {"ok": True, "splits": len(normalized)}
+
+
+@app.delete("/api/transactions/{txn_id}/split")
+async def unsplit_transaction(
+    txn_id: str,
+    current_user: str = Depends(get_current_user),
+) -> dict:
+    """Remove splits for a transaction, restoring the original row."""
+    data = _load_splits(current_user)
+    if txn_id in data:
+        del data[txn_id]
+        _save_splits(current_user, data)
+    return {"ok": True}
 
 
 @app.post("/api/query")

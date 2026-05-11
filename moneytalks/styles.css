@@ -108,14 +108,14 @@ button { cursor: pointer; font-family: inherit; }
 }
 
 .nav { display: flex; flex-direction: column; gap: 4px; flex: 1; }
-.nav-group { display: flex; flex-direction: column; gap: 1px; margin-bottom: 14px; }
+.nav-group { display: flex; flex-direction: column; gap: 1px; margin-bottom: 6px; }
 .nav-group-label {
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--ink-4);
-  padding: 8px 10px 6px;
+  padding: 4px 10px 3px;
 }
 .nav-item {
   display: flex; align-items: center; gap: 11px;

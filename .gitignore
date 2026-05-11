@@ -9,5 +9,5 @@ __pycache__/
 .env
 Design Ideas/
 .claude/
-ledgerline/node_modules/
-ledgerline/*.js.compiled
+moneytalks/node_modules/
+moneytalks/*.js.compiled

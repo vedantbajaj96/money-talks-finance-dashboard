@@ -402,63 +402,254 @@ function OverviewTab() {
 }
 
 // ─── Transaction List ─────────────────────────────────────────────
-function TxnList({ txns, compact = false, onRecategorize }) {
+// ─── Split transaction modal ───────────────────────────────────────
+function SplitModal({ txn, onClose }) {
+  const parentAmt = Math.abs(txn.amount);
+  const [splits, setSplits] = useState([
+    { category: txn.category, amount: String((parentAmt / 2).toFixed(2)), notes: '' },
+    { category: txn.category, amount: String((parentAmt / 2).toFixed(2)), notes: '' },
+  ]);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState(null);
+
+  const splitTotal = splits.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
+  const diff = Math.abs(splitTotal - parentAmt);
+  const valid = diff < 0.02 && splits.every(r => r.category && parseFloat(r.amount) > 0);
+
+  function updateSplit(i, field, val) {
+    setSplits(prev => prev.map((s, idx) => idx === i ? { ...s, [field]: val } : s));
+  }
+  function addRow() {
+    setSplits(prev => [...prev, { category: txn.category, amount: '0.00', notes: '' }]);
+  }
+  function removeRow(i) {
+    if (splits.length <= 2) return;
+    setSplits(prev => prev.filter((_, idx) => idx !== i));
+  }
+
+  async function save() {
+    setSaving(true); setErr(null);
+    try {
+      const res = await fetch(`/api/transactions/${txn.id}/split`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ splits }),
+      });
+      if (res.ok) {
+        onClose(true); // true = reload
+      } else {
+        const d = await res.json();
+        setErr(d.detail || 'Failed to save');
+      }
+    } catch(e) {
+      setErr('Network error');
+    }
+    setSaving(false);
+  }
+
   return (
-    <div className={`txn-list ${compact ? 'compact' : ''}`}>
-      {txns.map((t) => {
-        const cat = catById(t.category);
-        const acct = acctById(t.account);
-        return (
-          <div key={t.id} className="txn-row">
-            <div className="txn-icon" style={{ background: cat.color + '24', color: cat.color }}>
-              {cat.icon}
-            </div>
-            <div className="txn-main">
-              <div className="txn-merchant">
-                {t.merchant}
-                {t.pending && <span className="pending-pill">pending</span>}
-              </div>
-              <div className="txn-meta">
-                {onRecategorize ? (
-                  <CategoryPicker value={t.category} onChange={(c) => onRecategorize(t.id, c)} />
-                ) : (
-                  <span className="cat-pill" style={{ color: cat.color }}>{cat.name}</span>
-                )}
-                <span className="dot-sep">·</span>
-                <span>{acct.name}</span>
-              </div>
-            </div>
-            <div className="txn-date">{t.date.slice(5).replace('-', '/')}</div>
-            <div className={`txn-amt ${t.amount >= 0 ? 'pos' : 'neg'}`}>
-              {fmt(t.amount, { sign: true })}
+    <div style={{
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 9999,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+    }} onClick={() => onClose(false)}>
+      <div style={{
+        background: 'var(--surface)', borderRadius: 16, padding: 24, width: 440,
+        maxWidth: '95vw', boxShadow: '0 8px 40px rgba(0,0,0,0.2)',
+      }} onClick={e => e.stopPropagation()}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+          <div>
+            <div style={{ fontWeight: 600, fontSize: 15, color: 'var(--ink)' }}>{txn.merchant}</div>
+            <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
+              {txn.date} · Split {fmt(txn.amount, { sign: true })}
             </div>
           </div>
-        );
-      })}
+          <button onClick={() => onClose(false)} style={{ background: 'none', border: 'none', cursor: 'pointer',
+            fontSize: 18, color: 'var(--muted)', lineHeight: 1 }}>×</button>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+          {splits.map((s, i) => (
+            <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <div style={{ flex: '0 0 140px' }}>
+                <CategoryPicker value={s.category} onChange={v => updateSplit(i, 'category', v)} />
+              </div>
+              <input
+                type="number" min="0" step="0.01"
+                value={s.amount}
+                onChange={e => updateSplit(i, 'amount', e.target.value)}
+                style={{
+                  flex: '0 0 90px', padding: '5px 8px', borderRadius: 6, fontSize: 13,
+                  border: '1px solid var(--line)', background: 'var(--bg)', color: 'var(--ink)',
+                  textAlign: 'right', fontVariantNumeric: 'tabular-nums',
+                }}
+              />
+              <input
+                placeholder="Note (optional)"
+                value={s.notes}
+                onChange={e => updateSplit(i, 'notes', e.target.value)}
+                style={{
+                  flex: 1, padding: '5px 8px', borderRadius: 6, fontSize: 12,
+                  border: '1px solid var(--line)', background: 'var(--bg)', color: 'var(--ink)',
+                }}
+              />
+              <button onClick={() => removeRow(i)}
+                disabled={splits.length <= 2}
+                style={{ background: 'none', border: 'none', cursor: splits.length <= 2 ? 'default' : 'pointer',
+                  color: splits.length <= 2 ? 'var(--line)' : 'var(--muted)', fontSize: 16, padding: '0 4px' }}>×</button>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, fontSize: 12 }}>
+          <button onClick={addRow} style={{
+            background: 'none', border: '1px dashed var(--line)', borderRadius: 6,
+            padding: '4px 10px', cursor: 'pointer', color: 'var(--muted)', fontSize: 12,
+          }}>+ Add row</button>
+          <span style={{
+            marginLeft: 'auto', color: diff < 0.02 ? 'var(--green)' : 'var(--terra)',
+            fontWeight: 500, fontVariantNumeric: 'tabular-nums',
+          }}>
+            {diff < 0.02 ? '✓ Balanced' : `${fmt(splitTotal - parentAmt, { sign: true })} off`}
+          </span>
+        </div>
+
+        {err && <div style={{ color: 'var(--terra)', fontSize: 12, marginBottom: 8 }}>{err}</div>}
+
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button onClick={() => onClose(false)} style={{
+            padding: '7px 16px', borderRadius: 8, border: '1px solid var(--line)',
+            background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)',
+          }}>Cancel</button>
+          <button onClick={save} disabled={!valid || saving} style={{
+            padding: '7px 16px', borderRadius: 8, border: 'none',
+            background: valid ? 'var(--accent)' : 'var(--line)', color: '#fff',
+            cursor: valid ? 'pointer' : 'default', fontSize: 13, fontWeight: 500,
+          }}>{saving ? 'Saving…' : 'Save split'}</button>
+        </div>
+      </div>
     </div>
+  );
+}
+
+function TxnList({ txns, compact = false, onRecategorize }) {
+  const [splitTxn, setSplitTxn] = useState(null);
+
+  function handleSplitClose(reload) {
+    setSplitTxn(null);
+    if (reload) window.location.reload();
+  }
+
+  return (
+    <>
+      <div className={`txn-list ${compact ? 'compact' : ''}`}>
+        {txns.map((t) => {
+          const cat = catById(t.category);
+          const acct = acctById(t.account);
+          const isSplit = t.is_split;
+          return (
+            <div key={t.id} className="txn-row" style={isSplit ? { paddingLeft: 28, borderLeft: `3px solid ${cat.color}40` } : {}}>
+              <div className="txn-icon" style={{ background: cat.color + '24', color: cat.color }}>
+                {isSplit ? '⋮' : cat.icon}
+              </div>
+              <div className="txn-main">
+                <div className="txn-merchant">
+                  {t.merchant}
+                  {t.pending && <span className="pending-pill">pending</span>}
+                  {isSplit && <span className="pending-pill" style={{ background: cat.color + '20', color: cat.color }}>split</span>}
+                  {t.notes && !isSplit && <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 6 }}>{t.notes}</span>}
+                  {isSplit && t.notes && <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 6 }}>{t.notes}</span>}
+                </div>
+                <div className="txn-meta">
+                  {onRecategorize && !isSplit ? (
+                    <CategoryPicker value={t.category} onChange={(c) => onRecategorize(t.id, c)} />
+                  ) : (
+                    <span className="cat-pill" style={{ color: cat.color }}>{cat.name}</span>
+                  )}
+                  <span className="dot-sep">·</span>
+                  <span>{acct.name}</span>
+                </div>
+              </div>
+              <div className="txn-date">{t.date.slice(5).replace('-', '/')}</div>
+              <div className={`txn-amt ${t.amount >= 0 ? 'pos' : 'neg'}`}>
+                {fmt(t.amount, { sign: true })}
+              </div>
+              {onRecategorize && !isSplit && !compact && (
+                <button
+                  title="Split transaction"
+                  onClick={() => setSplitTxn(t)}
+                  style={{
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    color: 'var(--muted)', fontSize: 14, padding: '0 4px',
+                    opacity: 0.5, marginLeft: 4, lineHeight: 1,
+                  }}
+                >⋮</button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {splitTxn && <SplitModal txn={splitTxn} onClose={handleSplitClose} />}
+    </>
   );
 }
 
 // ─── Inline category picker ────────────────────────────────────────
 function CategoryPicker({ value, onChange }) {
   const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
   const cat = catById(value);
+
+  function handleOpen(e) {
+    e.stopPropagation();
+    setOpen(!open);
+    if (!open) setQ('');
+  }
+  function handlePick(id) {
+    onChange(id);
+    setOpen(false);
+    setQ('');
+  }
+
+  const visible = q.trim()
+    ? _liveCategories.filter(c =>
+        c.name.toLowerCase().includes(q.toLowerCase()) ||
+        c.id.toLowerCase().includes(q.toLowerCase())
+      )
+    : _liveCategories;
+
   return (
     <div className="cat-picker">
       <button className="cat-pill cat-pill-btn" style={{ color: cat.color, borderColor: cat.color + '50' }}
-        onClick={(e) => { e.stopPropagation(); setOpen(!open); }}>
+        onClick={handleOpen}>
         {cat.name} <span className="caret">⌄</span>
       </button>
       {open && (
         <>
-          <div className="cat-overlay" onClick={() => setOpen(false)} />
+          <div className="cat-overlay" onClick={() => { setOpen(false); setQ(''); }} />
           <div className="cat-menu">
-            {_liveCategories.map((c) => (
-              <button key={c.id} className="cat-menu-item" onClick={() => { onChange(c.id); setOpen(false); }}>
+            <div style={{ padding: '6px 8px 4px', borderBottom: '1px solid var(--line)' }}>
+              <input
+                autoFocus
+                placeholder="Search categories…"
+                value={q}
+                onChange={e => setQ(e.target.value)}
+                onClick={e => e.stopPropagation()}
+                style={{
+                  width: '100%', border: '1px solid var(--line)', borderRadius: 6,
+                  padding: '4px 8px', fontSize: 12, background: 'var(--bg)',
+                  color: 'var(--ink)', outline: 'none', boxSizing: 'border-box',
+                }}
+              />
+            </div>
+            {visible.map((c) => (
+              <button key={c.id} className="cat-menu-item" onClick={() => handlePick(c.id)}>
                 <span className="cat-dot" style={{ background: c.color }} />
                 {c.name}
               </button>
             ))}
+            {visible.length === 0 && (
+              <div style={{ padding: '8px 12px', fontSize: 12, color: 'var(--muted)' }}>No match</div>
+            )}
           </div>
         </>
       )}
@@ -477,14 +668,23 @@ function TransactionsTab({ monthKey, txnOverrides, setTxnOverrides, search: glob
   React.useEffect(() => { setSearch(globalSearch); }, [globalSearch]);
   const [acctFilter, setAcctFilter] = useState('all');
 
-  const baseTxns = txnsForMonth(monthKey).map((t) =>
+  // When a search term is active, search across ALL months not just the current one
+  const isGlobalSearch = search.trim().length > 0;
+  const baseTxns = (isGlobalSearch ? TRANSACTIONS : txnsForMonth(monthKey)).map((t) =>
     txnOverrides[t.id] ? { ...t, category: txnOverrides[t.id] } : t,
   );
 
   const filtered = baseTxns.filter((t) => {
     if (catFilter !== 'all' && t.category !== catFilter) return false;
     if (acctFilter !== 'all' && t.account !== acctFilter) return false;
-    if (search && !t.merchant.toLowerCase().includes(search.toLowerCase())) return false;
+    if (search) {
+      const q = search.toLowerCase();
+      const hit = t.merchant.toLowerCase().includes(q) ||
+                  (t.notes || '').toLowerCase().includes(q) ||
+                  (t.tags || '').toLowerCase().includes(q) ||
+                  t.date.includes(q);
+      if (!hit) return false;
+    }
     return true;
   });
 
@@ -517,11 +717,27 @@ function TransactionsTab({ monthKey, txnOverrides, setTxnOverrides, search: glob
   return (
     <div className="tab-body">
       <div className="card">
+        {isGlobalSearch && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            padding: '8px 16px', background: 'var(--accent-bg, #f0fdf4)',
+            borderBottom: '1px solid var(--line)', fontSize: 12, color: 'var(--accent)',
+            fontWeight: 500,
+          }}>
+            <span>⌕</span>
+            <span>Searching all months · {filtered.length} result{filtered.length !== 1 ? 's' : ''}</span>
+            <button onClick={() => { setSearch(''); setGlobalSearch(''); }}
+              style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer',
+                color: 'var(--muted)', fontSize: 11, padding: '2px 6px', borderRadius: 4 }}>
+              Clear ×
+            </button>
+          </div>
+        )}
         <div className="filter-bar">
           <div className="search-input">
             <span className="search-icon">⌕</span>
             <input
-              placeholder="Search merchants..."
+              placeholder="Search all months…"
               value={search}
               onChange={(e) => { setSearch(e.target.value); setGlobalSearch(e.target.value); }}
             />
@@ -1029,25 +1245,59 @@ function RecurringTab() {
   const monthlyTotal = RECURRING.reduce((s, r) => s + r.amount, 0);
   const subsTotal = subs.reduce((s, r) => s + r.amount, 0);
 
+  const FREQ_COLORS = {
+    Weekly: '#f97316', 'Bi-weekly': '#fbbf24', Monthly: '#5ec98a',
+    Quarterly: '#67e8f9', Annual: '#a78bfa',
+  };
   const RecRow = ({ r }) => {
     const cat = catById(r.category);
     const acct = acctById(r.account);
+    const freqColor = FREQ_COLORS[r.freq] || '#94a3b8';
+    const nextDate  = r.next ? r.next.slice(5).replace('-', '/') : '—';
+    const today     = new Date().toISOString().slice(0, 10);
+    const daysUntil = r.next ? Math.ceil((new Date(r.next) - new Date(today)) / 864e5) : null;
     return (
       <div className="rec-row">
         <div className="rec-icon" style={{ background: cat.color + '24', color: cat.color }}>{cat.icon}</div>
         <div className="rec-main">
-          <div className="rec-name">{r.merchant}</div>
+          <div className="rec-name" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {r.merchant}
+            <span style={{
+              fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 10,
+              background: freqColor + '20', color: freqColor, textTransform: 'uppercase', letterSpacing: '0.05em',
+            }}>{r.freq}</span>
+          </div>
           <div className="rec-meta">
             <span style={{ color: cat.color }}>{cat.name}</span>
             <span className="dot-sep">·</span>
             <span>{acct.name}</span>
+            {r.occurrences > 0 && (
+              <>
+                <span className="dot-sep">·</span>
+                <span style={{ color: 'var(--muted)' }}>{r.occurrences}× detected</span>
+              </>
+            )}
           </div>
         </div>
         <div className="rec-next">
           <div className="rec-next-label">Next charge</div>
-          <div className="rec-next-date">{r.next.slice(5).replace('-', '/')}</div>
+          <div className="rec-next-date" style={{ color: daysUntil !== null && daysUntil <= 5 ? 'var(--terra)' : undefined }}>
+            {nextDate}
+            {daysUntil !== null && daysUntil >= 0 && daysUntil <= 14 && (
+              <span style={{ fontSize: 10, color: 'var(--muted)', marginLeft: 4 }}>
+                ({daysUntil === 0 ? 'today' : `${daysUntil}d`})
+              </span>
+            )}
+          </div>
         </div>
-        <div className="rec-amt">{fmt(r.amount, { decimals: 2 })}<span className="rec-freq">/mo</span></div>
+        <div style={{ textAlign: 'right' }}>
+          <div className="rec-amt">{fmt(r.amount, { decimals: 2 })}<span className="rec-freq">/{r.freq === 'Monthly' ? 'mo' : r.freq.toLowerCase()}</span></div>
+          {r.est_monthly && r.freq !== 'Monthly' && (
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
+              ~{fmt(r.est_monthly, { decimals: 0 })}/mo
+            </div>
+          )}
+        </div>
       </div>
     );
   };
