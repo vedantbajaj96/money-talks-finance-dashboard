@@ -105,6 +105,7 @@ print("JSX ready.", flush=True)
 
 _sem_model = None          # SentenceTransformer instance once loaded
 _sem_cat_cache: dict = {}  # {cache_key: (cat_list, embeddings_array)}
+_sem_txn_cache: dict = {}  # {username: {"mtime": float, "merchants": list, "embs": ndarray}}
 
 
 def _get_sem_model():
@@ -996,6 +997,55 @@ def search_categories(q: str = "", current_user: str = Depends(get_current_user)
         return {"categories": cats, "semantic": False}
     ranked = _semantic_rank(q, cats)
     return {"categories": ranked, "semantic": True}
+
+
+@app.get("/api/transactions/search")
+def semantic_transaction_search(
+    q: str = "",
+    current_user: str = Depends(get_current_user),
+) -> dict:
+    """Return merchant names semantically matching the query.
+    The frontend filters its local TRANSACTIONS list using this merchant list.
+    """
+    import numpy as np
+
+    if not q.strip():
+        return {"merchants": [], "semantic": False}
+
+    model = _get_sem_model()
+    if model is None:
+        return {"merchants": [], "semantic": False, "error": "model unavailable"}
+
+    data_file = _data_file(current_user)
+    if not data_file.exists():
+        return {"merchants": [], "semantic": False}
+
+    # Invalidate cache when parquet is updated
+    mtime = data_file.stat().st_mtime
+    cached = _sem_txn_cache.get(current_user, {})
+    if cached.get("mtime") != mtime:
+        conn = _conn(current_user)
+        rows = conn.execute(
+            "SELECT DISTINCT description FROM txns ORDER BY description"
+        ).fetchall()
+        merchants = [r[0] for r in rows if r[0]]
+        if not merchants:
+            return {"merchants": [], "semantic": False}
+        embs = model.encode(merchants, normalize_embeddings=True, show_progress_bar=False)
+        _sem_txn_cache[current_user] = {"mtime": mtime, "merchants": merchants, "embs": embs}
+        cached = _sem_txn_cache[current_user]
+
+    merchants = cached["merchants"]
+    embs      = cached["embs"]
+
+    q_emb  = model.encode([q.strip()], normalize_embeddings=True, show_progress_bar=False)[0]
+    scores = embs @ q_emb  # cosine similarity
+
+    threshold = 0.25
+    hits = [(m, float(s)) for m, s in zip(merchants, scores) if s > threshold]
+    hits.sort(key=lambda x: -x[1])
+
+    return {"merchants": [m for m, _ in hits[:100]], "semantic": True}
 
 
 @app.post("/api/categories")
