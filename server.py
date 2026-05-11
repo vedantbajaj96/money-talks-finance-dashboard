@@ -1535,9 +1535,28 @@ async def plaid_sync(body: dict[str, Any] = {}, current_user: str = Depends(get_
             df.loc[mask & (df["expense_amount"] >= 0), "transaction_type"] = "expense"
             df.loc[mask & (df["expense_amount"] < 0),  "transaction_type"] = "income"
             save_df(current_user, df)
-        return {"ok": True, "stats": stats, "errors": errors}
+        # Save last sync timestamp
+        cfg2 = load_config(current_user)
+        cfg2["last_sync"] = datetime.datetime.utcnow().isoformat() + "Z"
+        save_config(current_user, cfg2)
+        return {"ok": True, "stats": stats, "errors": errors, "last_sync": cfg2["last_sync"]}
     except Exception as e:
         raise HTTPException(500, str(e))
+
+
+@app.get("/api/plaid/sync_status")
+def plaid_sync_status(current_user: str = Depends(get_current_user)) -> dict:
+    """Return last sync time and whether auto-sync is needed (>48h since last sync)."""
+    cfg = load_config(current_user)
+    last_sync = cfg.get("last_sync")
+    needs_sync = True
+    if last_sync:
+        try:
+            last_dt = datetime.datetime.fromisoformat(last_sync.replace("Z", ""))
+            needs_sync = (datetime.datetime.utcnow() - last_dt).total_seconds() > 48 * 3600
+        except Exception:
+            pass
+    return {"last_sync": last_sync, "needs_sync": needs_sync}
 
 
 @app.delete("/api/plaid/accounts/{item_id}")

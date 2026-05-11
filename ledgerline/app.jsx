@@ -249,7 +249,7 @@ const { MONTHS } = window.FIN;
 const {
   OverviewTab, TransactionsTab, SpendingTab, IncomeTab, CashFlowTab,
   NetWorthTab, AccountsTab, RecurringTab, CategoriesTab, TrendsTab, ChatTab, SettingsTab,
-  ReviewTab, FeedbackTab,
+  ReviewTab, FeedbackTab, MonthlyTab,
   TweaksPanel, TweakSection, TweakRadio, TweakToggle,
   useTweaks,
 } = window;
@@ -288,6 +288,7 @@ const Icon = ({ name, size = 18 }) => {
     chevronL:    'M15 5l-7 7 7 7',
     upload:      'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12',
     feedback:    'M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z',
+    monthly:     'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2z',
     review:      'M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11',
   };
   return (
@@ -301,6 +302,7 @@ const Icon = ({ name, size = 18 }) => {
 const TABS = [
   { id: 'overview',    name: 'Overview',      icon: 'overview',   group: 'main' },
   { id: 'txns',        name: 'Transactions',  icon: 'txns',       group: 'main' },
+  { id: 'monthly',     name: 'Monthly',       icon: 'monthly',    group: 'main' },
   { id: 'review',      name: 'Review',        icon: 'review',     group: 'main' },
   { id: 'cashflow',    name: 'Cash Flow',     icon: 'cashflow',   group: 'analysis' },
   { id: 'income',      name: 'Income',        icon: 'income',     group: 'analysis' },
@@ -370,10 +372,55 @@ function Sidebar({ active, onChange, layout }) {
 function TopBar({ tab, monthKey, setMonthKey, search, setSearch }) {
   const [me,          setMe]          = useState(null);
   const [showProfile, setShowProfile] = useState(false);
+  const [syncState,   setSyncState]   = useState(null);  // {last_sync, needs_sync}
+  const [syncing,     setSyncing]     = useState(false);
 
   useEffect(() => {
     fetch('/api/auth/me').then(r => r.json()).then(setMe).catch(() => {});
+    // Check sync status and auto-sync if stale
+    fetch('/api/plaid/sync_status').then(r => r.json()).then(d => {
+      setSyncState(d);
+      if (d.needs_sync) {
+        setSyncing(true);
+        fetch('/api/plaid/sync', { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' })
+          .then(r => r.json())
+          .then(res => {
+            setSyncing(false);
+            if (res.last_sync) setSyncState({ last_sync: res.last_sync, needs_sync: false });
+            if ((res.stats?.added || 0) + (res.stats?.modified || 0) > 0) {
+              setTimeout(() => window.location.reload(), 800);
+            }
+          })
+          .catch(() => setSyncing(false));
+      }
+    }).catch(() => {});
   }, []);
+
+  function manualSync() {
+    if (syncing) return;
+    setSyncing(true);
+    fetch('/api/plaid/sync', { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' })
+      .then(r => r.json())
+      .then(res => {
+        setSyncing(false);
+        if (res.last_sync) setSyncState({ last_sync: res.last_sync, needs_sync: false });
+        if ((res.stats?.added || 0) + (res.stats?.modified || 0) > 0) {
+          setTimeout(() => window.location.reload(), 800);
+        }
+      })
+      .catch(() => setSyncing(false));
+  }
+
+  function fmtLastSync(iso) {
+    if (!iso) return null;
+    const d = new Date(iso);
+    const diffMin = Math.round((Date.now() - d) / 60000);
+    if (diffMin < 2)  return 'just now';
+    if (diffMin < 60) return `${diffMin}m ago`;
+    const diffH = Math.round(diffMin / 60);
+    if (diffH < 24)   return `${diffH}h ago`;
+    return `${Math.round(diffH/24)}d ago`;
+  }
 
   const idx      = MONTHS.findIndex((m) => m.key === monthKey);
   const showMonth = ['overview', 'txns', 'income', 'spending', 'categories'].includes(tab);
@@ -403,6 +450,19 @@ function TopBar({ tab, monthKey, setMonthKey, search, setSearch }) {
         )}
       </div>
       <div className="topbar-right">
+        {/* Sync button */}
+        <button onClick={manualSync} disabled={syncing} title={syncState?.last_sync ? `Last sync: ${fmtLastSync(syncState.last_sync)}` : 'Sync now'}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 5,
+            background: 'none', border: '1px solid var(--line)', borderRadius: 8,
+            padding: '5px 10px', cursor: syncing ? 'default' : 'pointer',
+            color: 'var(--muted)', fontSize: 12, fontFamily: 'inherit',
+          }}>
+          <span style={{ display: 'inline-block', animation: syncing ? 'spin 1s linear infinite' : 'none', fontSize: 13 }}>↻</span>
+          <span style={{ display: window.innerWidth > 640 ? 'inline' : 'none' }}>
+            {syncing ? 'Syncing…' : syncState?.last_sync ? fmtLastSync(syncState.last_sync) : 'Sync'}
+          </span>
+        </button>
         <div className="topbar-search">
           <Icon name="search" size={14} />
           <input placeholder="Search transactions, merchants..." value={search}
@@ -517,6 +577,7 @@ function App() {
     switch (tab) {
       case 'overview':    return <OverviewTab    {...props} />;
       case 'txns':        return <TransactionsTab {...props} />;
+      case 'monthly':     return <MonthlyTab {...props} />;
       case 'review':      return <ReviewTab />;
       case 'cashflow':    return <CashFlowTab />;
       case 'income':      return <IncomeTab      {...props} />;

@@ -45,20 +45,16 @@ function SummaryCard({ label, value, sub, trend, accent, spark }) {
 // ═══════════════════════════════════════════════════════════════════
 // OVERVIEW TAB
 // ═══════════════════════════════════════════════════════════════════
-function OverviewTab({ monthKey }) {
+function MonthlyTab({ monthKey }) {
   const summary = monthSummary(monthKey);
   const monthTxns = txnsForMonth(monthKey);
   const breakdown = sumByCategory(monthTxns).slice(0, 6);
   const recent = monthTxns.slice(0, 6);
-
-  // Cash flow series: 6 months
-  const incomeSeries = MONTHS.map((m) => ({ label: m.short, value: monthSummary(m.key).income }));
+  const incomeSeries  = MONTHS.map((m) => ({ label: m.short, value: monthSummary(m.key).income }));
   const expenseSeries = MONTHS.map((m) => ({ label: m.short, value: monthSummary(m.key).expenses }));
-
   const prevIdx = MONTHS.findIndex((m) => m.key === monthKey) - 1;
   const prev = prevIdx >= 0 ? monthSummary(MONTHS[prevIdx].key) : null;
   const trend = (cur, prv) => prv ? ((cur - prv) / prv) * 100 : 0;
-
   return (
     <div className="tab-body">
       <div className="grid-4">
@@ -69,32 +65,20 @@ function OverviewTab({ monthKey }) {
           trend={prev ? trend(summary.expenses, prev.expenses) : null}
           spark={expenseSeries.map((p) => p.value)} />
         <SummaryCard label="Net" value={fmtMoney(summary.net)} accent={summary.net >= 0 ? 'var(--green)' : 'var(--terra)'}
-          sub={`${((summary.net / summary.income) * 100).toFixed(0)}% savings rate`} />
+          sub={`${summary.income > 0 ? ((summary.net / summary.income) * 100).toFixed(0) : 0}% savings rate`} />
         <SummaryCard label="Saved" value={fmtMoney(summary.savings)} accent="var(--accent2)"
           sub="auto-transfers + IRA" />
       </div>
-
       <div className="grid-2">
         <div className="card">
-          <div className="card-head">
-            <h3>Cash flow</h3>
-            <span className="muted">Last 6 months</span>
-          </div>
-          <AreaChart
-            series={[
-              { key: 'inc', name: 'Income', color: '#5ec98a', points: incomeSeries },
-              { key: 'exp', name: 'Expenses', color: '#d97757', points: expenseSeries },
-            ]}
-            height={240}
-            formatter={fmtAbbr}
-          />
+          <div className="card-head"><h3>Cash flow</h3><span className="muted">Last 6 months</span></div>
+          <AreaChart series={[
+            { key: 'inc', name: 'Income',   color: '#5ec98a', points: incomeSeries },
+            { key: 'exp', name: 'Expenses', color: '#d97757', points: expenseSeries },
+          ]} height={240} formatter={fmtAbbr} />
         </div>
-
         <div className="card">
-          <div className="card-head">
-            <h3>Where it went</h3>
-            <span className="muted">{MONTHS.find((m) => m.key === monthKey).label}</span>
-          </div>
+          <div className="card-head"><h3>Where it went</h3><span className="muted">{MONTHS.find((m) => m.key === monthKey)?.label}</span></div>
           <div className="donut-row">
             <DonutChart data={breakdown} size={200} thickness={26} formatter={fmtMoney} />
             <div className="donut-legend">
@@ -109,23 +93,309 @@ function OverviewTab({ monthKey }) {
           </div>
         </div>
       </div>
-
       <div className="grid-2">
         <div className="card">
-          <div className="card-head">
-            <h3>Recent transactions</h3>
-            <span className="muted">{monthTxns.length} this month</span>
-          </div>
+          <div className="card-head"><h3>Recent transactions</h3><span className="muted">{monthTxns.length} this month</span></div>
           <TxnList txns={recent} compact />
         </div>
-
         <div className="card">
-          <div className="card-head">
-            <h3>Top categories</h3>
-            <span className="muted">This month</span>
-          </div>
+          <div className="card-head"><h3>Top categories</h3><span className="muted">This month</span></div>
           <BarList data={breakdown} formatter={fmtMoney} />
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Overview Tab (month-agnostic, draggable widgets) ──────────────────────
+const OVERVIEW_WIDGETS = [
+  { id: 'networth',  label: 'Net Worth'          },
+  { id: 'anomalies', label: 'Spending Alerts'    },
+  { id: 'merchants', label: 'Top Merchants'      },
+  { id: 'trends',    label: 'Spending Trends'    },
+  { id: 'recurring', label: 'Upcoming Bills'     },
+  { id: 'recent',    label: 'Recent Transactions'},
+];
+
+const OVERVIEW_ORDER_KEY = 'mt_overview_order';
+
+function DragCard({ id, index, order, onReorder, title, children }) {
+  const { useRef } = React;
+  const dragRef = useRef(null);
+
+  function onDragStart(e) {
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', String(index));
+  }
+  function onDragOver(e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  }
+  function onDrop(e) {
+    e.preventDefault();
+    const fromIdx = parseInt(e.dataTransfer.getData('text/plain'), 10);
+    if (fromIdx === index) return;
+    const next = [...order];
+    const [moved] = next.splice(fromIdx, 1);
+    next.splice(index, 0, moved);
+    onReorder(next);
+  }
+
+  return (
+    <div
+      draggable
+      onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+      style={{ cursor: 'grab' }}
+    >
+      <div className="card">
+        <div className="card-head">
+          <h3>{title}</h3>
+          <span style={{ color: 'var(--line-2)', fontSize: 14, userSelect: 'none' }}>⠿</span>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function OverviewTab() {
+  const { useState, useMemo } = React;
+
+  const savedOrder = (() => {
+    try { return JSON.parse(localStorage.getItem(OVERVIEW_ORDER_KEY)); } catch(e) { return null; }
+  })();
+  const defaultOrder = OVERVIEW_WIDGETS.map(w => w.id);
+  const [order, setOrder] = useState(savedOrder || defaultOrder);
+
+  function handleReorder(next) {
+    setOrder(next);
+    localStorage.setItem(OVERVIEW_ORDER_KEY, JSON.stringify(next));
+  }
+
+  // ── Pre-compute all widget data ──────────────────────────────────
+  const now   = new Date();
+  const today = now.toISOString().slice(0, 10);
+  const ago30 = new Date(now - 30 * 864e5).toISOString().slice(0, 10);
+  const ago90 = new Date(now - 90 * 864e5).toISOString().slice(0, 10);
+
+  const allTxns = TRANSACTIONS.filter(t => t.category !== 'transfer');
+
+  // Net worth from account balances
+  const netWorth = useMemo(() => {
+    let assets = 0, liabilities = 0;
+    ACCOUNTS.forEach(a => {
+      if (a.type === 'credit') liabilities += Math.abs(a.balance);
+      else assets += Math.max(a.balance, 0);
+    });
+    return { total: assets - liabilities, assets, liabilities };
+  }, []);
+
+  // Top merchants last 30 days
+  const topMerchants = useMemo(() => {
+    const map = {};
+    allTxns.filter(t => t.date >= ago30 && t.amount > 0).forEach(t => {
+      map[t.merchant] = (map[t.merchant] || 0) + t.amount;
+    });
+    return Object.entries(map).sort((a,b) => b[1]-a[1]).slice(0, 8)
+      .map(([name, amt]) => ({ name, amt }));
+  }, []);
+
+  // Spending anomalies: current month vs 3-month avg
+  const anomalies = useMemo(() => {
+    const curMonth = today.slice(0, 7);
+    const catTotals = (from, to) => {
+      const map = {};
+      allTxns.filter(t => t.date >= from && t.date <= to && t.amount > 0).forEach(t => {
+        map[t.category] = (map[t.category] || 0) + t.amount;
+      });
+      return map;
+    };
+    const cur = catTotals(curMonth + '-01', today);
+    const prev3 = catTotals(ago90, (new Date(curMonth + '-01') - 1).toISOString ? ago90 : ago90);
+    // avg = prev 90 days / 3
+    const alerts = [];
+    Object.entries(cur).forEach(([cat, curAmt]) => {
+      const p3Total = allTxns.filter(t => t.date >= ago90 && t.date < curMonth + '-01'
+        && t.category === cat && t.amount > 0).reduce((s, t) => s + t.amount, 0);
+      const avg = p3Total / 3;
+      if (avg > 20 && curAmt > avg * 1.25 && curAmt - avg > 50) {
+        const catInfo = catById(cat);
+        alerts.push({ cat, name: catInfo.name, color: catInfo.color, cur: curAmt, avg, pct: Math.round((curAmt/avg-1)*100) });
+      }
+    });
+    return alerts.sort((a,b) => b.pct - a.pct).slice(0, 4);
+  }, []);
+
+  // Spending trends: last 6 months per top category
+  const trends = useMemo(() => {
+    const last6 = MONTHS.slice(-6);
+    const topCats = [...new Set(
+      allTxns.filter(t => t.amount > 0).sort((a,b) => b.amount - a.amount)
+        .slice(0, 100).map(t => t.category)
+    )].slice(0, 5);
+    return topCats.map(cat => {
+      const catInfo = catById(cat);
+      const points = last6.map(m => ({
+        label: m.short,
+        value: allTxns.filter(t => t.date.startsWith(m.key) && t.category === cat && t.amount > 0)
+          .reduce((s,t) => s + t.amount, 0),
+      }));
+      return { cat, name: catInfo.name, color: catInfo.color, points };
+    });
+  }, []);
+
+  // Upcoming recurring (next 14 days)
+  const upcoming = useMemo(() => {
+    const dayOfMonth = now.getDate();
+    return RECURRING.filter(r => {
+      const due = r.day || 1;
+      const daysUntil = due >= dayOfMonth ? due - dayOfMonth : (28 - dayOfMonth + due);
+      return daysUntil <= 14;
+    }).map(r => {
+      const due = r.day || 1;
+      const daysUntil = due >= dayOfMonth ? due - dayOfMonth : (28 - dayOfMonth + due);
+      return { ...r, daysUntil };
+    }).sort((a,b) => a.daysUntil - b.daysUntil).slice(0, 6);
+  }, []);
+
+  // Recent txns (last 10 across all time)
+  const recentTxns = allTxns.slice(0, 10);
+
+  // ── Widget renderers ─────────────────────────────────────────────
+  function renderWidget(id, index) {
+    const label = OVERVIEW_WIDGETS.find(w => w.id === id)?.label || id;
+
+    if (id === 'networth') return (
+      <DragCard key={id} id={id} index={index} order={order} onReorder={handleReorder} title="Net Worth">
+        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 16 }}>
+          <div>
+            <div style={{ fontSize: 32, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>
+              {fmt(netWorth.total, { decimals: 0 })}
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
+              {fmt(netWorth.assets, { decimals: 0 })} assets · {fmt(netWorth.liabilities, { decimals: 0 })} liabilities
+            </div>
+          </div>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {ACCOUNTS.filter(a => a.balance !== 0).sort((a,b) => Math.abs(b.balance) - Math.abs(a.balance)).slice(0,6).map(a => (
+            <div key={a.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: a.color, display: 'inline-block', flexShrink: 0 }} />
+                <span style={{ color: 'var(--ink-2)' }}>{a.inst || a.name}</span>
+              </div>
+              <span style={{ fontWeight: 500, color: a.type === 'credit' ? 'var(--terra)' : 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>
+                {a.type === 'credit' ? '−' : ''}{fmt(Math.abs(a.balance), { decimals: 0 })}
+              </span>
+            </div>
+          ))}
+        </div>
+      </DragCard>
+    );
+
+    if (id === 'anomalies') return (
+      <DragCard key={id} id={id} index={index} order={order} onReorder={handleReorder} title="Spending Alerts">
+        {anomalies.length === 0 ? (
+          <div style={{ color: 'var(--muted)', fontSize: 13, padding: '12px 0' }}>
+            All categories within normal range. Nice work.
+          </div>
+        ) : anomalies.map(a => (
+          <div key={a.cat} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '10px 0', borderBottom: '1px solid var(--line)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ width: 10, height: 10, borderRadius: 3, background: a.color, display: 'inline-block' }} />
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{a.name}</div>
+                <div style={{ fontSize: 11, color: 'var(--muted)' }}>avg {fmtMoney(a.avg)}/mo</div>
+              </div>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--terra)' }}>{fmtMoney(a.cur)}</div>
+              <div style={{ fontSize: 11, color: '#ef4444' }}>+{a.pct}% this month</div>
+            </div>
+          </div>
+        ))}
+      </DragCard>
+    );
+
+    if (id === 'merchants') return (
+      <DragCard key={id} id={id} index={index} order={order} onReorder={handleReorder} title="Top Merchants">
+        <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 12 }}>Last 30 days</div>
+        {topMerchants.length === 0 ? (
+          <div style={{ color: 'var(--muted)', fontSize: 13 }}>No transactions yet.</div>
+        ) : topMerchants.map((m, i) => {
+          const max = topMerchants[0].amt;
+          return (
+            <div key={m.name} style={{ marginBottom: 10 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 4 }}>
+                <span style={{ color: 'var(--ink)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '70%' }}>{m.name}</span>
+                <span style={{ color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(m.amt)}</span>
+              </div>
+              <div style={{ height: 3, background: 'var(--line)', borderRadius: 2, overflow: 'hidden' }}>
+                <div style={{ height: '100%', width: `${(m.amt/max)*100}%`, background: 'var(--accent)', borderRadius: 2 }} />
+              </div>
+            </div>
+          );
+        })}
+      </DragCard>
+    );
+
+    if (id === 'trends') return (
+      <DragCard key={id} id={id} index={index} order={order} onReorder={handleReorder} title="Spending Trends">
+        <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 12 }}>Last 6 months by category</div>
+        {trends.map(t => (
+          <div key={t.cat} style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+            <div style={{ width: 90, fontSize: 12, color: 'var(--ink-2)', fontWeight: 500, flexShrink: 0,
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}</div>
+            <div style={{ flex: 1 }}>
+              <Sparkline points={t.points.map(p => p.value)} color={t.color} height={28} />
+            </div>
+            <div style={{ width: 60, textAlign: 'right', fontSize: 12, color: 'var(--ink)',
+              fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(t.points[t.points.length-1]?.value || 0)}</div>
+          </div>
+        ))}
+      </DragCard>
+    );
+
+    if (id === 'recurring') return (
+      <DragCard key={id} id={id} index={index} order={order} onReorder={handleReorder} title="Upcoming Bills">
+        {upcoming.length === 0 ? (
+          <div style={{ color: 'var(--muted)', fontSize: 13 }}>No bills due in the next 14 days.</div>
+        ) : upcoming.map(r => (
+          <div key={r.merchant} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            padding: '9px 0', borderBottom: '1px solid var(--line)' }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{r.merchant}</div>
+              <div style={{ fontSize: 11, color: r.daysUntil <= 3 ? '#f97316' : 'var(--muted)' }}>
+                {r.daysUntil === 0 ? 'Due today' : `In ${r.daysUntil} day${r.daysUntil > 1 ? 's' : ''}`}
+              </div>
+            </div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>
+              {fmtMoney(Math.abs(r.amount))}
+            </div>
+          </div>
+        ))}
+      </DragCard>
+    );
+
+    if (id === 'recent') return (
+      <DragCard key={id} id={id} index={index} order={order} onReorder={handleReorder} title="Recent Transactions">
+        <TxnList txns={recentTxns} compact />
+      </DragCard>
+    );
+
+    return null;
+  }
+
+  return (
+    <div className="tab-body">
+      <div className="grid-2">
+        {order.map((id, idx) => renderWidget(id, idx))}
+      </div>
+      <div style={{ textAlign: 'center', marginTop: 8, fontSize: 11, color: 'var(--line-2)' }}>
+        Drag widgets to reorder
       </div>
     </div>
   );
@@ -2106,7 +2376,7 @@ function FeedbackTab() {
 }
 
 Object.assign(window, {
-  OverviewTab, TransactionsTab, SpendingTab, IncomeTab, CashFlowTab,
+  OverviewTab, MonthlyTab, TransactionsTab, SpendingTab, IncomeTab, CashFlowTab,
   NetWorthTab, AccountsTab, RecurringTab, CategoriesTab, TrendsTab,
   ChatTab, SettingsTab, TxnList, AccountList, ReviewTab, FeedbackTab,
 });
