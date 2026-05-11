@@ -1406,15 +1406,11 @@ function CategoriesManagerCard() {
                 color: idx === cats.length - 1 ? 'var(--line-2)' : 'var(--muted)', fontSize: 14, padding: 0,
               }}>↓</button>
 
-              {/* Delete — only for custom */}
-              {!c.builtin ? (
-                <button onClick={() => deleteCat(c.id)} title="Delete category" style={{
-                  background: 'none', border: 'none', cursor: 'pointer',
-                  color: 'var(--muted)', fontSize: 16, padding: 0, lineHeight: 1,
-                }}>×</button>
-              ) : (
-                <div style={{ width: 28 }} />
-              )}
+              {/* Delete button — server blocks if transactions exist */}
+              <button onClick={() => deleteCat(c.id)} title="Remove category" style={{
+                background: 'none', border: 'none', cursor: 'pointer',
+                color: 'var(--muted)', fontSize: 16, padding: 0, lineHeight: 1,
+              }}>×</button>
             </div>
 
             {/* Inline color picker */}

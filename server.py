@@ -58,6 +58,49 @@ SESSION_TTL    = datetime.timedelta(days=7)
 app = FastAPI(title="MoneyTalks API")
 
 # ---------------------------------------------------------------------------
+# JSX pre-compilation
+# ---------------------------------------------------------------------------
+
+import subprocess as _subprocess
+
+JSX_FILES = ["tweaks-panel.jsx", "charts.jsx", "tabs.jsx", "app.jsx"]
+
+def _compile_jsx(jsx_path: Path) -> None:
+    js_path = jsx_path.with_suffix(".js.compiled")
+    node_script = (
+        "const babel=require('@babel/core'),fs=require('fs');"
+        f"const r=babel.transformSync(fs.readFileSync({repr(str(LL_DIR))}"
+        " + '/' + process.argv[1],'utf8'),{presets:['@babel/preset-react']});"
+        "fs.writeFileSync(process.argv[2],r.code);"
+    )
+    # Simpler: use inline filenames
+    script = f"""
+const babel = require('@babel/core'), fs = require('fs');
+const code = babel.transformSync(fs.readFileSync({repr(str(jsx_path))}, 'utf8'), {{presets: ['@babel/preset-react']}}).code;
+fs.writeFileSync({repr(str(js_path))}, code);
+"""
+    result = _subprocess.run(["node", "-e", script], capture_output=True, text=True, cwd=str(LL_DIR))
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr[:400])
+
+def _ensure_compiled(name: str) -> Path:
+    jsx_path = LL_DIR / name
+    js_path  = LL_DIR / name.replace(".jsx", ".js.compiled")
+    if not js_path.exists() or jsx_path.stat().st_mtime > js_path.stat().st_mtime:
+        print(f"  Compiling {name}...", flush=True)
+        _compile_jsx(jsx_path)
+    return js_path
+
+print("Compiling JSX...", flush=True)
+for _f in JSX_FILES:
+    try:
+        _ensure_compiled(_f)
+    except Exception as _e:
+        print(f"  WARNING {_f}: {_e}", flush=True)
+print("JSX ready.", flush=True)
+
+
+# ---------------------------------------------------------------------------
 # Category mapping
 #
 # The categorizer stores human-readable names in the parquet ("Dining & Drinks").
@@ -784,16 +827,20 @@ def _build_cat_list(cfg: dict) -> list:
     custom      = {c["id"]: c for c in (cfg.get("custom_categories") or [])}
     overrides   = cfg.get("category_overrides") or {}
     order       = cfg.get("category_order") or []
+    hidden      = set(cfg.get("hidden_categories") or [])
 
-    # Merge: builtin + custom
+    # Merge: builtin + custom, skipping hidden
     all_cats = {}
     for kid, v in CAT_META.items():
+        if kid in hidden:
+            continue
         entry = {"id": kid, **v, "builtin": True}
         if kid in overrides:
             entry.update({k: v2 for k, v2 in overrides[kid].items() if k in ("name","color")})
         all_cats[kid] = entry
     for cid, c in custom.items():
-        all_cats[cid] = {"builtin": False, **c}
+        if cid not in hidden:
+            all_cats[cid] = {"builtin": False, **c}
 
     # Apply order: ordered first, then remaining alphabetically
     ordered = [all_cats[i] for i in order if i in all_cats]
@@ -868,23 +915,33 @@ async def reorder_categories(body: dict[str, Any], current_user: str = Depends(g
 
 @app.delete("/api/categories/{cat_id}")
 async def delete_category(cat_id: str, current_user: str = Depends(get_current_user)) -> dict:
-    if cat_id in CAT_META:
-        raise HTTPException(403, "cannot delete built-in categories")
-    # Check if any transactions use this category
-    df = load_df(current_user)
+    # Check transaction usage first (applies to both built-in and custom)
+    df    = load_df(current_user)
+    count = 0
     if df is not None and not df.empty:
-        used = df["category"].astype(str).str.lower() == cat_id.lower()
-        # Also check raw category names that map to this id
+        used  = df["category"].astype(str).str.lower() == cat_id.lower()
         count = int(used.sum())
-        if count > 0:
-            raise HTTPException(409, f"{count} transaction{'s' if count != 1 else ''} use this category — reassign them first")
-    cfg    = load_config(current_user)
+    if count > 0:
+        raise HTTPException(409, f"{count} transaction{'s' if count != 1 else ''} use this category — reassign them first")
+
+    cfg = load_config(current_user)
+
+    if cat_id in CAT_META:
+        # Built-in with no transactions: hide it (don't actually remove from CAT_META)
+        hidden = cfg.get("hidden_categories") or []
+        if cat_id not in hidden:
+            hidden.append(cat_id)
+        cfg["hidden_categories"] = hidden
+        cfg["category_order"] = [i for i in (cfg.get("category_order") or []) if i != cat_id]
+        save_config(current_user, cfg)
+        return {"ok": True}
+
+    # Custom category
     custom = cfg.get("custom_categories") or []
     new_custom = [c for c in custom if c["id"] != cat_id]
     if len(new_custom) == len(custom):
         raise HTTPException(404, "category not found")
     cfg["custom_categories"] = new_custom
-    # Remove from order too
     cfg["category_order"] = [i for i in (cfg.get("category_order") or []) if i != cat_id]
     save_config(current_user, cfg)
     return {"ok": True}
