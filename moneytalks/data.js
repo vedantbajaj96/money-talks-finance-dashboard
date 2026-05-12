@@ -64,14 +64,18 @@ function acctById(id) {
   return (window.FIN.ACCOUNTS || []).find((a) => a.id === id) || { id, name: id, color: '#94a3b8' };
 }
 
-// ── Dynamic JSX loader ────────────────────────────────────────────────────
+// ── Dynamic script loader ─────────────────────────────────────────────────
 
-async function loadJSX(url) {
-  const res  = await fetch(url);
-  // Server pre-compiles JSX → plain JS; we just eval the result directly.
-  const code = await res.text();
-  // eslint-disable-next-line no-eval
-  eval(code);
+// Injects a <script src> tag instead of eval()ing fetched text.
+// Benefits: CSP-compatible, real source URLs in browser devtools, no eval.
+function loadJSX(url) {
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src   = url;
+    script.onload  = resolve;
+    script.onerror = () => reject(new Error(`Failed to load ${url}`));
+    document.head.appendChild(script);
+  });
 }
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────

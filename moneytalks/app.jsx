@@ -555,6 +555,43 @@ function BottomNav({ active, onChange }) {
   );
 }
 
+// ─── Error Boundary ───────────────────────────────────────────────
+// Catches render errors in any tab and shows a recovery UI instead of a
+// white screen.  Must be a class component (React requirement).
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+  componentDidCatch(error, info) {
+    console.error('[ErrorBoundary]', error, info.componentStack);
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ padding: '2rem', color: 'var(--text-muted)' }}>
+          <p style={{ fontWeight: 600, color: '#ef4444', marginBottom: 8 }}>
+            Something went wrong in this tab.
+          </p>
+          <pre style={{ fontSize: 12, whiteSpace: 'pre-wrap', marginBottom: 16 }}>
+            {this.state.error.message}
+          </pre>
+          <button
+            className="btn-primary"
+            onClick={() => this.setState({ error: null })}
+          >
+            Try again
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 // ─── App ──────────────────────────────────────────────────────────
 function App() {
   const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
@@ -601,7 +638,10 @@ function App() {
         <TopBar tab={tab} monthKey={monthKey} setMonthKey={setMonthKey}
                 search={search} setSearch={setSearch} />
         <div className="page">
-          {renderTab()}
+          {/* key=tab resets the boundary whenever the user switches tabs */}
+          <ErrorBoundary key={tab}>
+            {renderTab()}
+          </ErrorBoundary>
         </div>
       </main>
 

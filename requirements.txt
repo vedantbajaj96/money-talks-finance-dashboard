@@ -8,3 +8,4 @@ plaid-python
 fastapi
 uvicorn
 duckdb
+pytest

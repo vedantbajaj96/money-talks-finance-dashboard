@@ -3,7 +3,7 @@
 (function () {
 const { useState, useMemo, useEffect } = React;
 const { ACCOUNTS, CATEGORIES, MONTHS, TRANSACTIONS, RECURRING, NET_WORTH_HISTORY,
-  txnsForMonth, sumByCategory, monthSummary, fmt, catById, acctById } = window.FIN;
+  txnsForMonth, sumByCategory, monthSummary, fmt, acctById } = window.FIN;
 const { DonutChart, StackedBarChart, AreaChart, Sparkline, BarList } = window;
 
 // Live categories cache — initialized from bootstrap data, refreshed after edits.
@@ -14,14 +14,67 @@ async function refreshLiveCategories() {
     const res  = await fetch('/api/categories');
     const data = await res.json();
     if (data.categories) {
-      _liveCategories = data.categories.filter(c => c.id !== 'transfer' && c.id !== 'savings');
+      _liveCategories = data.categories;
     }
   } catch(e) { /* keep existing */ }
 }
 
+// Live-aware catById — checks _liveCategories first so newly added categories
+// show their display name instead of the raw ID.
+function catById(id) {
+  return _liveCategories.find(c => c.id === id)
+    || CATEGORIES.find(c => c.id === id)
+    || { id, name: id, color: '#94a3b8', icon: '○', group: 'variable' };
+}
+const FIN = { ...window.FIN, catById };
+
 const fmtMoney = (v) => fmt(v, { decimals: 0 });
 const fmtMoney2 = (v) => fmt(v, { decimals: 2 });
 const fmtAbbr = (v) => fmt(v, { decimals: 0, abbr: true });
+
+// ── Month Vibe Banner ───────────────────────────────────────────────
+function MonthVibeBanner({ summary, prev }) {
+  if (!summary || summary.income === 0) return null;
+  const savingsRate = summary.income > 0 ? (summary.net / summary.income) * 100 : 0;
+  const betterThanPrev = prev && summary.net > prev.net;
+  const improvement    = prev ? summary.net - prev.net : 0;
+
+  let emoji = '', text = '', color = '';
+
+  if (savingsRate >= 30) {
+    emoji = '🚀'; color = '#22c55e';
+    text  = `${savingsRate.toFixed(0)}% savings rate — you're crushing it this month!`;
+  } else if (savingsRate >= 20) {
+    emoji = '✨'; color = 'var(--accent)';
+    text  = `${savingsRate.toFixed(0)}% savings rate — solid month. Keep it up!`;
+  } else if (savingsRate >= 10) {
+    emoji = '👍'; color = '#60a5fa';
+    text  = `${savingsRate.toFixed(0)}% savings rate — steady as she goes.`;
+  } else if (summary.net < 0) {
+    emoji = '😬'; color = '#f97316';
+    text  = `Spent more than earned this month.${betterThanPrev ? ' But still better than last month!' : ' Next month is a fresh start.'}`;
+  } else {
+    emoji = '📊'; color = 'var(--muted)';
+    text  = `${savingsRate.toFixed(0)}% savings rate this month.`;
+  }
+
+  if (betterThanPrev && improvement > 0 && savingsRate >= 10) {
+    text += ` ${fmtMoney(improvement)} better than last month! 🎉`;
+  }
+
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 10,
+      padding: '10px 16px', marginBottom: 16, borderRadius: 12,
+      background: 'color-mix(in srgb, var(--surface) 80%, transparent)',
+      border: '1px solid var(--line)',
+      fontSize: 13, color: 'var(--ink)',
+    }}>
+      <span style={{ fontSize: 20 }}>{emoji}</span>
+      <span style={{ color }}>{text}</span>
+    </div>
+  );
+}
 
 // ─── Reusable: Summary card ────────────────────────────────────────
 function SummaryCard({ label, value, sub, trend, accent, spark }) {
@@ -69,6 +122,7 @@ function MonthlyTab({ monthKey }) {
         <SummaryCard label="Saved" value={fmtMoney(summary.savings)} accent="var(--accent2)"
           sub="auto-transfers + IRA" />
       </div>
+      <MonthVibeBanner summary={summary} prev={prev} />
       <div className="grid-2">
         <div className="card">
           <div className="card-head"><h3>Cash flow</h3><span className="muted">Last 6 months</span></div>
@@ -116,6 +170,7 @@ const OVERVIEW_WIDGETS = [
   { id: 'trends',    label: 'Spending Trends'    },
   { id: 'recurring', label: 'Upcoming Bills'     },
   { id: 'recent',    label: 'Recent Transactions'},
+  { id: 'funfact',   label: '✨ Fun Fact'        },
 ];
 
 const OVERVIEW_ORDER_KEY = 'mt_overview_order';
@@ -193,33 +248,33 @@ function OverviewTab() {
     return { total: assets - liabilities, assets, liabilities };
   }, []);
 
-  // Top merchants last 30 days
+  // Top merchants last 30 days — spending only (amount < 0 after server negation)
   const topMerchants = useMemo(() => {
     const map = {};
-    allTxns.filter(t => t.date >= ago30 && t.amount > 0).forEach(t => {
-      map[t.merchant] = (map[t.merchant] || 0) + t.amount;
+    allTxns.filter(t => t.date >= ago30 && t.category !== 'income' && t.amount < 0).forEach(t => {
+      map[t.merchant] = (map[t.merchant] || 0) + Math.abs(t.amount);
     });
     return Object.entries(map).sort((a,b) => b[1]-a[1]).slice(0, 8)
       .map(([name, amt]) => ({ name, amt }));
   }, []);
 
-  // Spending anomalies: current month vs 3-month avg
+  // Spending anomalies: current month vs 3-month avg (spending only, income excluded)
   const anomalies = useMemo(() => {
     const curMonth = today.slice(0, 7);
+    const spendingTxns = allTxns.filter(t => t.category !== 'income' && t.amount < 0);
     const catTotals = (from, to) => {
       const map = {};
-      allTxns.filter(t => t.date >= from && t.date <= to && t.amount > 0).forEach(t => {
-        map[t.category] = (map[t.category] || 0) + t.amount;
+      spendingTxns.filter(t => t.date >= from && t.date <= to).forEach(t => {
+        map[t.category] = (map[t.category] || 0) + Math.abs(t.amount);
       });
       return map;
     };
     const cur = catTotals(curMonth + '-01', today);
-    const prev3 = catTotals(ago90, (new Date(curMonth + '-01') - 1).toISOString ? ago90 : ago90);
     // avg = prev 90 days / 3
     const alerts = [];
     Object.entries(cur).forEach(([cat, curAmt]) => {
-      const p3Total = allTxns.filter(t => t.date >= ago90 && t.date < curMonth + '-01'
-        && t.category === cat && t.amount > 0).reduce((s, t) => s + t.amount, 0);
+      const p3Total = spendingTxns.filter(t => t.date >= ago90 && t.date < curMonth + '-01'
+        && t.category === cat).reduce((s, t) => s + Math.abs(t.amount), 0);
       const avg = p3Total / 3;
       if (avg > 20 && curAmt > avg * 1.25 && curAmt - avg > 50) {
         const catInfo = catById(cat);
@@ -229,19 +284,20 @@ function OverviewTab() {
     return alerts.sort((a,b) => b.pct - a.pct).slice(0, 4);
   }, []);
 
-  // Spending trends: last 6 months per top category
+  // Spending trends: last 6 months per top spending category (income excluded)
   const trends = useMemo(() => {
     const last6 = MONTHS.slice(-6);
     const topCats = [...new Set(
-      allTxns.filter(t => t.amount > 0).sort((a,b) => b.amount - a.amount)
+      allTxns.filter(t => t.category !== 'income' && t.amount < 0)
+        .sort((a,b) => Math.abs(b.amount) - Math.abs(a.amount))
         .slice(0, 100).map(t => t.category)
     )].slice(0, 5);
     return topCats.map(cat => {
       const catInfo = catById(cat);
       const points = last6.map(m => ({
         label: m.short,
-        value: allTxns.filter(t => t.date.startsWith(m.key) && t.category === cat && t.amount > 0)
-          .reduce((s,t) => s + t.amount, 0),
+        value: allTxns.filter(t => t.date.startsWith(m.key) && t.category === cat && t.amount < 0)
+          .reduce((s,t) => s + Math.abs(t.amount), 0),
       }));
       return { cat, name: catInfo.name, color: catInfo.color, points };
     });
@@ -263,6 +319,47 @@ function OverviewTab() {
 
   // Recent txns (last 10 across all time)
   const recentTxns = allTxns.slice(0, 10);
+
+  // Fun fact — computed once from spending data
+  const funFact = useMemo(() => {
+    const spendTxns = allTxns.filter(t => t.amount < 0 && t.category !== 'income');
+    if (spendTxns.length === 0) return null;
+
+    const totalSpend  = spendTxns.reduce((s, t) => s + Math.abs(t.amount), 0);
+    const catMap      = {};
+    spendTxns.forEach(t => { catMap[t.category] = (catMap[t.category] || 0) + Math.abs(t.amount); });
+    const topCat      = Object.entries(catMap).sort((a,b) => b[1]-a[1])[0];
+    const diningAmt   = catMap['dining'] || catMap['food'] || catMap['restaurants'] || 0;
+    const coffeeAmt   = catMap['coffee'] || 0;
+    const daysOfData  = Math.max(1, Math.round((new Date(spendTxns[0]?.date) - new Date(spendTxns[spendTxns.length-1]?.date)) / 864e5));
+    const dailySpend  = totalSpend / Math.max(1, daysOfData);
+    const yearlyDining = diningAmt * (365 / Math.max(1, daysOfData));
+
+    const facts = [];
+
+    if (diningAmt > 200) {
+      const burritos = Math.round(yearlyDining / 12);
+      facts.push({ emoji: '🌯', text: `At your dining pace, you'll spend ${fmtMoney(yearlyDining)} on food this year — that's ${burritos.toLocaleString()} Chipotle burritos.` });
+    }
+    if (coffeeAmt > 50) {
+      const yearCoffee = coffeeAmt * (365 / Math.max(1, daysOfData));
+      const cups = Math.round(yearCoffee / 6);
+      facts.push({ emoji: '☕', text: `You spend ${fmtMoney(yearCoffee)} on coffee per year — enough for ${cups.toLocaleString()} lattes.` });
+    }
+    if (topCat && topCat[1] > 100) {
+      const catInfo = catById(topCat[0]);
+      const topPct  = Math.round((topCat[1] / totalSpend) * 100);
+      facts.push({ emoji: catInfo.icon || '💸', text: `${catInfo.name} is your #1 spending category at ${topPct}% of total spend.` });
+    }
+    if (dailySpend > 10) {
+      facts.push({ emoji: '📅', text: `You spend about ${fmtMoney(dailySpend)}/day on average — or ${fmtMoney(dailySpend * 365)} a year.` });
+    }
+
+    // Pick one pseudo-randomly (based on current date so it changes daily)
+    if (facts.length === 0) return null;
+    const pick = facts[new Date().getDate() % facts.length];
+    return pick;
+  }, []);
 
   // Data quality stats — fetched from /api/review
   const [reviewStats, setReviewStats] = useState(null);
@@ -453,6 +550,26 @@ function OverviewTab() {
     if (id === 'recent') return (
       <DragCard key={id} id={id} index={index} order={order} onReorder={handleReorder} title="Recent Transactions">
         <TxnList txns={recentTxns} compact />
+      </DragCard>
+    );
+
+    if (id === 'funfact') return (
+      <DragCard key={id} id={id} index={index} order={order} onReorder={handleReorder} title="✨ Fun Fact">
+        {!funFact ? (
+          <div style={{ color: 'var(--muted)', fontSize: 13 }}>Not enough data yet.</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
+              <span style={{ fontSize: 36, lineHeight: 1 }}>{funFact.emoji}</span>
+              <p style={{ fontSize: 14, color: 'var(--ink)', lineHeight: 1.6, margin: 0 }}>
+                {funFact.text}
+              </p>
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', borderTop: '1px solid var(--line)', paddingTop: 10 }}>
+              Fun facts update daily based on your spending patterns.
+            </div>
+          </div>
+        )}
       </DragCard>
     );
 
@@ -1832,12 +1949,19 @@ function SideBySideBars({ data }) {
 // CHAT TAB
 // ═══════════════════════════════════════════════════════════════════
 function ChatTab() {
-  const [messages, setMessages] = React.useState([]);
-  const [sqlLog, setSqlLog] = React.useState({});
-  const [input, setInput] = React.useState('');
-  const [loading, setLoading] = React.useState(false);
-  const [configOk, setConfigOk] = React.useState(null);
+  const [messages, setMessages]     = React.useState([]);
+  const [sqlLog, setSqlLog]         = React.useState({});
+  const [input, setInput]           = React.useState('');
+  const [loading, setLoading]       = React.useState(false);
+  const [configOk, setConfigOk]     = React.useState(null);
+  const [isRecording, setIsRecording] = React.useState(false);
+  const [speakEnabled, setSpeakEnabled] = React.useState(false);
+  const [isSpeaking, setIsSpeaking] = React.useState(false);
+  const recognitionRef = React.useRef(null);
   const bottomRef = React.useRef(null);
+
+  const hasVoiceInput  = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+  const hasVoiceOutput = !!window.speechSynthesis;
 
   // Check if AI is configured
   React.useEffect(() => {
@@ -1857,6 +1981,52 @@ function ChatTab() {
     "How has my spending changed month over month?",
     "Where am I overspending?",
   ];
+
+  // Auto-speak new assistant messages when speaker is on
+  React.useEffect(() => {
+    if (!speakEnabled || !hasVoiceOutput || messages.length === 0) return;
+    const last = messages[messages.length - 1];
+    if (last.role !== 'assistant') return;
+    window.speechSynthesis.cancel();
+    const utt = new SpeechSynthesisUtterance(last.content);
+    utt.onstart = () => setIsSpeaking(true);
+    utt.onend   = () => setIsSpeaking(false);
+    utt.onerror = () => setIsSpeaking(false);
+    window.speechSynthesis.speak(utt);
+  }, [messages, speakEnabled]);
+
+  function toggleSpeaker() {
+    if (isSpeaking) { window.speechSynthesis.cancel(); setIsSpeaking(false); }
+    setSpeakEnabled(v => !v);
+  }
+
+  function toggleMic() {
+    if (isRecording) {
+      recognitionRef.current?.stop();
+      setIsRecording(false);
+      return;
+    }
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const rec = new SR();
+    rec.continuous      = false;
+    rec.interimResults  = true;
+    rec.lang            = 'en-US';
+    rec.onresult = (e) => {
+      const transcript = Array.from(e.results).map(r => r[0].transcript).join('');
+      setInput(transcript);
+      if (e.results[e.results.length - 1].isFinal) {
+        rec.stop();
+        setIsRecording(false);
+        // slight delay so state settles before send
+        setTimeout(() => send(transcript), 50);
+      }
+    };
+    rec.onerror = () => setIsRecording(false);
+    rec.onend   = () => setIsRecording(false);
+    recognitionRef.current = rec;
+    rec.start();
+    setIsRecording(true);
+  }
 
   const send = async (text) => {
     if (!text.trim() || loading) return;
@@ -1973,18 +2143,50 @@ function ChatTab() {
         display: 'flex', gap: 8, paddingTop: 12,
         borderTop: '1px solid var(--border)',
       }}>
+        {/* Mic button */}
+        {hasVoiceInput && (
+          <button
+            onClick={toggleMic}
+            title={isRecording ? 'Stop recording' : 'Speak your question'}
+            style={{
+              background: isRecording ? '#ef4444' : 'var(--surface)',
+              color: isRecording ? '#fff' : 'var(--muted)',
+              border: `1px solid ${isRecording ? '#ef4444' : 'var(--border)'}`,
+              borderRadius: 10, padding: '10px 12px', fontSize: 16,
+              cursor: 'pointer', flexShrink: 0,
+              animation: isRecording ? 'pulse 1s infinite' : 'none',
+            }}
+          >🎙</button>
+        )}
+
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), send(input))}
-          placeholder="Ask about your spending, income, trends…"
+          placeholder={isRecording ? 'Listening…' : 'Ask about your spending, income, trends…'}
           style={{
             flex: 1, padding: '10px 14px', borderRadius: 10,
-            border: '1px solid var(--border)', fontSize: 14,
-            fontFamily: 'inherit', background: 'var(--surface)',
+            border: `1px solid ${isRecording ? '#ef4444' : 'var(--border)'}`,
+            fontSize: 14, fontFamily: 'inherit', background: 'var(--surface)',
             outline: 'none',
           }}
         />
+
+        {/* Speaker toggle */}
+        {hasVoiceOutput && (
+          <button
+            onClick={toggleSpeaker}
+            title={isSpeaking ? 'Stop speaking' : speakEnabled ? 'Voice replies on — click to turn off' : 'Turn on voice replies'}
+            style={{
+              background: speakEnabled ? 'var(--accent)' : 'var(--surface)',
+              color: speakEnabled ? '#052015' : 'var(--muted)',
+              border: `1px solid ${speakEnabled ? 'var(--accent)' : 'var(--border)'}`,
+              borderRadius: 10, padding: '10px 12px', fontSize: 16,
+              cursor: 'pointer', flexShrink: 0,
+            }}
+          >{isSpeaking ? '⏹' : '🔊'}</button>
+        )}
+
         <button onClick={() => send(input)} disabled={!input.trim() || loading} style={{
           background: 'var(--accent)', color: '#052015', border: 'none',
           borderRadius: 10, padding: '10px 18px', fontWeight: 600,
@@ -1992,7 +2194,7 @@ function ChatTab() {
           opacity: (!input.trim() || loading) ? 0.5 : 1,
         }}>Send</button>
         {messages.length > 0 && (
-          <button onClick={() => { setMessages([]); setSqlLog({}); }} style={{
+          <button onClick={() => { setMessages([]); setSqlLog({}); window.speechSynthesis?.cancel(); }} style={{
             background: 'transparent', color: 'var(--muted)', border: '1px solid var(--border)',
             borderRadius: 10, padding: '10px 14px', fontSize: 13,
             cursor: 'pointer', fontFamily: 'inherit',
@@ -2627,6 +2829,88 @@ function SettingsTab() {
 
 
 // ═══════════════════════════════════════════════════════════════════
+// ALL-DONE CELEBRATION
+// ═══════════════════════════════════════════════════════════════════
+function AllDoneCelebration({ total, streak }) {
+  const { useEffect, useState } = React;
+  const [show, setShow] = useState(false);
+
+  useEffect(() => {
+    if (!document.getElementById('review-done-css')) {
+      const s = document.createElement('style');
+      s.id = 'review-done-css';
+      s.textContent = `
+        @keyframes confettiFall {
+          0%   { transform: translateY(-10px) rotate(0deg);  opacity: 1; }
+          100% { transform: translateY(90px)  rotate(390deg);opacity: 0; }
+        }
+        @keyframes popIn {
+          0%   { transform: scale(0.4); opacity: 0; }
+          65%  { transform: scale(1.12); }
+          100% { transform: scale(1);   opacity: 1; }
+        }
+        .rdone-emoji { animation: confettiFall linear forwards; position: absolute; top: 0; pointer-events: none; }
+        .rdone-pop   { animation: popIn 0.55s cubic-bezier(.2,.8,.3,1.3) forwards; }
+      `;
+      document.head.appendChild(s);
+    }
+    const t = setTimeout(() => setShow(true), 30);
+    return () => clearTimeout(t);
+  }, []);
+
+  const CONFETTI = ['🎉','✨','🎊','💸','🌟','🏆','💚','🎈','🥳','💰'];
+  const streakMsg = streak >= 7 ? "7+ week streak — absolute legend! 🏆"
+    : streak >= 4 ? `${streak} weeks running — you're on fire! 🔥`
+    : streak >= 2 ? `${streak} weeks in a row! Keep it going 🔥`
+    : null;
+  const reviewedMsg = total > 500 ? `${total} transactions? You're practically a CPA.`
+    : total > 200 ? `${total} transactions reviewed. Seriously impressive.`
+    : total > 50  ? `${total} transactions reviewed. Finance goals: unlocked.`
+    : `All ${total} transactions reviewed.`;
+
+  return (
+    <div style={{
+      background: 'var(--surface)', borderRadius: 16,
+      border: '1px solid var(--line)', padding: '52px 24px',
+      textAlign: 'center', position: 'relative', overflow: 'hidden',
+    }}>
+      {show && CONFETTI.map((em, i) => (
+        <span key={i} className="rdone-emoji" style={{
+          left: `${5 + i * 9}%`,
+          fontSize: 18 + (i % 3) * 4,
+          animationDuration: `${1.3 + i * 0.13}s`,
+          animationDelay: `${i * 0.12}s`,
+        }}>{em}</span>
+      ))}
+      <div className="rdone-pop" style={{ opacity: 0 }}>
+        <div style={{ fontSize: 60, marginBottom: 10, lineHeight: 1 }}>🎉</div>
+        <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--ink)', marginBottom: 8, letterSpacing: '-0.02em' }}>
+          You're all caught up!
+        </div>
+        <div style={{ fontSize: 14, color: 'var(--muted)', marginBottom: streakMsg ? 20 : 0, maxWidth: 340, margin: '0 auto', lineHeight: 1.5 }}>
+          {reviewedMsg}
+        </div>
+        {streakMsg && (
+          <div style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 20,
+            background: 'color-mix(in srgb, var(--accent) 12%, transparent)',
+            border: '1px solid color-mix(in srgb, var(--accent) 25%, transparent)',
+            borderRadius: 20, padding: '8px 18px',
+            fontSize: 13, fontWeight: 600, color: 'var(--accent)',
+          }}>
+            {streakMsg}
+          </div>
+        )}
+        <div style={{ marginTop: 24, fontSize: 12, color: 'var(--muted)' }}>
+          New transactions will appear here after your next sync.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
 // REVIEW TAB
 // ═══════════════════════════════════════════════════════════════════
 function ReviewTab() {
@@ -2648,16 +2932,43 @@ function ReviewTab() {
   useEffect(() => { load(); }, [load]);
 
   async function approveBatch() {
-    if (!state?.batch?.length) return;
+    if (!state?.batch?.length || approving) return;
     setApp(true);
-    const ids = state.batch.map(t => t.id);
-    await fetch('/api/review/approve', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ids, overrides: edits }),
-    });
-    setApp(false);
-    load();
+    try {
+      const ids = state.batch.map(t => t.id).filter(Boolean);
+      // Rebuild overrides keyed by real txn_id (edits may use row-N fallback keys)
+      const overrides = {};
+      state.batch.forEach((t, i) => {
+        const rowKey = t.id ?? `row-${i}`;
+        if (edits[rowKey] && t.id) overrides[t.id] = edits[rowKey];
+      });
+      const res  = await fetch('/api/review/approve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids, overrides }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        // Update counts immediately from the response so the UI reacts right away.
+        // Only fetch the next batch if there are more transactions left.
+        setState(prev => ({
+          ...prev,
+          approved:      data.approved,
+          remaining:     data.remaining,
+          streak:        data.streak,
+          last_reviewed: data.last_reviewed,
+          batch:         [],   // clear current batch; load() will fill it if needed
+        }));
+        setEdits({});
+        if (data.remaining > 0) load();
+      } else {
+        load();  // fallback refresh on unexpected response
+      }
+    } catch (_) {
+      load();    // fallback refresh on network error
+    } finally {
+      setApp(false);
+    }
   }
 
   if (loading) return (
@@ -2726,19 +3037,9 @@ function ReviewTab() {
         </div>
       </div>
 
-      {allDone ? (
-        <div style={{
-          background: 'var(--surface)', borderRadius: 16,
-          border: '1px solid var(--line)', padding: '48px 24px',
-          textAlign: 'center',
-        }}>
-          <div style={{ fontSize: 40, marginBottom: 12 }}>🎉</div>
-          <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--ink)', marginBottom: 6 }}>You're all caught up!</div>
-          <div style={{ fontSize: 13, color: 'var(--muted)' }}>
-            All {total} transactions reviewed. New ones will appear here after your next sync.
-          </div>
-        </div>
-      ) : (
+      {allDone && total > 0 ? (
+        <AllDoneCelebration total={total} streak={streak} />
+      ) : allDone ? null : (
         <>
           {/* Batch card */}
           <div style={{
@@ -2760,11 +3061,12 @@ function ReviewTab() {
             </div>
 
             {batch.map((t, i) => {
-              const cat = edits[t.id] || t.category;
+              const rowKey = t.id ?? `row-${i}`;
+              const cat = edits[rowKey] || t.category;
               const catInfo = FIN.catById(cat);
               const isExpense = t.amount >= 0;
               return (
-                <div key={t.id} style={{
+                <div key={rowKey} style={{
                   display: 'grid',
                   gridTemplateColumns: '80px 1fr auto',
                   alignItems: 'center',
@@ -2797,7 +3099,7 @@ function ReviewTab() {
                     </div>
                     <CategoryPicker
                       value={cat}
-                      onChange={(c) => setEdits(prev => ({ ...prev, [t.id]: c }))}
+                      onChange={(c) => setEdits(prev => ({ ...prev, [rowKey]: c }))}
                     />
                   </div>
 
