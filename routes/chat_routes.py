@@ -110,7 +110,9 @@ Return ONLY the raw SQL — no explanation, no markdown, no code fences.
         conn      = get_conn(current_user)
         result_df = conn.execute(raw_sql).df()
         row_count   = len(result_df)
-        result_text = result_df.to_string(index=False, max_rows=50)
+
+        # Cap at 30 rows to limit data sent externally
+        result_text = result_df.to_string(index=False, max_rows=30)
     except Exception as e:
         sql_error   = str(e)
         result_text = f"Query failed: {sql_error}"

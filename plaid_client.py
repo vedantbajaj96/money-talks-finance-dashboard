@@ -136,8 +136,47 @@ def _fetch_delta(
     return added, modified, removed, next_cursor
 
 
+def _best_description(txn: dict) -> str:
+    """Return the most human-readable description available for a transaction.
+
+    Capital One (and a few other institutions) mask `merchant_name` and `name`
+    with asterisks and provide no counterparty data.  Fall back through all
+    available fields, and as a last resort convert Plaid's category slug to a
+    readable label (e.g. FOOD_AND_DRINK_RESTAURANTS → "Restaurants").
+    """
+    def _masked(s: str) -> bool:
+        return not s or "***" in s
+
+    candidates = [
+        txn.get("merchant_name") or "",
+        ((txn.get("counterparties") or [{}])[0].get("name") or ""),
+        txn.get("name") or "",
+        txn.get("original_description") or "",
+    ]
+    for c in candidates:
+        c = str(c).strip()
+        if c and not _masked(c):
+            return c
+
+    # Nothing useful — try to make a readable label from Plaid's category
+    pfc = txn.get("personal_finance_category") or {}
+    if isinstance(pfc, dict):
+        detailed = pfc.get("detailed") or pfc.get("primary") or ""
+        if detailed:
+            # "FOOD_AND_DRINK_RESTAURANTS" → "Restaurants"
+            label = detailed.split("_")[-1].replace("_", " ").title()
+            if label and label.lower() not in ("other", ""):
+                return label
+            # primary alone: "FOOD_AND_DRINK" → "Food And Drink"
+            primary = pfc.get("primary") or ""
+            if primary:
+                return primary.replace("_", " ").title()
+
+    return "Unknown transaction"
+
+
 def _row_from_txn(txn: dict, inst_name: str, item_id: str) -> dict:
-    merchant = txn.get("merchant_name") or txn.get("name") or ""
+    merchant = _best_description(txn)
     date_str = txn.get("date") or txn.get("settlement_date") or ""
     amount   = txn.get("amount") or txn.get("quantity") or 0.0
     txn_id   = txn.get("transaction_id") or txn.get("investment_transaction_id") or ""
@@ -343,6 +382,7 @@ def sync_all_transactions(
                             "notes":       r.get("notes"),
                             "tags":        r.get("tags"),
                             "user_edited": bool(r.get("user_edited", False)),
+                            "date":        r.get("date") if bool(r.get("user_edited", False)) else None,
                         }
             df = df[df["source"] != inst_source].copy()
 
@@ -358,9 +398,9 @@ def sync_all_transactions(
             for txn in modified:
                 mask = df["plaid_txn_id"] == txn["transaction_id"]
                 if mask.any():
-                    merchant = txn.get("merchant_name") or txn.get("name", "")
+                    merchant = _best_description(txn)
                     df.loc[mask, "expense_amount"] = float(txn["amount"])
-                    df.loc[mask, "description"]    = merchant.strip()
+                    df.loc[mask, "description"]    = merchant
         total_modified += len(modified)
 
         # Apply additions
@@ -386,6 +426,11 @@ def sync_all_transactions(
                         new_df.at[i, "tags"] = ann["tags"]
                     if was_user_edited:
                         new_df.at[i, "user_edited"] = True
+                    if ann.get("date") is not None:
+                        try:
+                            new_df.at[i, "date"] = pd.to_datetime(ann["date"])
+                        except Exception:
+                            pass
             df = pd.concat([df, new_df], ignore_index=True) if not df.empty else new_df
         total_added += len(added)
 

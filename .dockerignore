@@ -1,0 +1,14 @@
+data/
+node_modules/
+moneytalks/node_modules/
+moneytalks/*.js.compiled
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+.env
+server.log
+test-results/
+tests/
+.git/
+*.md

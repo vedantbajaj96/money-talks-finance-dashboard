@@ -31,6 +31,9 @@ from __future__ import annotations
 
 import datetime
 import subprocess
+import warnings
+warnings.filterwarnings("ignore", message=".*urllib3.*", category=UserWarning)
+warnings.filterwarnings("ignore", message=".*OpenSSL.*")
 from pathlib import Path
 
 import uvicorn

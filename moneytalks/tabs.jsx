@@ -98,16 +98,46 @@ function SummaryCard({ label, value, sub, trend, accent, spark }) {
 // ═══════════════════════════════════════════════════════════════════
 // OVERVIEW TAB
 // ═══════════════════════════════════════════════════════════════════
-function MonthlyTab({ monthKey }) {
+function MonthlyTab({ monthKey, txnOverrides, setTxnOverrides, refreshFin }) {
+  const { useState, useEffect } = React;
+  const [selectedCat, setSelectedCat] = useState(null);
+
+  // Reset selected category when the month changes
+  useEffect(() => { setSelectedCat(null); }, [monthKey]);
+
   const summary = monthSummary(monthKey);
-  const monthTxns = txnsForMonth(monthKey);
+  const rawMonthTxns = txnsForMonth(monthKey);
+  const monthTxns = rawMonthTxns.map(t =>
+    txnOverrides && txnOverrides[t.id] ? { ...t, category: txnOverrides[t.id] } : t
+  );
   const breakdown = sumByCategory(monthTxns).slice(0, 6);
-  const recent = monthTxns.slice(0, 6);
   const incomeSeries  = MONTHS.map((m) => ({ label: m.short, value: monthSummary(m.key).income }));
   const expenseSeries = MONTHS.map((m) => ({ label: m.short, value: monthSummary(m.key).expenses }));
   const prevIdx = MONTHS.findIndex((m) => m.key === monthKey) - 1;
   const prev = prevIdx >= 0 ? monthSummary(MONTHS[prevIdx].key) : null;
   const trend = (cur, prv) => prv ? ((cur - prv) / prv) * 100 : 0;
+
+  const catInfo = selectedCat ? breakdown.find(b => b.cat === selectedCat) : null;
+  const catTxns = selectedCat
+    ? monthTxns.filter(t => t.category === selectedCat).sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
+    : monthTxns.slice(0, 8);
+
+  function handleSliceClick(s) {
+    setSelectedCat(prev => prev === s.cat ? null : s.cat);
+  }
+
+  const recat = async (id, cat) => {
+    if (setTxnOverrides) setTxnOverrides(prev => ({ ...prev, [id]: cat }));
+    try {
+      const res = await fetch(`/api/transactions/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ category: cat }),
+      });
+      if (res.ok && refreshFin) refreshFin();
+    } catch(e) {}
+  };
+
   return (
     <div className="tab-body">
       <div className="grid-4">
@@ -134,10 +164,13 @@ function MonthlyTab({ monthKey }) {
         <div className="card">
           <div className="card-head"><h3>Where it went</h3><span className="muted">{MONTHS.find((m) => m.key === monthKey)?.label}</span></div>
           <div className="donut-row">
-            <DonutChart data={breakdown} size={200} thickness={26} formatter={fmtMoney} />
+            <DonutChart data={breakdown} size={200} thickness={26} formatter={fmtMoney}
+              selectedCat={selectedCat} onSliceClick={handleSliceClick} />
             <div className="donut-legend">
               {breakdown.map((b) => (
-                <div key={b.cat} className="legend-row">
+                <div key={b.cat} className="legend-row"
+                  style={{ cursor: 'pointer', opacity: selectedCat && selectedCat !== b.cat ? 0.4 : 1, transition: 'opacity .15s' }}
+                  onClick={() => handleSliceClick(b)}>
                   <span className="cat-dot" style={{ background: b.color }} />
                   <span className="legend-name">{b.name}</span>
                   <span className="legend-amt">{fmtMoney(b.amount)}</span>
@@ -147,15 +180,22 @@ function MonthlyTab({ monthKey }) {
           </div>
         </div>
       </div>
-      <div className="grid-2">
-        <div className="card">
-          <div className="card-head"><h3>Recent transactions</h3><span className="muted">{monthTxns.length} this month</span></div>
-          <TxnList txns={recent} compact />
+      <div className="card">
+        <div className="card-head">
+          <h3>
+            {catInfo
+              ? <><span className="cat-dot" style={{ background: catInfo.color, display: 'inline-block', marginRight: 6 }} />{catInfo.name}</>
+              : 'Recent transactions'}
+          </h3>
+          {catInfo
+            ? <button onClick={() => setSelectedCat(null)} style={{
+                background: 'none', border: '1px solid var(--line)', borderRadius: 6,
+                padding: '2px 10px', fontSize: 12, color: 'var(--ink-3)', cursor: 'pointer',
+              }}>Clear</button>
+            : <span className="muted">{monthTxns.length} this month · click a slice to filter</span>
+          }
         </div>
-        <div className="card">
-          <div className="card-head"><h3>Top categories</h3><span className="muted">This month</span></div>
-          <BarList data={breakdown} formatter={fmtMoney} />
-        </div>
+        <TxnList txns={catTxns} compact onRecategorize={recat} refreshFin={refreshFin} />
       </div>
     </div>
   );
@@ -718,21 +758,341 @@ function SplitModal({ txn, onClose }) {
   );
 }
 
-function TxnList({ txns, compact = false, onRecategorize }) {
-  const [splitTxn, setSplitTxn] = useState(null);
+// ─── Edit Transaction Modal ───────────────────────────────────────
+function EditTransactionModal({ txn, onClose }) {
+  const isExpense = txn.amount < 0;
+  const [form, setForm] = useState({
+    description: txn.merchant,
+    amount:      String(Math.abs(txn.amount)),
+    category:    txn.category,
+    notes:       txn.notes || '',
+  });
+  const [saving, setSaving] = useState(false);
+  const [err, setErr]       = useState(null);
+
+  const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
+  const valid = form.description.trim() && form.amount !== '' && !isNaN(parseFloat(form.amount));
+
+  async function save() {
+    setSaving(true); setErr(null);
+    try {
+      const amtRaw = parseFloat(form.amount);
+      // Keep original sign direction (expense stays negative, income stays positive)
+      const newAmount = isExpense ? -Math.abs(amtRaw) : Math.abs(amtRaw);
+      const res = await fetch(`/api/transactions/${txn.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          description: form.description.trim(),
+          amount:      newAmount,
+          category:    form.category,
+          notes:       form.notes.trim(),
+        }),
+      });
+      if (res.ok) { onClose(); }
+      else { const d = await res.json(); setErr(d.detail || 'Failed to save'); }
+    } catch(e) { setErr('Network error'); }
+    setSaving(false);
+  }
+
+  const inputStyle = {
+    width: '100%', padding: '7px 10px', borderRadius: 8, fontSize: 13,
+    border: '1px solid var(--line)', background: 'var(--bg)', color: 'var(--ink)',
+    boxSizing: 'border-box',
+  };
+  const labelStyle = { fontSize: 11, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4, display: 'block' };
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={onClose}>
+      <div style={{ background: 'var(--surface)', borderRadius: 16, padding: 24, width: 420, maxWidth: '95vw', boxShadow: '0 8px 40px rgba(0,0,0,0.2)' }} onClick={e => e.stopPropagation()}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+          <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--ink)' }}>Edit transaction</div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, color: 'var(--muted)' }}>×</button>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div>
+            <label style={labelStyle}>Description</label>
+            <input value={form.description} onChange={e => set('description', e.target.value)} style={inputStyle} />
+          </div>
+          <div>
+            <label style={labelStyle}>Amount ($) <span style={{ color: isExpense ? 'var(--terra)' : 'var(--green)', fontWeight: 400, textTransform: 'none' }}>{isExpense ? 'expense' : 'income'}</span></label>
+            <input type="number" min="0" step="0.01" value={form.amount} onChange={e => set('amount', e.target.value)} style={{ ...inputStyle, textAlign: 'right' }} />
+          </div>
+          <div>
+            <label style={labelStyle}>Category</label>
+            <CategoryPicker value={form.category} onChange={v => set('category', v)} />
+          </div>
+          <div>
+            <label style={labelStyle}>Notes</label>
+            <input placeholder="Optional…" value={form.notes} onChange={e => set('notes', e.target.value)} style={inputStyle} />
+          </div>
+        </div>
+        {err && <div style={{ color: 'var(--terra)', fontSize: 12, marginTop: 10 }}>{err}</div>}
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 20 }}>
+          <button onClick={onClose} style={{ padding: '7px 16px', borderRadius: 8, border: '1px solid var(--line)', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>Cancel</button>
+          <button onClick={save} disabled={!valid || saving} style={{ padding: '7px 20px', borderRadius: 8, border: 'none', background: valid ? 'var(--accent)' : 'var(--line)', color: '#fff', cursor: valid ? 'pointer' : 'default', fontSize: 13, fontWeight: 600 }}>{saving ? 'Saving…' : 'Save'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Add Transaction Modal ────────────────────────────────────────
+function AddTransactionModal({ onClose, refreshFin }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [form, setForm] = useState({
+    date: today, description: '', amount: '', txnType: 'expense',
+    category: 'Other', source: 'Cash', notes: '',
+  });
+  const [saving, setSaving] = useState(false);
+  const [err, setErr]       = useState(null);
+
+  const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
+
+  const valid = form.date && form.description.trim() && form.amount !== '' && !isNaN(parseFloat(form.amount));
+
+  async function save() {
+    setSaving(true); setErr(null);
+    try {
+      const amtRaw = parseFloat(form.amount);
+      const res = await fetch('/api/transactions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          date:             form.date,
+          description:      form.description.trim(),
+          amount:           form.txnType === 'expense' ? -Math.abs(amtRaw) : Math.abs(amtRaw),
+          transaction_type: form.txnType,
+          category:         form.category,
+          source:           form.source.trim() || 'Cash',
+          notes:            form.notes.trim(),
+        }),
+      });
+      if (res.ok) {
+        if (refreshFin) await refreshFin();
+        onClose();
+      } else {
+        const d = await res.json();
+        setErr(d.detail || 'Failed to save');
+      }
+    } catch(e) {
+      setErr('Network error');
+    }
+    setSaving(false);
+  }
+
+  const inputStyle = {
+    width: '100%', padding: '7px 10px', borderRadius: 8, fontSize: 13,
+    border: '1px solid var(--line)', background: 'var(--bg)', color: 'var(--ink)',
+    boxSizing: 'border-box',
+  };
+  const labelStyle = { fontSize: 11, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4, display: 'block' };
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 9999,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+    }} onClick={onClose}>
+      <div style={{
+        background: 'var(--surface)', borderRadius: 16, padding: 24, width: 420,
+        maxWidth: '95vw', boxShadow: '0 8px 40px rgba(0,0,0,0.2)',
+      }} onClick={e => e.stopPropagation()}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+          <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--ink)' }}>Add transaction</div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, color: 'var(--muted)', lineHeight: 1 }}>×</button>
+        </div>
+
+        {/* Type toggle */}
+        <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+          {['expense', 'income'].map(t => (
+            <button key={t} onClick={() => set('txnType', t)} style={{
+              flex: 1, padding: '7px 0', borderRadius: 8, border: '1px solid var(--line)',
+              background: form.txnType === t ? (t === 'expense' ? 'var(--terra, #e05c5c)' : 'var(--green, #5ec98a)') : 'var(--bg)',
+              color: form.txnType === t ? '#fff' : 'var(--muted)',
+              cursor: 'pointer', fontSize: 13, fontWeight: 600,
+              textTransform: 'capitalize',
+            }}>{t}</button>
+          ))}
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ display: 'flex', gap: 12 }}>
+            <div style={{ flex: 1 }}>
+              <label style={labelStyle}>Date</label>
+              <input type="date" value={form.date} onChange={e => set('date', e.target.value)} style={inputStyle} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <label style={labelStyle}>Amount ($)</label>
+              <input type="number" min="0" step="0.01" placeholder="0.00"
+                value={form.amount} onChange={e => set('amount', e.target.value)}
+                style={{ ...inputStyle, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }} />
+            </div>
+          </div>
+
+          <div>
+            <label style={labelStyle}>Description</label>
+            <input placeholder="e.g. Farmer's market" value={form.description}
+              onChange={e => set('description', e.target.value)} style={inputStyle} />
+          </div>
+
+          <div>
+            <label style={labelStyle}>Category</label>
+            <CategoryPicker value={form.category} onChange={v => set('category', v)} />
+          </div>
+
+          <div>
+            <label style={labelStyle}>Account / Source</label>
+            <input placeholder="Cash" value={form.source}
+              onChange={e => set('source', e.target.value)} style={inputStyle} />
+          </div>
+
+          <div>
+            <label style={labelStyle}>Notes (optional)</label>
+            <input placeholder="Any extra details…" value={form.notes}
+              onChange={e => set('notes', e.target.value)} style={inputStyle} />
+          </div>
+        </div>
+
+        {err && <div style={{ color: 'var(--terra)', fontSize: 12, marginTop: 10 }}>{err}</div>}
+
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 20 }}>
+          <button onClick={onClose} style={{
+            padding: '7px 16px', borderRadius: 8, border: '1px solid var(--line)',
+            background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)',
+          }}>Cancel</button>
+          <button onClick={save} disabled={!valid || saving} style={{
+            padding: '7px 20px', borderRadius: 8, border: 'none',
+            background: valid ? 'var(--accent)' : 'var(--line)', color: '#fff',
+            cursor: valid ? 'pointer' : 'default', fontSize: 13, fontWeight: 600,
+          }}>{saving ? 'Saving…' : 'Add transaction'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Inline date editor ───────────────────────────────────────────
+function DateEditor({ currentDate, onSave, onCancel }) {
+  const [value, setValue] = React.useState(currentDate);
+  const inputRef = React.useRef(null);
+
+  React.useEffect(() => {
+    if (inputRef.current) {
+      inputRef.current.focus();
+      try { inputRef.current.showPicker(); } catch(_) {}
+    }
+  }, []);
+
+  // Float above the row so it doesn't get clipped by neighbouring grid cells
+  return (
+    <div style={{ position: 'relative' }}>
+      <div style={{
+        position: 'absolute', right: 0, top: '50%', transform: 'translateY(-50%)',
+        display: 'flex', alignItems: 'center', gap: 4, zIndex: 200,
+        background: 'var(--surface)', padding: '3px 6px', borderRadius: 8,
+        boxShadow: '0 2px 12px rgba(0,0,0,0.15)', whiteSpace: 'nowrap',
+        border: '1px solid var(--line)',
+      }} onClick={e => e.stopPropagation()}>
+        <input
+          ref={inputRef}
+          type="date"
+          value={value}
+          onChange={e => setValue(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter' && value) onSave(value);
+            if (e.key === 'Escape') onCancel();
+          }}
+          style={{
+            fontSize: 12, padding: '2px 6px', borderRadius: 6,
+            border: '1px solid var(--accent)', background: 'var(--bg)',
+            color: 'var(--ink)', width: 130,
+          }}
+        />
+        <button onClick={() => { if (value) onSave(value); }} style={{
+          background: 'var(--accent)', border: 'none', borderRadius: 5,
+          color: '#fff', cursor: 'pointer', fontSize: 12, padding: '2px 7px', fontWeight: 600,
+        }}>✓</button>
+        <button onClick={onCancel} style={{
+          background: 'none', border: 'none', cursor: 'pointer',
+          color: 'var(--muted)', fontSize: 14, padding: '0 2px',
+        }}>×</button>
+      </div>
+    </div>
+  );
+}
+
+function TxnList({ txns, compact = false, onRecategorize, refreshFin }) {
+  const [splitTxn, setSplitTxn]     = useState(null);
+  const [editDateId, setEditDateId] = useState(null);
+  const [editTxn, setEditTxn]       = useState(null);
+  const [menuId, setMenuId]         = useState(null);
+  const [sortCol, setSortCol]       = useState('date');
+  const [sortDir, setSortDir]       = useState('desc');
+
+  function toggleSort(col) {
+    if (sortCol === col) setSortDir(d => d === 'desc' ? 'asc' : 'desc');
+    else { setSortCol(col); setSortDir('desc'); }
+  }
+
+  const sorted = [...txns].sort((a, b) => {
+    let cmp = 0;
+    if (sortCol === 'date')   cmp = a.date < b.date ? -1 : a.date > b.date ? 1 : 0;
+    if (sortCol === 'amount') cmp = Math.abs(a.amount) - Math.abs(b.amount);
+    return sortDir === 'desc' ? -cmp : cmp;
+  });
 
   function handleSplitClose(reload) {
     setSplitTxn(null);
-    if (reload) window.location.reload();
+    if (reload) { if (refreshFin) refreshFin(); else window.location.reload(); }
   }
+
+  async function saveDate(txnId, newDate) {
+    setEditDateId(null);
+    try {
+      await fetch(`/api/transactions/${txnId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date: newDate }),
+      });
+      if (refreshFin) refreshFin();
+    } catch(e) { /* ignore */ }
+  }
+
+  const SortIcon = ({ col }) => {
+    if (sortCol !== col) return <span style={{ opacity: 0.25, fontSize: 10 }}>↕</span>;
+    return <span style={{ fontSize: 10, color: 'var(--accent)' }}>{sortDir === 'desc' ? '↓' : '↑'}</span>;
+  };
 
   return (
     <>
+      {!compact && (
+        <div style={{
+          display: 'grid', gridTemplateColumns: '36px 1fr 56px 96px 20px',
+          gap: 10, padding: '6px 4px 5px',
+          borderBottom: '2px solid var(--line)',
+          fontSize: 11, fontWeight: 600, color: 'var(--muted)',
+          textTransform: 'uppercase', letterSpacing: '0.04em',
+          userSelect: 'none',
+        }}>
+          <div />
+          <div>Merchant</div>
+          <div style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3 }}
+            onClick={() => toggleSort('date')}>
+            Date <SortIcon col="date" />
+          </div>
+          <div style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 3 }}
+            onClick={() => toggleSort('amount')}>
+            <SortIcon col="amount" /> Amount
+          </div>
+          <div />
+        </div>
+      )}
       <div className={`txn-list ${compact ? 'compact' : ''}`}>
-        {txns.map((t) => {
+        {sorted.map((t) => {
           const cat = catById(t.category);
           const acct = acctById(t.account);
           const isSplit = t.is_split;
+          const canEdit = !!onRecategorize && !isSplit;
           return (
             <div key={t.id} className="txn-row" style={isSplit ? { paddingLeft: 28, borderLeft: `3px solid ${cat.color}40` } : {}}>
               <div className="txn-icon" style={{ background: cat.color + '24', color: cat.color }}>
@@ -756,26 +1116,72 @@ function TxnList({ txns, compact = false, onRecategorize }) {
                   <span>{acct.name}</span>
                 </div>
               </div>
-              <div className="txn-date">{t.date.slice(5).replace('-', '/')}</div>
+              {canEdit && editDateId === t.id ? (
+                <DateEditor
+                  currentDate={t.date}
+                  onSave={d => saveDate(t.id, d)}
+                  onCancel={() => setEditDateId(null)}
+                />
+              ) : (
+                <div
+                  className="txn-date"
+                  title={canEdit ? 'Click to edit date' : undefined}
+                  style={canEdit ? { cursor: 'pointer', textDecoration: 'underline dotted', textUnderlineOffset: 2 } : {}}
+                  onClick={canEdit ? () => setEditDateId(t.id) : undefined}
+                >
+                  {t.date.slice(5).replace('-', '/')}
+                </div>
+              )}
               <div className={`txn-amt ${t.amount >= 0 ? 'pos' : 'neg'}`}>
                 {fmt(t.amount, { sign: true })}
               </div>
-              {onRecategorize && !isSplit && !compact && (
-                <button
-                  title="Split transaction"
-                  onClick={() => setSplitTxn(t)}
-                  style={{
-                    background: 'none', border: 'none', cursor: 'pointer',
-                    color: 'var(--muted)', fontSize: 14, padding: '0 4px',
-                    opacity: 0.5, marginLeft: 4, lineHeight: 1,
-                  }}
-                >⋮</button>
-              )}
+              {onRecategorize && !isSplit && !compact ? (
+                <div style={{ position: 'relative', display: 'flex', justifyContent: 'center' }}>
+                  <button
+                    onClick={e => { e.stopPropagation(); setMenuId(menuId === t.id ? null : t.id); }}
+                    style={{
+                      background: 'none', border: 'none', cursor: 'pointer',
+                      color: 'var(--muted)', fontSize: 15, padding: '0 2px',
+                      lineHeight: 1, width: 20,
+                    }}
+                  >⋮</button>
+                  {menuId === t.id && (
+                    <div style={{
+                      position: 'absolute', right: 0, top: '100%', zIndex: 300,
+                      background: 'var(--surface)', border: '1px solid var(--line)',
+                      borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.18)',
+                      minWidth: 130, overflow: 'hidden',
+                    }} onClick={e => e.stopPropagation()}>
+                      {[
+                        { label: 'Edit details', action: () => { setEditTxn(t); setMenuId(null); } },
+                        { label: 'Split', action: () => { setSplitTxn(t); setMenuId(null); } },
+                        { label: 'Delete', action: async () => {
+                          setMenuId(null);
+                          if (!confirm(`Delete "${t.merchant}"?`)) return;
+                          await fetch(`/api/transactions/${t.id}`, { method: 'DELETE' });
+                          if (refreshFin) refreshFin();
+                        }, danger: true },
+                      ].map(item => (
+                        <button key={item.label} onClick={item.action} style={{
+                          display: 'block', width: '100%', textAlign: 'left',
+                          padding: '8px 14px', background: 'none', border: 'none',
+                          cursor: 'pointer', fontSize: 13,
+                          color: item.danger ? 'var(--terra, #e05c5c)' : 'var(--ink)',
+                        }}
+                          onMouseEnter={e => e.target.style.background = 'var(--bg)'}
+                          onMouseLeave={e => e.target.style.background = 'none'}
+                        >{item.label}</button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : <div />}
             </div>
           );
         })}
       </div>
       {splitTxn && <SplitModal txn={splitTxn} onClose={handleSplitClose} />}
+      {editTxn && <EditTransactionModal txn={editTxn} onClose={() => { setEditTxn(null); if (refreshFin) refreshFin(); }} />}
     </>
   );
 }
@@ -955,7 +1361,8 @@ function SearchableSelect({ value, onChange, options, placeholder = 'All' }) {
 // ═══════════════════════════════════════════════════════════════════
 // TRANSACTIONS TAB
 // ═══════════════════════════════════════════════════════════════════
-function TransactionsTab({ monthKey, txnOverrides, setTxnOverrides, search: globalSearch = '', setSearch: setGlobalSearch }) {
+function TransactionsTab({ monthKey, txnOverrides, setTxnOverrides, search: globalSearch = '', setSearch: setGlobalSearch, refreshFin, finVersion }) {
+  const [showAdd, setShowAdd] = useState(false);
   const [search, setSearch] = useState(globalSearch);
   const [catFilter, setCatFilter] = useState('all');
   const [acctFilter, setAcctFilter] = useState('all');
@@ -1049,9 +1456,9 @@ function TransactionsTab({ monthKey, txnOverrides, setTxnOverrides, search: glob
         const data = await res.json();
         if (data.auto_applied > 0) {
           setAutoMsg(`Also updated ${data.auto_applied} similar transaction${data.auto_applied > 1 ? 's' : ''}`);
-          // Reload after a moment so auto-applied changes are visible
-          setTimeout(() => window.location.reload(), 2000);
         }
+        // Refresh all tabs with latest data
+        if (refreshFin) refreshFin();
       }
     } catch(e) { /* optimistic, ignore */ }
   };
@@ -1120,10 +1527,16 @@ function TransactionsTab({ monthKey, txnOverrides, setTxnOverrides, search: glob
             <span className="pos">+{fmtMoney(totalIn)}</span>
             <span className="neg">−{fmtMoney(totalOut)}</span>
           </div>
+          <button onClick={() => setShowAdd(true)} style={{
+            padding: '6px 14px', borderRadius: 8, border: '1px solid var(--accent)',
+            background: 'none', color: 'var(--accent)', cursor: 'pointer',
+            fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap',
+          }}>+ Add</button>
         </div>
-        <TxnList txns={filtered} onRecategorize={recat} />
+        <TxnList txns={filtered} onRecategorize={recat} refreshFin={refreshFin} />
         {filtered.length === 0 && <div className="empty">No transactions match your filters.</div>}
       </div>
+      {showAdd && <AddTransactionModal onClose={() => setShowAdd(false)} refreshFin={refreshFin} />}
       {autoMsg && (
         <div style={{
           position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)',
@@ -1142,7 +1555,7 @@ function TransactionsTab({ monthKey, txnOverrides, setTxnOverrides, search: glob
 // ═══════════════════════════════════════════════════════════════════
 // SPENDING TAB
 // ═══════════════════════════════════════════════════════════════════
-function SpendingTab({ monthKey }) {
+function SpendingTab({ monthKey, finVersion }) {
   const txns = txnsForMonth(monthKey);
   const breakdown = sumByCategory(txns);
   const total = breakdown.reduce((s, b) => s + b.amount, 0);
@@ -1279,7 +1692,7 @@ function SpendingTab({ monthKey }) {
 // ═══════════════════════════════════════════════════════════════════
 // INCOME TAB
 // ═══════════════════════════════════════════════════════════════════
-function IncomeTab({ monthKey }) {
+function IncomeTab({ monthKey, finVersion }) {
   const txns = txnsForMonth(monthKey).filter((t) => t.category === 'income');
   const total = txns.reduce((s, t) => s + t.amount, 0);
 
@@ -1403,11 +1816,16 @@ function NetWorthTab() {
   const netSeries = [{ key: 'net', name: 'Net worth', color: '#67e8f9',
     points: NET_WORTH_HISTORY.map((h) => ({ label: h.month.slice(0, 3), value: h.assets - h.liabilities })) }];
 
+  const prevNet = NET_WORTH_HISTORY.length >= 2
+    ? NET_WORTH_HISTORY[NET_WORTH_HISTORY.length - 2].assets - NET_WORTH_HISTORY[NET_WORTH_HISTORY.length - 2].liabilities
+    : null;
+  const netTrend = prevNet && prevNet !== 0 ? ((net - prevNet) / Math.abs(prevNet)) * 100 : null;
+
   return (
     <div className="tab-body">
       <div className="grid-3">
         <SummaryCard label="Net worth" value={fmtMoney(net)} accent="var(--accent2)"
-          trend={3.2} />
+          trend={netTrend} />
         <SummaryCard label="Total assets" value={fmtMoney(assets)} accent="var(--green)"
           sub={`${ACCOUNTS.filter((a) => a.balance > 0).length} accounts`} />
         <SummaryCard label="Total liabilities" value={fmtMoney(liabilities)} accent="var(--terra)"
@@ -1549,7 +1967,7 @@ function AccountsTab() {
       setSyncResult({ ...data, full });
       // Reload the page after a successful sync so window.FIN reflects new transactions
       if (data.ok && (data.stats?.added > 0 || data.stats?.modified > 0 || data.stats?.removed > 0)) {
-        setTimeout(() => window.location.reload(), 1200);
+        setTimeout(() => { if (refreshFin) refreshFin(); }, 1200);
       }
     } catch (e) {
       setSyncResult({ ok: false, error: String(e) });
@@ -1758,7 +2176,7 @@ function RecurringTab() {
 // ═══════════════════════════════════════════════════════════════════
 // CATEGORIES TAB
 // ═══════════════════════════════════════════════════════════════════
-function CategoriesTab({ monthKey }) {
+function CategoriesTab({ monthKey, finVersion }) {
   const txns = txnsForMonth(monthKey);
   const breakdown = sumByCategory(txns);
   const total = breakdown.reduce((s, b) => s + b.amount, 0);
@@ -2222,7 +2640,7 @@ function PlaidSyncCard() {
       const data = await res.json();
       setResult({ ...data, full });
       if (data.ok && (data.stats?.added > 0 || data.stats?.modified > 0 || data.stats?.removed > 0)) {
-        setTimeout(() => window.location.reload(), 1200);
+        setTimeout(() => { if (refreshFin) refreshFin(); }, 1200);
       }
     } catch (e) {
       setResult({ ok: false, error: String(e) });
@@ -2526,7 +2944,7 @@ function CategoriesManagerCard() {
 }
 
 // ─── Settings Tab ─────────────────────────────────────────────────────────
-function SettingsTab() {
+function SettingsTab({ refreshFin }) {
   const { useState, useEffect, useRef } = React;
 
   const [dragging, setDragging]     = useState(false);
@@ -2913,7 +3331,7 @@ function AllDoneCelebration({ total, streak }) {
 // ═══════════════════════════════════════════════════════════════════
 // REVIEW TAB
 // ═══════════════════════════════════════════════════════════════════
-function ReviewTab() {
+function ReviewTab({ refreshFin }) {
   const { useState, useEffect, useCallback } = React;
 
   const [state, setState]     = useState(null);   // {batch, total, approved, remaining}
@@ -2960,6 +3378,7 @@ function ReviewTab() {
           batch:         [],   // clear current batch; load() will fill it if needed
         }));
         setEdits({});
+        if (refreshFin) refreshFin();
         if (data.remaining > 0) load();
       } else {
         load();  // fallback refresh on unexpected response
@@ -2980,7 +3399,7 @@ function ReviewTab() {
   const { batch = [], total = 0, approved = 0, remaining = 0,
           streak = 0, last_reviewed = null } = state || {};
   const pct = total > 0 ? Math.round((approved / total) * 100) : 100;
-  const allDone = remaining === 0;
+  const allDone = state !== null && remaining === 0;
 
   // Days since last review
   const daysSince = last_reviewed
@@ -3130,8 +3549,9 @@ function ReviewTab() {
             {approving ? 'Saving…' : `✓ Approve these ${batch.length} transactions`}
           </button>
           <div style={{ textAlign: 'center', marginTop: 10, fontSize: 12, color: 'var(--muted)' }}>
-            Approved transactions are locked and won't be changed by the system
+            Change any category above, then approve to lock them in
           </div>
+
         </>
       )}
     </div>

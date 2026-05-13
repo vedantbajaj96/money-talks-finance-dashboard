@@ -1,11 +1,10 @@
-streamlit
+fastapi
+uvicorn[standard]
 pandas
-plotly
 pyarrow
+duckdb
 anthropic
 google-genai
 plaid-python
-fastapi
-uvicorn
-duckdb
-pytest
+sentence-transformers
+python-multipart

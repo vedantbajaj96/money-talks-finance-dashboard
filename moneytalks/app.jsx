@@ -1,6 +1,6 @@
 // Main App component for MoneyTalks — wired to real data via /api/fin.
 (function () {
-const { useState, useEffect } = React;
+const { useState, useEffect, useCallback } = React;
 
 // ─── Helpers ──────────────────────────────────────────────────────
 function avatarColor(name) {
@@ -374,6 +374,7 @@ function TopBar({ tab, monthKey, setMonthKey, search, setSearch }) {
   const [showProfile, setShowProfile] = useState(false);
   const [syncState,   setSyncState]   = useState(null);  // {last_sync, needs_sync}
   const [syncing,     setSyncing]     = useState(false);
+  const [syncProgress, setSyncProgress] = useState(null); // {step, pct, error}
 
   useEffect(() => {
     fetch('/api/auth/me').then(r => r.json()).then(setMe).catch(() => {});
@@ -396,19 +397,33 @@ function TopBar({ tab, monthKey, setMonthKey, search, setSearch }) {
     }).catch(() => {});
   }, []);
 
-  function manualSync() {
+  async function manualSync() {
     if (syncing) return;
     setSyncing(true);
-    fetch('/api/plaid/sync', { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' })
-      .then(r => r.json())
-      .then(res => {
+    setSyncProgress({ step: 'Connecting to bank…', pct: 10, error: null });
+    try {
+      setSyncProgress({ step: 'Fetching transactions…', pct: 35, error: null });
+      const r   = await fetch('/api/plaid/sync', { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' });
+      setSyncProgress({ step: 'Categorizing…', pct: 70, error: null });
+      const res = await r.json();
+      if (!r.ok || res.error) {
+        setSyncProgress({ step: res.error || res.detail || 'Sync failed', pct: 100, error: true });
+        setTimeout(() => { setSyncing(false); setSyncProgress(null); }, 4000);
+        return;
+      }
+      setSyncProgress({ step: 'Saving…', pct: 90, error: null });
+      if (res.last_sync) setSyncState({ last_sync: res.last_sync, needs_sync: false });
+      const added = (res.stats?.added || 0) + (res.stats?.modified || 0);
+      setSyncProgress({ step: added > 0 ? `Done — ${added} new transactions` : 'Already up to date', pct: 100, error: null });
+      setTimeout(() => {
         setSyncing(false);
-        if (res.last_sync) setSyncState({ last_sync: res.last_sync, needs_sync: false });
-        if ((res.stats?.added || 0) + (res.stats?.modified || 0) > 0) {
-          setTimeout(() => window.location.reload(), 800);
-        }
-      })
-      .catch(() => setSyncing(false));
+        setSyncProgress(null);
+        if (added > 0) window.location.reload();
+      }, 1200);
+    } catch (e) {
+      setSyncProgress({ step: 'Connection failed. Check your internet.', pct: 100, error: true });
+      setTimeout(() => { setSyncing(false); setSyncProgress(null); }, 4000);
+    }
   }
 
   function fmtLastSync(iso) {
@@ -423,13 +438,51 @@ function TopBar({ tab, monthKey, setMonthKey, search, setSearch }) {
   }
 
   const idx      = MONTHS.findIndex((m) => m.key === monthKey);
-  const showMonth = ['overview', 'txns', 'income', 'spending', 'categories'].includes(tab);
+  const showMonth = ['overview', 'txns', 'income', 'spending', 'categories', 'monthly'].includes(tab);
   const tabName  = TABS.find((t) => t.id === tab)?.name || '';
   const displayName = me?.display_name || me?.username || '?';
   const initial     = displayName[0].toUpperCase();
   const color       = avatarColor(me?.username || '');
 
   return (
+    <>
+    {syncProgress && (
+      <div style={{
+        position: 'fixed', inset: 0, zIndex: 9999,
+        background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>
+        <div style={{
+          background: 'var(--surface)', borderRadius: 20,
+          border: '1px solid var(--line)', padding: '36px 40px',
+          minWidth: 320, textAlign: 'center', boxShadow: '0 24px 64px rgba(0,0,0,0.3)',
+        }}>
+          <div style={{ fontSize: 32, marginBottom: 12 }}>
+            {syncProgress.error ? '⚠️' : '🔄'}
+          </div>
+          <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)', marginBottom: 6 }}>
+            {syncProgress.error ? 'Sync failed' : 'Syncing your accounts'}
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 20 }}>
+            {syncProgress.step}
+          </div>
+          {/* Progress bar */}
+          <div style={{ height: 6, background: 'var(--line)', borderRadius: 3, overflow: 'hidden' }}>
+            <div style={{
+              height: '100%', borderRadius: 3,
+              width: `${syncProgress.pct}%`,
+              background: syncProgress.error ? 'var(--terra)' : 'var(--accent)',
+              transition: 'width 0.4s ease',
+            }} />
+          </div>
+          {!syncProgress.error && (
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 10 }}>
+              Don't close the app — this takes a few seconds
+            </div>
+          )}
+        </div>
+      </div>
+    )}
     <header className="topbar">
       <div className="topbar-left">
         <h1 className="page-title">{tabName}</h1>
@@ -490,6 +543,7 @@ function TopBar({ tab, monthKey, setMonthKey, search, setSearch }) {
         </div>
       </div>
     </header>
+    </>
   );
 }
 
@@ -595,11 +649,40 @@ class ErrorBoundary extends React.Component {
 // ─── App ──────────────────────────────────────────────────────────
 function App() {
   const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
-  const [tab, setTab]           = useState('review');
+  const [tab, setTab]           = useState(null); // resolved after checking review status
   // Default to most recent month in real data
   const [monthKey, setMonthKey] = useState(MONTHS[MONTHS.length - 1]?.key || '');
   const [search, setSearch]     = useState('');
   const [txnOverrides, setTxnOverrides] = useState({});
+  const [finVersion, setFinVersion]     = useState(0);
+
+  useEffect(() => {
+    fetch('/api/review').then(r => r.json()).then(d => {
+      setTab(d.remaining === 0 ? 'monthly' : 'review');
+    }).catch(() => setTab('review'));
+  }, []);
+
+  // Re-fetch /api/fin and update window.FIN so all tabs see latest data.
+  // Arrays are mutated in-place so module-level destructured references (TRANSACTIONS etc.) stay valid.
+  const refreshFin = useCallback(() => {
+    fetch('/api/fin').then(r => r.json()).then(data => {
+      if (data.hasData === false) return;
+      // Mutate arrays in-place so const destructurings at module scope stay in sync
+      const arrayKeys = ['transactions', 'months', 'accounts', 'categories', 'recurring', 'net_worth_history'];
+      arrayKeys.forEach(k => {
+        if (Array.isArray(data[k]) && Array.isArray(window.FIN[k])) {
+          window.FIN[k].length = 0;
+          window.FIN[k].push(...data[k]);
+        }
+      });
+      // Non-array fields (scalars, objects) can be assigned directly
+      Object.keys(data).forEach(k => {
+        if (!arrayKeys.includes(k)) window.FIN[k] = data[k];
+      });
+      setFinVersion(v => v + 1);
+      setTxnOverrides({});
+    }).catch(() => {});
+  }, []);
 
   const accent  = ACCENT_PRESETS[t.accent] || ACCENT_PRESETS.emerald;
   const cssVars = {
@@ -610,12 +693,13 @@ function App() {
   };
 
   const renderTab = () => {
-    const props = { monthKey, txnOverrides, setTxnOverrides, search, setSearch };
+    if (!tab) return null;
+    const props = { monthKey, txnOverrides, setTxnOverrides, search, setSearch, refreshFin, finVersion };
     switch (tab) {
       case 'overview':    return <OverviewTab    {...props} />;
       case 'txns':        return <TransactionsTab {...props} />;
       case 'monthly':     return <MonthlyTab {...props} />;
-      case 'review':      return <ReviewTab />;
+      case 'review':      return <ReviewTab refreshFin={refreshFin} />;
       case 'cashflow':    return <CashFlowTab />;
       case 'income':      return <IncomeTab      {...props} />;
       case 'spending':    return <SpendingTab    {...props} />;
@@ -625,7 +709,7 @@ function App() {
       case 'accounts':    return <AccountsTab />;
       case 'recurring':   return <RecurringTab />;
       case 'chat':        return <ChatTab />;
-      case 'settings':    return <SettingsTab />;
+      case 'settings':    return <SettingsTab refreshFin={refreshFin} />;
       case 'feedback':    return <FeedbackTab />;
       default:            return <OverviewTab    {...props} />;
     }

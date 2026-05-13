@@ -91,18 +91,22 @@ def build_fin_data(username: str) -> dict:
 
     # ── TRANSACTIONS ──────────────────────────────────────────────────────
     col_names = {r[0] for r in conn.execute("DESCRIBE txns").fetchall()}
-    select_txn_id   = "txn_id"            if "txn_id"            in col_names else "NULL"
-    select_notes    = "notes"             if "notes"             in col_names else "NULL"
-    select_tags     = "tags"              if "tags"              in col_names else "NULL"
-    select_txn_type = "transaction_type"  if "transaction_type"  in col_names else "NULL"
+    select_txn_id    = "txn_id"            if "txn_id"            in col_names else "NULL"
+    select_notes     = "notes"             if "notes"             in col_names else "NULL"
+    select_tags      = "tags"              if "tags"              in col_names else "NULL"
+    select_txn_type   = "transaction_type"  if "transaction_type"  in col_names else "NULL"
+    select_user_edit  = "user_edited"       if "user_edited"       in col_names else "FALSE"
+    select_source_type = "source_type"      if "source_type"       in col_names else "NULL"
 
     rows = conn.execute(f"""
         SELECT
             date, description, expense_amount, category, source,
-            {select_txn_id}   AS txn_id,
-            {select_notes}    AS notes,
-            {select_tags}     AS tags,
-            {select_txn_type} AS txn_type
+            {select_txn_id}     AS txn_id,
+            {select_notes}      AS notes,
+            {select_tags}       AS tags,
+            {select_txn_type}   AS txn_type,
+            {select_user_edit}  AS user_edited,
+            {select_source_type} AS source_type
         FROM txns
         ORDER BY date DESC
     """).fetchall()
@@ -117,12 +121,17 @@ def build_fin_data(username: str) -> dict:
         _user_edited_ids = set()
 
     transactions = []
-    for date, desc, expense_amount, category, source, txn_id, notes, tags, txn_type in rows:
+    for date, desc, expense_amount, category, source, txn_id, notes, tags, txn_type, user_edited, source_type in rows:
         if not txn_id:
             txn_id = hashlib.md5(
                 f"{date}|{desc}|{expense_amount}".encode()
             ).hexdigest()[:12]
-        cat_id = _resolve_category(str(desc), str(category or "other"), txn_type, float(expense_amount or 0))
+        if user_edited:
+            # User manually set this category — respect it exactly, no auto-overrides
+            from core.categories import map_category as _mc
+            cat_id = _mc(str(category or "other"))
+        else:
+            cat_id = _resolve_category(str(desc), str(category or "other"), txn_type, float(expense_amount or 0))
         _tid = str(txn_id)
         if _tid in _approved_ids or _tid in _user_edited_ids:
             _conf = "high"
@@ -132,16 +141,17 @@ def build_fin_data(username: str) -> dict:
             _conf = "medium"
 
         transactions.append({
-            "id":         _tid,
-            "date":       str(date)[:10],
-            "merchant":   str(desc),
-            "category":   cat_id,
-            "amount":     round(-float(expense_amount), 2),
-            "account":    str(source or ""),
-            "pending":    False,
-            "notes":      str(notes or ""),
-            "tags":       str(tags or ""),
-            "confidence": _conf,
+            "id":          _tid,
+            "date":        str(date)[:10],
+            "merchant":    str(desc),
+            "category":    cat_id,
+            "amount":      round(-float(expense_amount), 2),
+            "account":     str(source or ""),
+            "pending":     False,
+            "notes":       str(notes or ""),
+            "tags":        str(tags or ""),
+            "confidence":  _conf,
+            "source_type": str(source_type or ""),
         })
 
     # ── APPLY SPLITS ──────────────────────────────────────────────────────

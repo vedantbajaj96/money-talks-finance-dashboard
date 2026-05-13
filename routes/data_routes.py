@@ -138,6 +138,25 @@ async def update_transaction(
     if "category" in body:
         ll_cat = body["category"]
         df.loc[mask, "category"] = reverse_map.get(ll_cat, ll_cat)
+        # Sync transaction_type with new category (affects monthly aggregation)
+        if "transaction_type" in df.columns:
+            if ll_cat == "income":
+                df.loc[mask, "transaction_type"] = "income"
+            elif ll_cat not in ("transfer", "savings", "refund"):
+                df.loc[mask, "transaction_type"] = "expense"
+    if "date" in body:
+        try:
+            df.loc[mask, "date"] = pd.to_datetime(body["date"]).date()
+        except Exception:
+            raise HTTPException(400, "Invalid date format")
+    if "description" in body:
+        df.loc[mask, "description"] = str(body["description"]).strip()
+    if "amount" in body:
+        try:
+            new_amount = float(body["amount"])
+            df.loc[mask, "expense_amount"] = new_amount
+        except (TypeError, ValueError):
+            raise HTTPException(400, "Invalid amount")
     if "notes" in body:
         if "notes" not in df.columns:
             df["notes"] = ""
@@ -181,6 +200,26 @@ async def update_transaction(
 
     save_df(current_user, df)
     return {"ok": True, "auto_applied": auto_applied}
+
+
+@router.delete("/api/transactions/{txn_id}")
+async def delete_transaction(
+    txn_id: str,
+    current_user: str = Depends(get_current_user),
+) -> dict:
+    df = load_df(current_user)
+    if df is None:
+        raise HTTPException(404, "No data")
+    if "txn_id" not in df.columns or not (df["txn_id"] == txn_id).any():
+        raise HTTPException(404, f"Transaction {txn_id} not found")
+    df = df[df["txn_id"] != txn_id].reset_index(drop=True)
+    save_df(current_user, df)
+    # Also remove any split data for this transaction
+    splits = load_splits(current_user)
+    if txn_id in splits:
+        del splits[txn_id]
+        save_splits(current_user, splits)
+    return {"ok": True}
 
 
 @router.post("/api/transactions/{txn_id}/split")
@@ -230,6 +269,76 @@ async def split_transaction(
     return {"ok": True, "splits": len(normalized)}
 
 
+@router.post("/api/transactions")
+async def add_transaction(
+    body: dict[str, Any],
+    current_user: str = Depends(get_current_user),
+) -> dict:
+    """Add a one-off manual transaction (e.g. cash)."""
+    date        = body.get("date", "")
+    description = (body.get("description") or "").strip()
+    amount      = body.get("amount")
+    category    = (body.get("category") or "Other").strip()
+    source      = (body.get("source") or "Cash").strip()
+    notes       = (body.get("notes") or "").strip()
+
+    if not date or not description or amount is None:
+        raise HTTPException(400, "date, description, and amount are required")
+
+    try:
+        amount = float(amount)
+    except (TypeError, ValueError):
+        raise HTTPException(400, "amount must be a number")
+
+    # Determine transaction_type from sign if not supplied
+    txn_type = body.get("transaction_type") or ("income" if amount > 0 else "expense")
+    # Convention (matches Plaid): expense_amount positive = money out, negative = income
+    # fin_data negates expense_amount for display, so: expense → +abs, income → -abs
+    expense_amount = abs(amount) if txn_type == "expense" else -abs(amount)
+
+    df = load_df(current_user)
+    if df is None:
+        # First transaction — create minimal schema
+        df = pd.DataFrame(columns=["date", "description", "expense_amount",
+                                    "transaction_type", "category", "source",
+                                    "notes", "txn_id", "user_edited", "approved", "source_type"])
+
+    new_row = {
+        "date":             pd.to_datetime(date).date(),
+        "description":      description,
+        "expense_amount":   expense_amount,
+        "transaction_type": txn_type,
+        "category":         category,
+        "source":           source,
+        "notes":            notes,
+        "user_edited":      True,
+        "approved":         True,
+        "source_type":      "manual",
+    }
+
+    # Generate a stable txn_id
+    raw = f"{date}|{description}|{expense_amount}|manual"
+    new_row["txn_id"] = hashlib.md5(raw.encode()).hexdigest()[:12]
+
+    # Ensure all existing columns exist in new row
+    for col in df.columns:
+        if col not in new_row:
+            new_row[col] = None
+
+    new_df = pd.DataFrame([new_row])
+    # Align dtypes loosely
+    for col in df.columns:
+        if col in new_df.columns and not df.empty:
+            try:
+                new_df[col] = new_df[col].astype(df[col].dtype)
+            except Exception:
+                pass
+
+    df = pd.concat([df, new_df], ignore_index=True)
+    save_df(current_user, df)
+    return {"ok": True, "txn_id": new_row["txn_id"]}
+
+
 @router.delete("/api/transactions/{txn_id}/split")
 async def unsplit_transaction(
     txn_id: str,
@@ -240,6 +349,108 @@ async def unsplit_transaction(
         del data[txn_id]
         save_splits(current_user, data)
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Auto-categorization helper
+# ---------------------------------------------------------------------------
+
+# Keyword → raw category (checked against lowercased description)
+_KEYWORD_CATS: list[tuple[str, str]] = [
+    # Dining
+    ("restaurant", "Dining & Drinks"), ("cafe", "Dining & Drinks"),
+    ("coffee", "Dining & Drinks"), ("pizza", "Dining & Drinks"),
+    ("sushi", "Dining & Drinks"), ("burger", "Dining & Drinks"),
+    ("taco", "Dining & Drinks"), ("tacos", "Dining & Drinks"),
+    ("grill", "Dining & Drinks"), ("bar ", "Dining & Drinks"),
+    ("brewery", "Dining & Drinks"), ("dining", "Dining & Drinks"),
+    ("kitchen", "Dining & Drinks"), ("bistro", "Dining & Drinks"),
+    ("diner", "Dining & Drinks"), ("eatery", "Dining & Drinks"),
+    ("food", "Dining & Drinks"), ("ramen", "Dining & Drinks"),
+    ("pho", "Dining & Drinks"), ("boba", "Dining & Drinks"),
+    ("thai", "Dining & Drinks"), ("indian", "Dining & Drinks"),
+    ("chinese", "Dining & Drinks"), ("mexican", "Dining & Drinks"),
+    ("italian", "Dining & Drinks"), ("bbq", "Dining & Drinks"),
+    ("donut", "Dining & Drinks"), ("bakery", "Dining & Drinks"),
+    ("deli", "Dining & Drinks"), ("smoothie", "Dining & Drinks"),
+    ("juice bar", "Dining & Drinks"), ("ice cream", "Dining & Drinks"),
+    ("gelato", "Dining & Drinks"), ("poke", "Dining & Drinks"),
+    # Groceries
+    ("grocery", "Groceries"), ("market", "Groceries"),
+    ("whole foods", "Groceries"), ("trader joe", "Groceries"),
+    ("safeway", "Groceries"), ("kroger", "Groceries"),
+    ("vons", "Groceries"), ("ralphs", "Groceries"),
+    ("costco", "Groceries"), ("walmart", "Groceries"),
+    ("target", "Groceries"), ("sprouts", "Groceries"),
+    ("aldi", "Groceries"), ("foods co", "Groceries"),
+    # Transport
+    ("uber", "Commute & Transport"), ("lyft", "Commute & Transport"),
+    ("metro", "Commute & Transport"), ("parking", "Commute & Transport"),
+    ("gas station", "Commute & Transport"), ("shell", "Commute & Transport"),
+    ("chevron", "Commute & Transport"), ("arco", "Commute & Transport"),
+    ("exxon", "Commute & Transport"), ("bp ", "Commute & Transport"),
+    ("toll", "Commute & Transport"), ("transit", "Commute & Transport"),
+    ("amtrak", "Commute & Transport"), ("bart", "Commute & Transport"),
+    # Phone / internet bills (utilities)
+    ("tello", "Housing & Utilities"), ("t-mobile", "Housing & Utilities"),
+    ("verizon", "Housing & Utilities"), ("at&t", "Housing & Utilities"),
+    ("sprint", "Housing & Utilities"), ("spectrum", "Housing & Utilities"),
+    ("xfinity", "Housing & Utilities"), ("cox ", "Housing & Utilities"),
+    ("mint mobile", "Housing & Utilities"), ("visible", "Housing & Utilities"),
+    # Subscriptions / digital services
+    ("netflix", "Connectivity"), ("spotify", "Connectivity"),
+    ("hulu", "Connectivity"), ("disney", "Connectivity"),
+    ("apple.com/bill", "Connectivity"), ("amazon prime", "Connectivity"),
+    ("youtube", "Connectivity"), ("hbo", "Connectivity"),
+    ("paramount", "Connectivity"), ("peacock", "Connectivity"),
+    ("claude.ai", "Connectivity"), ("openai", "Connectivity"),
+    ("chatgpt", "Connectivity"), ("perplexity", "Connectivity"),
+    ("notion", "Connectivity"), ("dropbox", "Connectivity"),
+    ("adobe", "Connectivity"), ("microsoft", "Connectivity"),
+    ("google one", "Connectivity"), ("icloud", "Connectivity"),
+    # Utilities
+    ("electric", "Housing & Utilities"), ("water ", "Housing & Utilities"),
+    ("utility", "Housing & Utilities"), ("laundry", "Housing & Utilities"),
+    ("socalgasgas", "Housing & Utilities"), ("socal gas", "Housing & Utilities"),
+    ("pge", "Housing & Utilities"), ("sdge", "Housing & Utilities"),
+    ("con ed", "Housing & Utilities"), ("dwp", "Housing & Utilities"),
+    # Health
+    ("pharmacy", "Health & Medical"), ("cvs", "Health & Medical"),
+    ("walgreens", "Health & Medical"), ("clinic", "Health & Medical"),
+    ("hospital", "Health & Medical"), ("doctor", "Health & Medical"),
+    ("dental", "Health & Medical"), ("vision", "Health & Medical"),
+    ("gym", "Fitness & Active"), ("fitness", "Fitness & Active"),
+    ("yoga", "Fitness & Active"), ("pilates", "Fitness & Active"),
+    ("peloton", "Fitness & Active"), ("orangetheory", "Fitness & Active"),
+    # Shopping
+    ("amazon", "Shopping & Retail"), ("ebay", "Shopping & Retail"),
+    ("etsy", "Shopping & Retail"), ("best buy", "Shopping & Retail"),
+    ("apple store", "Shopping & Retail"), ("nike", "Shopping & Retail"),
+    ("zara", "Shopping & Retail"), ("h&m", "Shopping & Retail"),
+    # Travel
+    ("airbnb", "Travel & Getaways"), ("hotel", "Travel & Getaways"),
+    ("airline", "Travel & Getaways"), ("united air", "Travel & Getaways"),
+    ("delta air", "Travel & Getaways"), ("southwest", "Travel & Getaways"),
+    ("alaska air", "Travel & Getaways"), ("american air", "Travel & Getaways"),
+    # Education
+    ("tuition", "Education"), ("university", "Education"),
+    ("college", "Education"), ("udemy", "Education"),
+    ("coursera", "Education"), ("skillshare", "Education"),
+]
+
+def _auto_categorize(description: str, txn_type: str | None, expense_amount: float) -> str:
+    """Return a best-guess raw category for a Pending Review transaction."""
+    from core.categories import _resolve_category
+    resolved = _resolve_category(description, "Pending Review", txn_type, expense_amount)
+    if resolved != "pending-review":
+        # Already maps to transfer/income via patterns
+        reverse_map = {v: k for k, v in CAT_MAP.items()}
+        return reverse_map.get(resolved, resolved)
+    desc_lower = description.lower()
+    for keyword, cat in _KEYWORD_CATS:
+        if keyword in desc_lower:
+            return cat
+    return "Other"
 
 
 # ---------------------------------------------------------------------------
@@ -268,14 +479,37 @@ def get_review_batch(current_user: str = Depends(get_current_user)) -> dict:
         )
         save_df(current_user, df)
 
-    reviewable    = df[~df["category"].isin(["transfer", "Transfer", "Financial & Transfers", "savings", "Savings", "refund", "Refund"])]
-    approved_mask = reviewable["approved"].fillna(False).astype(bool)
+    # Auto-categorize any remaining "Pending Review" transactions.
+    # Note: user_edited is intentionally NOT excluded here — if the category is
+    # still 'Pending Review', user_edited was set incorrectly and must be cleared.
+    pending_mask = (
+        df["category"].isin(["Pending Review", "pending review", ""]) | df["category"].isna()
+    )
+    if pending_mask.any():
+        if "user_edited" not in df.columns:
+            df["user_edited"] = False
+        for idx in df[pending_mask].index:
+            row = df.loc[idx]
+            df.loc[idx, "category"] = _auto_categorize(
+                str(row.get("description", "")),
+                row.get("transaction_type"),
+                float(row.get("expense_amount", 0) or 0),
+            )
+            # Clear user_edited — 'Pending Review' was never a real user choice
+            df.loc[idx, "user_edited"] = False
+        save_df(current_user, df)
+
+    from core.categories import map_category as _mc
+    _SKIP = {"transfer", "savings", "refund"}
+    reviewable    = df[~df["category"].apply(lambda c: _mc(str(c or "")) in _SKIP)]
+    _still_pending = reviewable["category"].isin(["Pending Review", "pending review", ""]) | reviewable["category"].isna()
+    approved_mask = reviewable["approved"].fillna(False).astype(bool) & ~_still_pending
     total         = len(reviewable)
     n_approved    = int(approved_mask.sum())
 
     batch_df = (
         reviewable[~approved_mask]
-        .assign(_abs_amt=reviewable["expense_amount"].abs())
+        .assign(_abs_amt=lambda x: x["expense_amount"].abs())
         .sort_values("_abs_amt", ascending=False)
         .drop(columns=["_abs_amt"])
         .head(REVIEW_BATCH_SIZE)
@@ -347,11 +581,18 @@ async def approve_batch(body: dict[str, Any], current_user: str = Depends(get_cu
         if not mask.any():
             continue
         current_cat = df.loc[mask, "category"].iloc[0]
-        # Only approve if a real category is set or an override is provided
         has_override = txn_id in overrides
         still_pending = current_cat in PENDING or pd.isna(current_cat)
         if still_pending and not has_override:
-            continue  # skip — user must assign a real category first
+            # Check if _resolve_category can determine a real category automatically
+            txn_type   = df.loc[mask, "transaction_type"].iloc[0] if "transaction_type" in df.columns else None
+            exp_amount = float(df.loc[mask, "expense_amount"].iloc[0])
+            desc       = str(df.loc[mask, "description"].iloc[0])
+            resolved   = _resolve_category(desc, str(current_cat), txn_type, exp_amount)
+            if resolved == "pending-review":
+                continue  # genuinely no category — skip
+            # Auto-assign the resolved category
+            df.loc[mask, "category"] = reverse_map.get(resolved, resolved)
         df.loc[mask, "approved"] = True
         if txn_id in overrides:
             ll_cat   = overrides[txn_id]
@@ -411,8 +652,11 @@ async def approve_batch(body: dict[str, Any], current_user: str = Depends(get_cu
     cfg["review_streak"]      = streak
     save_config(current_user, cfg)
 
-    reviewable = df[~df["category"].isin(["transfer", "Transfer", "Financial & Transfers", "savings", "Savings", "refund", "Refund"])]
-    n_approved = int(reviewable["approved"].fillna(False).astype(bool).sum())
+    from core.categories import map_category as _mc
+    _SKIP = {"transfer", "savings", "refund"}
+    reviewable     = df[~df["category"].apply(lambda c: _mc(str(c or "")) in _SKIP)]
+    _still_pending = reviewable["category"].isin(["Pending Review", "pending review", ""]) | reviewable["category"].isna()
+    n_approved     = int((reviewable["approved"].fillna(False).astype(bool) & ~_still_pending).sum())
     return {
         "ok":           True,
         "approved":     n_approved,

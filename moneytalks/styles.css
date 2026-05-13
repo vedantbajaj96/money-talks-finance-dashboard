@@ -537,13 +537,13 @@ button { cursor: pointer; font-family: inherit; }
 .txn-list { display: flex; flex-direction: column; }
 .txn-row {
   display: grid;
-  grid-template-columns: 36px 1fr 60px 110px;
+  grid-template-columns: 36px 1fr 56px 96px 20px;
   align-items: center;
-  gap: 14px;
-  padding: 12px 4px;
+  gap: 10px;
+  padding: 8px 4px;
   border-bottom: 1px solid var(--line);
 }
-.txn-list.compact .txn-row { padding: 10px 4px; }
+.txn-list.compact .txn-row { padding: 6px 4px; }
 .txn-row:last-child { border-bottom: 0; }
 .txn-icon {
   width: 36px; height: 36px;

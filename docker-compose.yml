@@ -1,0 +1,9 @@
+services:
+  moneytalks:
+    build: .
+    ports:
+      - "8502:8502"
+    volumes:
+      # Bind-mount data/ so your transactions & config persist on the host
+      - ./data:/app/data
+    restart: unless-stopped

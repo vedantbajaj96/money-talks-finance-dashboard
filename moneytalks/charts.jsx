@@ -4,8 +4,15 @@
 const { useState, useRef, useMemo } = React;
 
 // ─── Donut Chart ───────────────────────────────────────────────────
-function DonutChart({ data, size = 220, thickness = 28, onSliceHover, formatter }) {
+function DonutChart({ data, size = 220, thickness = 28, onSliceHover, onSliceClick, selectedCat, formatter }) {
   const [hover, setHover] = useState(null);
+  if (!data || data.length === 0) {
+    return (
+      <div className="donut-wrap" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: size }}>
+        <span style={{ color: 'var(--ink-3)', fontSize: 13 }}>No spending data</span>
+      </div>
+    );
+  }
   const total = data.reduce((s, d) => s + d.amount, 0);
   const r = size / 2 - thickness / 2 - 2;
   const cx = size / 2, cy = size / 2;
@@ -25,6 +32,8 @@ function DonutChart({ data, size = 220, thickness = 28, onSliceHover, formatter 
     return { ...d, path, i, frac };
   });
 
+  const activeIdx = hover != null ? hover : (selectedCat != null ? slices.findIndex(s => s.cat === selectedCat) : null);
+
   return (
     <div className="donut-wrap">
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
@@ -35,23 +44,26 @@ function DonutChart({ data, size = 220, thickness = 28, onSliceHover, formatter 
             d={s.path}
             fill="none"
             stroke={s.color}
-            strokeWidth={hover === s.i ? thickness + 4 : thickness}
+            strokeWidth={(selectedCat === s.cat || hover === s.i) ? thickness + 4 : thickness}
             strokeLinecap="butt"
-            opacity={hover != null && hover !== s.i ? 0.35 : 1}
+            opacity={activeIdx != null && activeIdx !== s.i ? 0.35 : 1}
             style={{ transition: 'all .18s', cursor: 'pointer' }}
             onMouseEnter={() => { setHover(s.i); onSliceHover?.(s); }}
             onMouseLeave={() => { setHover(null); onSliceHover?.(null); }}
+            onClick={() => onSliceClick?.(s)}
           />
         ))}
         <text x={cx} y={cy - 8} textAnchor="middle" className="donut-center-label">
-          {hover != null ? slices[hover].name : 'Total spend'}
+          {activeIdx != null && activeIdx >= 0 ? slices[activeIdx].name : 'Total spend'}
         </text>
         <text x={cx} y={cy + 18} textAnchor="middle" className="donut-center-value">
-          {formatter ? formatter(hover != null ? slices[hover].amount : total) : (hover != null ? slices[hover].amount : total)}
+          {formatter
+            ? formatter(activeIdx != null && activeIdx >= 0 ? slices[activeIdx].amount : total)
+            : (activeIdx != null && activeIdx >= 0 ? slices[activeIdx].amount : total)}
         </text>
-        {hover != null && (
+        {activeIdx != null && activeIdx >= 0 && (
           <text x={cx} y={cy + 38} textAnchor="middle" className="donut-center-pct">
-            {(slices[hover].frac * 100).toFixed(1)}%
+            {(slices[activeIdx].frac * 100).toFixed(1)}%
           </text>
         )}
       </svg>
@@ -157,7 +169,24 @@ function AreaChart({ series, height = 260, formatter, fill = true }) {
   const width = 720;
   const innerW = width - padding.left - padding.right;
   const innerH = height - padding.top - padding.bottom;
+  if (!series || !series[0] || series[0].points.length === 0) {
+    return <div style={{ height, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--ink-3)', fontSize: 13 }}>No data</div>;
+  }
   const n = series[0].points.length;
+  if (n === 1) {
+    // Single point — can't draw a line, just show the value
+    return (
+      <div style={{ height, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 4 }}>
+        {series.map(s => (
+          <div key={s.key} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+            <span style={{ width: 10, height: 10, borderRadius: '50%', background: s.color, display: 'inline-block' }} />
+            <span style={{ color: 'var(--ink-2)' }}>{s.name}</span>
+            <span style={{ color: 'var(--ink)', fontWeight: 600 }}>{formatter ? formatter(s.points[0].value) : s.points[0].value}</span>
+          </div>
+        ))}
+      </div>
+    );
+  }
   const allVals = series.flatMap((s) => s.points.map((p) => p.value));
   const minV = Math.min(0, ...allVals);
   const maxV = Math.max(...allVals);
@@ -257,6 +286,7 @@ function AreaChart({ series, height = 260, formatter, fill = true }) {
 
 // ─── Sparkline (compact line for cards) ────────────────────────────
 function Sparkline({ points, color = '#5ec98a', height = 32, width = 80 }) {
+  if (!points || points.length < 2) return null;
   const max = Math.max(...points);
   const min = Math.min(...points);
   const range = max - min || 1;
