@@ -1,7 +1,7 @@
 // Tab components for the finance dashboard.
 // Loaded after data.js, charts.jsx, and React.
 (function () {
-const { useState, useMemo, useEffect } = React;
+const { useState, useMemo, useEffect, useRef } = React;
 const { ACCOUNTS, CATEGORIES, MONTHS, TRANSACTIONS, RECURRING, NET_WORTH_HISTORY,
   txnsForMonth, sumByCategory, monthSummary, fmt, acctById } = window.FIN;
 const { DonutChart, StackedBarChart, AreaChart, Sparkline, BarList } = window;
@@ -76,12 +76,39 @@ function MonthVibeBanner({ summary, prev }) {
   );
 }
 
+// ─── Count-up animation hook ───────────────────────────────────────
+// Animates from 0 → target on mount (and when target changes significantly).
+function useCountUp(target, duration = 550) {
+  const [val, setVal] = React.useState(0);
+  const rafRef = useRef(null);
+  useEffect(() => {
+    if (target == null || isNaN(target)) return;
+    cancelAnimationFrame(rafRef.current);
+    let start = null;
+    const from = 0;
+    function tick(ts) {
+      if (!start) start = ts;
+      const p = Math.min((ts - start) / duration, 1);
+      const eased = 1 - Math.pow(1 - p, 3); // cubic ease-out
+      setVal(from + (target - from) * eased);
+      if (p < 1) rafRef.current = requestAnimationFrame(tick);
+    }
+    rafRef.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [target]);
+  return val;
+}
+
 // ─── Reusable: Summary card ────────────────────────────────────────
-function SummaryCard({ label, value, sub, trend, accent, spark }) {
+// Pass `n` (raw number) + `nFmt` (formatter fn) for count-up animation.
+// Falls back to static `value` string when `n` is not provided.
+function SummaryCard({ label, value, n, nFmt = fmtMoney, sub, trend, accent, spark }) {
+  const animated = useCountUp(n);
+  const display  = n != null ? nFmt(animated) : value;
   return (
     <div className="card sum-card">
       <div className="sum-label">{label}</div>
-      <div className="sum-value" style={{ color: accent || 'var(--ink)' }}>{value}</div>
+      <div className="sum-value" style={{ color: accent || 'var(--ink)' }}>{display}</div>
       <div className="sum-foot">
         {sub && <span className="sum-sub">{sub}</span>}
         {trend != null && (
@@ -117,7 +144,9 @@ function MonthlyTab({ monthKey, txnOverrides, setTxnOverrides, refreshFin }) {
   const prev = prevIdx >= 0 ? monthSummary(MONTHS[prevIdx].key) : null;
   const trend = (cur, prv) => prv ? ((cur - prv) / prv) * 100 : 0;
 
-  const catInfo = selectedCat ? breakdown.find(b => b.cat === selectedCat) : null;
+  const catInfo = selectedCat === 'income'
+    ? { name: 'Income', color: 'var(--green)', cat: 'income' }
+    : selectedCat ? breakdown.find(b => b.cat === selectedCat) : null;
   const catTxns = selectedCat
     ? monthTxns.filter(t => t.category === selectedCat).sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
     : monthTxns.slice(0, 8);
@@ -141,15 +170,18 @@ function MonthlyTab({ monthKey, txnOverrides, setTxnOverrides, refreshFin }) {
   return (
     <div className="tab-body">
       <div className="grid-4">
-        <SummaryCard label="Income" value={fmtMoney(summary.income)} accent="var(--green)"
-          trend={prev ? trend(summary.income, prev.income) : null}
-          spark={incomeSeries.map((p) => p.value)} />
-        <SummaryCard label="Expenses" value={fmtMoney(summary.expenses)} accent="var(--terra)"
+        <div onClick={() => setSelectedCat(c => c === 'income' ? null : 'income')}
+          style={{ cursor: 'pointer', outline: selectedCat === 'income' ? '2px solid var(--green)' : 'none', borderRadius: 16 }}>
+          <SummaryCard label="Income" n={summary.income} accent="var(--green)"
+            trend={prev ? trend(summary.income, prev.income) : null}
+            spark={incomeSeries.map((p) => p.value)} />
+        </div>
+        <SummaryCard label="Expenses" n={summary.expenses} accent="var(--terra)"
           trend={prev ? trend(summary.expenses, prev.expenses) : null}
           spark={expenseSeries.map((p) => p.value)} />
-        <SummaryCard label="Net" value={fmtMoney(summary.net)} accent={summary.net >= 0 ? 'var(--green)' : 'var(--terra)'}
+        <SummaryCard label="Net" n={summary.net} accent={summary.net >= 0 ? 'var(--green)' : 'var(--terra)'}
           sub={`${summary.income > 0 ? ((summary.net / summary.income) * 100).toFixed(0) : 0}% savings rate`} />
-        <SummaryCard label="Saved" value={fmtMoney(summary.savings)} accent="var(--accent2)"
+        <SummaryCard label="Saved" n={summary.savings} accent="var(--accent2)"
           sub="auto-transfers + IRA" />
       </div>
       <MonthVibeBanner summary={summary} prev={prev} />
@@ -192,7 +224,7 @@ function MonthlyTab({ monthKey, txnOverrides, setTxnOverrides, refreshFin }) {
                 background: 'none', border: '1px solid var(--line)', borderRadius: 6,
                 padding: '2px 10px', fontSize: 12, color: 'var(--ink-3)', cursor: 'pointer',
               }}>Clear</button>
-            : <span className="muted">{monthTxns.length} this month · click a slice to filter</span>
+            : <span className="muted">{monthTxns.length} this month · click a slice or Income to filter</span>
           }
         </div>
         <TxnList txns={catTxns} compact onRecategorize={recat} refreshFin={refreshFin} />
@@ -203,14 +235,15 @@ function MonthlyTab({ monthKey, txnOverrides, setTxnOverrides, refreshFin }) {
 
 // ─── Overview Tab (month-agnostic, draggable widgets) ──────────────────────
 const OVERVIEW_WIDGETS = [
-  { id: 'networth',  label: 'Net Worth'          },
-  { id: 'quality',   label: 'Data Quality'       },
-  { id: 'anomalies', label: 'Spending Alerts'    },
-  { id: 'merchants', label: 'Top Merchants'      },
-  { id: 'trends',    label: 'Spending Trends'    },
-  { id: 'recurring', label: 'Upcoming Bills'     },
-  { id: 'recent',    label: 'Recent Transactions'},
-  { id: 'funfact',   label: '✨ Fun Fact'        },
+  { id: 'networth',  label: 'Net Worth'             },
+  { id: 'quality',   label: 'Data Quality'          },
+  { id: 'vs6mo',     label: 'vs. 6-Month Avg'       },
+  { id: 'anomalies', label: 'Spending Alerts'       },
+  { id: 'merchants', label: 'Top Merchants'         },
+  { id: 'trends',    label: 'Spending Trends'       },
+  { id: 'recurring', label: 'Upcoming Bills'        },
+  { id: 'recent',    label: 'Recent Transactions'   },
+  { id: 'funfact',   label: '✨ Fun Fact'           },
 ];
 
 const OVERVIEW_ORDER_KEY = 'mt_overview_order';
@@ -410,6 +443,43 @@ function OverviewTab() {
       .catch(() => {});
   }, []);
 
+  // Category spend: this month vs 6-month average
+  const curMonthKey = MONTHS[MONTHS.length - 1]?.key;
+  const vs6mo = useMemo(() => {
+    const last6 = MONTHS.slice(-7, -1); // 6 months before current
+    const curTxns = txnsForMonth(curMonthKey);
+
+    // Sum spending by category for each of the last 6 months, then average
+    const avgMap = {};
+    last6.forEach(m => {
+      txnsForMonth(m.key).forEach(t => {
+        if (t.amount >= 0 || t.category === 'transfer' || t.category === 'income') return;
+        avgMap[t.category] = (avgMap[t.category] || 0) + Math.abs(t.amount);
+      });
+    });
+    Object.keys(avgMap).forEach(k => { avgMap[k] /= last6.length || 1; });
+
+    // Current month spending by category
+    const curMap = {};
+    curTxns.forEach(t => {
+      if (t.amount >= 0 || t.category === 'transfer' || t.category === 'income') return;
+      curMap[t.category] = (curMap[t.category] || 0) + Math.abs(t.amount);
+    });
+
+    // Merge all categories
+    const cats = [...new Set([...Object.keys(avgMap), ...Object.keys(curMap)])];
+    return cats.map(id => {
+      const info  = catById(id);
+      const avg   = avgMap[id] || 0;
+      const cur   = curMap[id] || 0;
+      const delta = avg > 0 ? ((cur - avg) / avg) * 100 : null;
+      return { id, info, avg, cur, delta };
+    })
+    .filter(r => r.avg > 20 || r.cur > 20) // hide tiny categories
+    .sort((a, b) => b.avg - a.avg)
+    .slice(0, 10);
+  }, [curMonthKey]);
+
   // ── Widget renderers ─────────────────────────────────────────────
   function renderWidget(id, index) {
     const label = OVERVIEW_WIDGETS.find(w => w.id === id)?.label || id;
@@ -501,6 +571,54 @@ function OverviewTab() {
         </DragCard>
       );
     }
+
+    if (id === 'vs6mo') return (
+      <DragCard key={id} id={id} index={index} order={order} onReorder={handleReorder} title="vs. 6-Month Avg">
+        <div style={{ fontSize: 11, color: 'var(--ink-3)', marginBottom: 12 }}>
+          {MONTHS[MONTHS.length - 1]?.label} · compared to 6-month average
+        </div>
+        {vs6mo.length === 0 ? (
+          <div style={{ color: 'var(--ink-3)', fontSize: 13 }}>Not enough history yet.</div>
+        ) : vs6mo.map(row => {
+          const max = Math.max(row.avg, row.cur);
+          const avgPct = max > 0 ? (row.avg / max) * 100 : 0;
+          const curPct = max > 0 ? (row.cur / max) * 100 : 0;
+          const over   = row.cur > row.avg * 1.1;
+          const under  = row.cur < row.avg * 0.9;
+          return (
+            <div key={row.id} style={{ marginBottom: 12 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 5 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontSize: 13 }}>{row.info.icon}</span>
+                  <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{row.info.name}</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: over ? 'var(--terra)' : under ? 'var(--green)' : 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>
+                    {fmtMoney(row.cur)}
+                  </span>
+                  {row.delta !== null && (
+                    <span style={{ fontSize: 11, color: over ? 'var(--terra)' : under ? 'var(--green)' : 'var(--ink-3)' }}>
+                      {row.delta > 0 ? '+' : ''}{row.delta.toFixed(0)}%
+                    </span>
+                  )}
+                </div>
+              </div>
+              {/* Dual bar: avg (grey) behind, current (colored) on top */}
+              <div style={{ position: 'relative', height: 5 }}>
+                <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: `${avgPct}%`,
+                  background: 'rgba(20,24,32,0.1)', borderRadius: 3 }} />
+                <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: `${curPct}%`,
+                  background: over ? 'var(--terra)' : under ? 'var(--green)' : row.info.color,
+                  borderRadius: 3, opacity: 0.75 }} />
+              </div>
+              <div style={{ fontSize: 10, color: 'var(--ink-4)', marginTop: 3, fontFamily: 'var(--font-mono)' }}>
+                avg {fmtMoney(row.avg)}/mo
+              </div>
+            </div>
+          );
+        })}
+      </DragCard>
+    );
 
     if (id === 'anomalies') return (
       <DragCard key={id} id={id} index={index} order={order} onReorder={handleReorder} title="Spending Alerts">
@@ -972,8 +1090,10 @@ function AddTransactionModal({ onClose, refreshFin }) {
 }
 
 // ─── Inline date editor ───────────────────────────────────────────
+// Auto-saves on blur (click away) or Enter. Escape cancels.
 function DateEditor({ currentDate, onSave, onCancel }) {
   const [value, setValue] = React.useState(currentDate);
+  const savedRef = React.useRef(false);
   const inputRef = React.useRef(null);
 
   React.useEffect(() => {
@@ -983,41 +1103,31 @@ function DateEditor({ currentDate, onSave, onCancel }) {
     }
   }, []);
 
-  // Float above the row so it doesn't get clipped by neighbouring grid cells
+  function commit() {
+    if (savedRef.current) return;
+    savedRef.current = true;
+    if (value && value !== currentDate) onSave(value);
+    else onCancel();
+  }
+
   return (
-    <div style={{ position: 'relative' }}>
-      <div style={{
-        position: 'absolute', right: 0, top: '50%', transform: 'translateY(-50%)',
-        display: 'flex', alignItems: 'center', gap: 4, zIndex: 200,
-        background: 'var(--surface)', padding: '3px 6px', borderRadius: 8,
-        boxShadow: '0 2px 12px rgba(0,0,0,0.15)', whiteSpace: 'nowrap',
-        border: '1px solid var(--line)',
-      }} onClick={e => e.stopPropagation()}>
-        <input
-          ref={inputRef}
-          type="date"
-          value={value}
-          onChange={e => setValue(e.target.value)}
-          onKeyDown={e => {
-            if (e.key === 'Enter' && value) onSave(value);
-            if (e.key === 'Escape') onCancel();
-          }}
-          style={{
-            fontSize: 12, padding: '2px 6px', borderRadius: 6,
-            border: '1px solid var(--accent)', background: 'var(--bg)',
-            color: 'var(--ink)', width: 130,
-          }}
-        />
-        <button onClick={() => { if (value) onSave(value); }} style={{
-          background: 'var(--accent)', border: 'none', borderRadius: 5,
-          color: '#fff', cursor: 'pointer', fontSize: 12, padding: '2px 7px', fontWeight: 600,
-        }}>✓</button>
-        <button onClick={onCancel} style={{
-          background: 'none', border: 'none', cursor: 'pointer',
-          color: 'var(--muted)', fontSize: 14, padding: '0 2px',
-        }}>×</button>
-      </div>
-    </div>
+    <input
+      ref={inputRef}
+      type="date"
+      value={value}
+      onChange={e => setValue(e.target.value)}
+      onBlur={commit}
+      onKeyDown={e => {
+        if (e.key === 'Enter') { e.preventDefault(); commit(); }
+        if (e.key === 'Escape') { savedRef.current = true; onCancel(); }
+      }}
+      style={{
+        fontSize: 12, padding: '2px 4px', borderRadius: 6, width: '100%',
+        border: '1px solid var(--accent)', background: 'var(--bg)',
+        color: 'var(--ink)', fontFamily: 'var(--font-mono)',
+        cursor: 'pointer',
+      }}
+    />
   );
 }
 
@@ -1049,13 +1159,14 @@ function TxnList({ txns, compact = false, onRecategorize, refreshFin }) {
   async function saveDate(txnId, newDate) {
     setEditDateId(null);
     try {
-      await fetch(`/api/transactions/${txnId}`, {
+      const res = await fetch(`/api/transactions/${txnId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ date: newDate }),
       });
+      if (!res.ok) console.error('Date save failed:', res.status, await res.text());
       if (refreshFin) refreshFin();
-    } catch(e) { /* ignore */ }
+    } catch(e) { console.error('Date save error:', e); }
   }
 
   const SortIcon = ({ col }) => {
@@ -1391,7 +1502,7 @@ function TransactionsTab({ monthKey, txnOverrides, setTxnOverrides, search: glob
         const res  = await fetch(`/api/transactions/search?q=${encodeURIComponent(search)}`);
         const data = await res.json();
         if (data.semantic && data.merchants) {
-          setSemMerchants(new Set(data.merchants));
+          setSemMerchants(new Map(data.merchants.map(m => [m, data.scores?.[m] ?? 0])));
           setIsSemantic(true);
         } else {
           setSemMerchants(null);
@@ -1435,6 +1546,14 @@ function TransactionsTab({ monthKey, txnOverrides, setTxnOverrides, search: glob
       }
     }
     return true;
+  }).sort((a, b) => {
+    if (search) {
+      const q = search.toLowerCase();
+      const exactA = a.merchant?.toLowerCase().includes(q) || (a.notes || '').toLowerCase().includes(q);
+      const exactB = b.merchant?.toLowerCase().includes(q) || (b.notes || '').toLowerCase().includes(q);
+      if (exactA !== exactB) return exactA ? -1 : 1;
+    }
+    return b.date > a.date ? 1 : -1;
   });
 
   const nonTransfer = filtered.filter((t) => t.category !== 'transfer');
@@ -1457,8 +1576,8 @@ function TransactionsTab({ monthKey, txnOverrides, setTxnOverrides, search: glob
         if (data.auto_applied > 0) {
           setAutoMsg(`Also updated ${data.auto_applied} similar transaction${data.auto_applied > 1 ? 's' : ''}`);
         }
-        // Refresh all tabs with latest data
-        if (refreshFin) refreshFin();
+        // Small delay ensures the parquet write has flushed before we re-fetch
+        setTimeout(() => { if (refreshFin) refreshFin(); }, 300);
       }
     } catch(e) { /* optimistic, ignore */ }
   };
@@ -1552,6 +1671,244 @@ function TransactionsTab({ monthKey, txnOverrides, setTxnOverrides, search: glob
   );
 }
 
+// ─── Budget Bars ──────────────────────────────────────────────────
+// Shows spending vs budget for each category with inline editing.
+function BudgetBars({ monthKey }) {
+  const [budgets,    setBudgets]    = useState(null); // { cat_id: amount }
+  const [editing,    setEditing]    = useState(null); // cat_id being edited
+  const [draftValue, setDraftValue] = useState('');
+  const [saving,     setSaving]     = useState(false);
+
+  useEffect(() => {
+    fetch('/api/budgets')
+      .then(r => r.json())
+      .then(setBudgets)
+      .catch(() => setBudgets({}));
+  }, []);
+
+  const txns = txnsForMonth(monthKey);
+  // Spending by category this month (expenses only)
+  const spendMap = {};
+  txns.forEach(t => {
+    if (t.amount >= 0 || t.category === 'transfer' || t.category === 'income') return;
+    spendMap[t.category] = (spendMap[t.category] || 0) + Math.abs(t.amount);
+  });
+
+  // Rows = all categories that either have a budget or have spending this month
+  const catIds = [...new Set([
+    ...Object.keys(spendMap),
+    ...Object.keys(budgets || {}),
+  ])].filter(id => id && id !== 'transfer' && id !== 'income');
+
+  const rows = catIds.map(id => {
+    const info    = catById(id);
+    const spent   = spendMap[id] || 0;
+    const budget  = budgets?.[id] || null;
+    const pct     = budget ? Math.min(spent / budget, 1) : null;
+    const over    = budget && spent > budget;
+    return { id, info, spent, budget, pct, over };
+  }).sort((a, b) => (b.budget || 0) - (a.budget || 0) || b.spent - a.spent);
+
+  async function saveBudget(catId, value) {
+    setSaving(true);
+    const amount = value === '' || value === '0' ? null : parseFloat(value);
+    try {
+      const res = await fetch('/api/budgets', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [catId]: amount }),
+      });
+      const updated = await res.json();
+      setBudgets(updated);
+    } catch(e) {}
+    setSaving(false);
+    setEditing(null);
+  }
+
+  if (!budgets) return <div className="empty">Loading budgets…</div>;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+      {rows.map(row => (
+        <div key={row.id} style={{
+          display: 'grid', gridTemplateColumns: '28px 1fr auto',
+          alignItems: 'center', gap: 10,
+          padding: '9px 0', borderBottom: '1px solid var(--line)',
+        }}>
+          {/* Icon */}
+          <div style={{
+            width: 28, height: 28, borderRadius: 7, fontSize: 14,
+            background: `${row.info.color}18`,
+            display: 'grid', placeItems: 'center',
+          }}>{row.info.icon}</div>
+
+          {/* Name + bar */}
+          <div style={{ minWidth: 0 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
+              <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{row.info.name}</span>
+              <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: row.over ? 'var(--terra)' : 'var(--ink-2)' }}>
+                {fmtMoney(row.spent)}
+                {row.budget && <span style={{ color: 'var(--ink-4)' }}> / {fmtMoney(row.budget)}</span>}
+              </span>
+            </div>
+            {row.budget ? (
+              <div style={{ height: 5, background: 'var(--line)', borderRadius: 3, overflow: 'hidden' }}>
+                <div style={{
+                  height: '100%', borderRadius: 3,
+                  width: `${row.pct * 100}%`,
+                  background: row.over ? 'var(--terra)' : row.pct > 0.8 ? '#fbbf24' : row.info.color,
+                  transition: 'width .4s ease',
+                }} />
+              </div>
+            ) : (
+              <div style={{ height: 5, background: 'var(--line)', borderRadius: 3 }} />
+            )}
+          </div>
+
+          {/* Edit button / inline input */}
+          {editing === row.id ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <input
+                type="number" min="0" step="10"
+                value={draftValue}
+                autoFocus
+                onChange={e => setDraftValue(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') saveBudget(row.id, draftValue);
+                  if (e.key === 'Escape') setEditing(null);
+                }}
+                style={{
+                  width: 72, padding: '3px 6px', borderRadius: 6, fontSize: 12,
+                  border: '1px solid var(--line-2)', background: 'var(--bg)', color: 'var(--ink)',
+                  fontFamily: 'var(--font-mono)', textAlign: 'right',
+                }}
+              />
+              <button onClick={() => saveBudget(row.id, draftValue)} disabled={saving}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', fontSize: 14, padding: 2 }}>✓</button>
+              <button onClick={() => setEditing(null)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-3)', fontSize: 14, padding: 2 }}>×</button>
+            </div>
+          ) : (
+            <button
+              onClick={() => { setEditing(row.id); setDraftValue(row.budget ? String(row.budget) : ''); }}
+              style={{
+                background: 'none', border: '1px solid var(--line)', borderRadius: 6,
+                padding: '3px 8px', fontSize: 11, color: 'var(--ink-3)', cursor: 'pointer',
+                whiteSpace: 'nowrap',
+              }}>
+              {row.budget ? 'Edit' : '+ Budget'}
+            </button>
+          )}
+        </div>
+      ))}
+      {rows.length === 0 && (
+        <div className="empty">No spending this month yet.</div>
+      )}
+    </div>
+  );
+}
+
+// ─── Weekly Spend Chart ────────────────────────────────────────────
+// Bar chart showing total spending per week for the last 13 weeks.
+function WeeklySpendChart() {
+  const today = new Date();
+
+  // Build 13 weekly buckets. Week starts on Monday.
+  const weeks = [];
+  for (let w = 12; w >= 0; w--) {
+    const endDate = new Date(today);
+    endDate.setDate(today.getDate() - w * 7);
+    const startDate = new Date(endDate);
+    startDate.setDate(endDate.getDate() - 6);
+    const startStr = startDate.toISOString().slice(0, 10);
+    const endStr   = endDate.toISOString().slice(0, 10);
+    const label = startDate.toLocaleString('default', { month: 'short', day: 'numeric' });
+    weeks.push({ startStr, endStr, label, amount: 0 });
+  }
+
+  TRANSACTIONS.forEach(t => {
+    if (t.amount >= 0 || t.category === 'transfer' || t.category === 'income') return;
+    const d = t.date ? t.date.slice(0, 10) : null;
+    if (!d) return;
+    const bucket = weeks.find(w => d >= w.startStr && d <= w.endStr);
+    if (bucket) bucket.amount += Math.abs(t.amount);
+  });
+
+  const max = Math.max(...weeks.map(w => w.amount), 1);
+  const avg = weeks.reduce((s, w) => s + w.amount, 0) / weeks.length;
+
+  const [hovered, setHovered] = useState(null);
+  const chartH = 140;
+  const barW   = 100 / weeks.length;
+
+  return (
+    <div>
+      <div className="card-head" style={{ marginBottom: 12 }}>
+        <h3>Weekly spend pattern</h3>
+        <span className="muted">Last 13 weeks · avg {fmtMoney(avg)}/wk</span>
+      </div>
+      <div style={{ position: 'relative' }}>
+        <svg width="100%" height={chartH + 24} style={{ overflow: 'visible', display: 'block' }}>
+          {/* Avg reference line */}
+          {(() => {
+            const y = chartH - (avg / max) * chartH;
+            return (
+              <line x1="0" y1={y} x2="100%" y2={y}
+                stroke="var(--line-2)" strokeWidth="1" strokeDasharray="4 3" />
+            );
+          })()}
+          {weeks.map((w, i) => {
+            const barH = (w.amount / max) * chartH;
+            const x    = `${i * barW + barW * 0.1}%`;
+            const bw   = `${barW * 0.8}%`;
+            const isHigh = w.amount > avg * 1.3;
+            return (
+              <g key={i}>
+                <rect
+                  x={x} y={chartH - barH} width={bw} height={Math.max(barH, 1)}
+                  rx="3"
+                  fill={hovered === i ? 'var(--terra)' : isHigh ? 'rgba(217,119,87,0.7)' : 'rgba(217,119,87,0.35)'}
+                  style={{ transition: 'fill .1s', cursor: 'default' }}
+                  onMouseEnter={() => setHovered(i)}
+                  onMouseLeave={() => setHovered(null)}
+                />
+                {/* X-axis label — every 3rd week to avoid crowding */}
+                {i % 3 === 0 && (
+                  <text x={`${i * barW + barW / 2}%`} y={chartH + 16}
+                    textAnchor="middle" fontSize="9.5" fill="var(--ink-4)"
+                    fontFamily="var(--font-mono)">
+                    {w.label}
+                  </text>
+                )}
+              </g>
+            );
+          })}
+        </svg>
+        {/* Hover tooltip */}
+        {hovered !== null && (
+          <div style={{
+            position: 'absolute',
+            left: `${hovered * barW + barW / 2}%`,
+            top: Math.max(0, chartH - (weeks[hovered].amount / max) * chartH - 42),
+            transform: 'translateX(-50%)',
+            background: 'var(--surface)', border: '1px solid var(--line-2)',
+            borderRadius: 8, padding: '5px 9px', fontSize: 12,
+            boxShadow: '0 4px 12px rgba(0,0,0,0.1)', pointerEvents: 'none', zIndex: 10,
+            whiteSpace: 'nowrap',
+          }}>
+            <div style={{ fontSize: 10, color: 'var(--ink-3)', marginBottom: 1 }}>
+              Wk of {weeks[hovered].label}
+            </div>
+            <div style={{ fontWeight: 600, color: 'var(--terra)' }}>
+              {fmtMoney2(weeks[hovered].amount)}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // SPENDING TAB
 // ═══════════════════════════════════════════════════════════════════
@@ -1609,9 +1966,9 @@ function SpendingTab({ monthKey, finVersion }) {
   return (
     <div className="tab-body">
       <div className="grid-3">
-        <SummaryCard label="Total spend" value={fmtMoney(total)} accent="var(--terra)" />
+        <SummaryCard label="Total spend" n={total} accent="var(--terra)" />
         <SummaryCard label="Daily average"
-          value={fmtMoney(total / 30)} accent="var(--ink)"
+          n={total / 30} accent="var(--ink)"
           sub={`${txns.filter((t) => t.amount < 0 && t.category !== 'transfer').length} transactions`} />
         <SummaryCard label="Largest category"
           value={breakdown[0]?.name || '—'} accent={breakdown[0]?.color}
@@ -1666,6 +2023,14 @@ function SpendingTab({ monthKey, finVersion }) {
 
       <div className="card">
         <div className="card-head">
+          <h3>Budgets</h3>
+          <span className="muted">Click + Budget to set a limit · bars turn amber at 80%, red when over</span>
+        </div>
+        <BudgetBars monthKey={monthKey} />
+      </div>
+
+      <div className="card">
+        <div className="card-head">
           <h3>Monthly spend by account</h3>
           <div className="legend-inline">
             {accountBreakdown.map(a => (
@@ -1677,13 +2042,7 @@ function SpendingTab({ monthKey, finVersion }) {
       </div>
 
       <div className="card">
-        <div className="card-head">
-          <h3>Spend distribution</h3>
-          <span className="muted">By category</span>
-        </div>
-        <div className="donut-row centered">
-          <DonutChart data={breakdown} size={240} thickness={32} formatter={fmtMoney} />
-        </div>
+        <WeeklySpendChart />
       </div>
     </div>
   );
@@ -1711,8 +2070,8 @@ function IncomeTab({ monthKey, finVersion }) {
   return (
     <div className="tab-body">
       <div className="grid-3">
-        <SummaryCard label="Income this month" value={fmtMoney(total)} accent="var(--green)" />
-        <SummaryCard label="6-month average" value={fmtMoney(avg)} accent="var(--ink)" />
+        <SummaryCard label="Income this month" n={total} accent="var(--green)" />
+        <SummaryCard label="6-month average" n={avg} accent="var(--ink)" />
         <SummaryCard label="Sources" value={sources.length}
           sub={sources.map((s) => s.name.split(' ')[0]).join(', ')} />
       </div>
@@ -1758,9 +2117,9 @@ function CashFlowTab() {
   return (
     <div className="tab-body">
       <div className="grid-3">
-        <SummaryCard label="6-mo income" value={fmtMoney(totalIn)} accent="var(--green)" />
-        <SummaryCard label="6-mo expenses" value={fmtMoney(totalOut)} accent="var(--terra)" />
-        <SummaryCard label="6-mo net" value={fmtMoney(totalNet)}
+        <SummaryCard label="6-mo income" n={totalIn} accent="var(--green)" />
+        <SummaryCard label="6-mo expenses" n={totalOut} accent="var(--terra)" />
+        <SummaryCard label="6-mo net" n={totalNet}
           accent={totalNet >= 0 ? 'var(--green)' : 'var(--terra)'}
           sub={`${((totalNet / totalIn) * 100).toFixed(0)}% savings rate`} />
       </div>
@@ -1824,11 +2183,11 @@ function NetWorthTab() {
   return (
     <div className="tab-body">
       <div className="grid-3">
-        <SummaryCard label="Net worth" value={fmtMoney(net)} accent="var(--accent2)"
+        <SummaryCard label="Net worth" n={net} accent="var(--accent2)"
           trend={netTrend} />
-        <SummaryCard label="Total assets" value={fmtMoney(assets)} accent="var(--green)"
+        <SummaryCard label="Total assets" n={assets} accent="var(--green)"
           sub={`${ACCOUNTS.filter((a) => a.balance > 0).length} accounts`} />
-        <SummaryCard label="Total liabilities" value={fmtMoney(liabilities)} accent="var(--terra)"
+        <SummaryCard label="Total liabilities" n={liabilities} accent="var(--terra)"
           sub={`${ACCOUNTS.filter((a) => a.balance < 0).length} cards`} />
       </div>
 
@@ -2148,8 +2507,8 @@ function RecurringTab() {
   return (
     <div className="tab-body">
       <div className="grid-3">
-        <SummaryCard label="Monthly recurring" value={fmtMoney(monthlyTotal)} accent="var(--accent)" />
-        <SummaryCard label="Subscriptions" value={fmtMoney(subsTotal)} accent="#a78bfa"
+        <SummaryCard label="Monthly recurring" n={monthlyTotal} accent="var(--accent)" />
+        <SummaryCard label="Subscriptions" n={subsTotal} accent="#a78bfa"
           sub={`${subs.length} active`} />
         <SummaryCard label="Annual cost" value={fmtMoney(monthlyTotal * 12)} accent="var(--ink)" />
       </div>
@@ -3502,7 +3861,7 @@ function ReviewTab({ refreshFin }) {
                   {/* Description + category picker */}
                   <div style={{ minWidth: 0 }}>
                     <div style={{
-                      display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4,
+                      display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2,
                     }}>
                       <div style={{
                         fontSize: 13, fontWeight: 500, color: 'var(--ink)',
@@ -3516,6 +3875,12 @@ function ReviewTab({ refreshFin }) {
                         }}>?</span>
                       )}
                     </div>
+                    {t.source && (
+                      <div style={{
+                        fontSize: 11, color: 'var(--muted)', marginBottom: 4,
+                        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                      }}>{t.source}</div>
+                    )}
                     <CategoryPicker
                       value={cat}
                       onChange={(c) => setEdits(prev => ({ ...prev, [rowKey]: c }))}

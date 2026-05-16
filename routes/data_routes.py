@@ -1,4 +1,4 @@
-"""routes/data_routes.py — /api/fin, /api/config, /api/query, /api/transactions/*, /api/review/*"""
+"""routes/data_routes.py — /api/fin, /api/config, /api/query, /api/transactions/*, /api/review/*, /api/budgets"""
 from __future__ import annotations
 
 import datetime
@@ -16,6 +16,7 @@ from core.search import semantic_txn_search
 from core.store import (
     data_file, get_conn, load_config, save_config,
     load_df, save_df, load_splits, save_splits,
+    load_budgets, save_budgets,
 )
 
 router = APIRouter()
@@ -146,7 +147,9 @@ async def update_transaction(
                 df.loc[mask, "transaction_type"] = "expense"
     if "date" in body:
         try:
-            df.loc[mask, "date"] = pd.to_datetime(body["date"]).date()
+            new_date = pd.to_datetime(body["date"])
+            # Store as string "YYYY-MM-DD" to match how the column is read by the frontend
+            df.loc[mask, "date"] = new_date.strftime("%Y-%m-%d")
         except Exception:
             raise HTTPException(400, "Invalid date format")
     if "description" in body:
@@ -664,3 +667,25 @@ async def approve_batch(body: dict[str, Any], current_user: str = Depends(get_cu
         "streak":       streak,
         "last_reviewed": today.isoformat(),
     }
+
+
+# ---------------------------------------------------------------------------
+# Budgets
+# ---------------------------------------------------------------------------
+
+@router.get("/api/budgets")
+def get_budgets(current_user: str = Depends(get_current_user)) -> dict:
+    return load_budgets(current_user)
+
+
+@router.put("/api/budgets")
+async def update_budgets(body: dict[str, Any], current_user: str = Depends(get_current_user)) -> dict:
+    # body: { category_id: amount_or_null, ... }  null removes the budget
+    budgets = load_budgets(current_user)
+    for cat_id, amount in body.items():
+        if amount is None:
+            budgets.pop(cat_id, None)
+        else:
+            budgets[cat_id] = float(amount)
+    save_budgets(current_user, budgets)
+    return budgets

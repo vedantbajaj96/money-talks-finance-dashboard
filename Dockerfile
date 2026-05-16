@@ -1,5 +1,5 @@
 # ── Stage 1: compile JSX (Node only needed at build time) ──────────
-FROM node:20-slim AS jsx-builder
+FROM node:20-alpine3.20 AS jsx-builder
 WORKDIR /build
 COPY moneytalks/package*.json ./
 RUN npm ci
@@ -17,21 +17,32 @@ const babel = require('@babel/core'), fs = require('fs'); \
 FROM python:3.11-slim
 WORKDIR /app
 
+# Create non-root user for runtime security
+RUN groupadd -g 1000 appuser && useradd -d /app -u 1000 -g appuser -s /sbin/nologin appuser
+
 # Install Python dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt && \
+    find /usr/local/lib/python3.11 -type f -name '*.pyc' -delete && \
+    find /usr/local/lib/python3.11 -type d -name '__pycache__' -delete
 
 # Copy application code
-COPY . .
+COPY --chown=appuser:appuser . .
 
 # Copy pre-compiled JSX from builder (avoids needing Node at runtime)
-COPY --from=jsx-builder /build/*.js.compiled ./moneytalks/
+COPY --chown=appuser:appuser --from=jsx-builder /build/*.js.compiled ./moneytalks/
 
 # Pre-download the embeddings model so first startup is instant
-RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')" || true
+RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')" || true && \
+    chown -R appuser:appuser /app
+
+# Switch to non-root user
+USER appuser
 
 # data/ is mounted as a volume — don't bake user data into the image
 VOLUME /app/data
 
 EXPOSE 8502
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:8502').read()" || exit 1
 CMD ["python3", "server.py"]

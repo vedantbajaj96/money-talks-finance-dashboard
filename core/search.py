@@ -113,7 +113,12 @@ def semantic_txn_search(username: str, q: str) -> dict:
     q_emb     = model.encode([q.strip()], normalize_embeddings=True, show_progress_bar=False)[0]
     scores    = embs @ q_emb
 
-    threshold = 0.30
+    threshold = 0.55
     hits = [(m, float(s)) for m, s in zip(merchants, scores) if s > threshold]
     hits.sort(key=lambda x: -x[1])
-    return {"merchants": [m for m, _ in hits[:100]], "semantic": True}
+    top = hits[:20]
+    return {
+        "merchants": [m for m, _ in top],
+        "scores":    {m: s for m, s in top},
+        "semantic":  True,
+    }

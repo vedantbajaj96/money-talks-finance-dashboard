@@ -33,6 +33,9 @@ def config_file(username: str) -> Path:
 def splits_file(username: str) -> Path:
     return user_dir(username) / "splits.json"
 
+def budgets_file(username: str) -> Path:
+    return user_dir(username) / "budgets.json"
+
 
 # ---------------------------------------------------------------------------
 # Config
@@ -98,6 +101,25 @@ def load_splits(username: str) -> dict:
 
 def save_splits(username: str, data: dict) -> None:
     splits_file(username).write_text(json.dumps(data, indent=2))
+
+
+# ---------------------------------------------------------------------------
+# Budgets  {category_id: monthly_budget_amount}
+# ---------------------------------------------------------------------------
+
+def load_budgets(username: str) -> dict:
+    f = budgets_file(username)
+    if f.exists():
+        try:
+            return json.loads(f.read_text())
+        except Exception:
+            return {}
+    return {}
+
+def save_budgets(username: str, data: dict) -> None:
+    f = budgets_file(username)
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(json.dumps(data, indent=2))
 
 
 # ---------------------------------------------------------------------------

@@ -10,13 +10,20 @@ function txnsForMonth(monthKey) {
 }
 
 function sumByCategory(txns) {
+  const EXCLUDE = new Set(['income', 'transfer', 'refund', 'savings']);
   const map = {};
   txns.forEach((t) => {
-    if (t.category === 'income' || t.category === 'transfer') return;
-    if (t.amount >= 0) return; // skip income-signed entries
-    map[t.category] = (map[t.category] || 0) + Math.abs(t.amount);
+    if (EXCLUDE.has(t.category)) return;
+    // Expenses (negative amount) add to the total; refunds tagged with a
+    // spending category (positive amount) subtract — giving net spend per cat.
+    if (t.amount < 0) {
+      map[t.category] = (map[t.category] || 0) + Math.abs(t.amount);
+    } else if (t.amount > 0) {
+      map[t.category] = (map[t.category] || 0) - t.amount;
+    }
   });
   return Object.entries(map)
+    .filter(([, amt]) => amt > 0) // hide categories that net to zero or negative
     .map(([cat, amt]) => ({
       cat,
       amount: amt,
@@ -28,11 +35,13 @@ function sumByCategory(txns) {
 }
 
 function monthSummary(monthKey) {
+  const EXCLUDE = new Set(['income', 'transfer', 'refund', 'savings']);
   const txns = txnsForMonth(monthKey);
   const income   = txns.filter((t) => t.category === 'income').reduce((s, t) => s + t.amount, 0);
-  const expenses = txns
-    .filter((t) => t.category !== 'income' && t.category !== 'transfer' && t.amount < 0)
-    .reduce((s, t) => s + Math.abs(t.amount), 0);
+  // Net expenses: spending minus any refunds tagged with a spending category
+  const expenses = Math.max(0, txns
+    .filter((t) => !EXCLUDE.has(t.category))
+    .reduce((s, t) => t.amount < 0 ? s + Math.abs(t.amount) : s - t.amount, 0));
   const savings  = txns
     .filter((t) => t.category === 'savings')
     .reduce((s, t) => s + Math.abs(t.amount), 0);

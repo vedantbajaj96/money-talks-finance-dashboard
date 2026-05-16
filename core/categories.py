@@ -32,6 +32,8 @@ CAT_MAP: dict[str, str] = {
     "Shopping & Retail":            "shopping",
     "Travel & Getaways":            "travel",
     "Reimbursements":               "other",
+    "Personal Care":                "personal_care",
+    "Grooming & Beauty":            "personal_care",
     # ── Slugified versions (already in parquet) ────────────────────────────
     "paycheck-and-salary":            "income",
     "freelance-and-side-income":      "income",
@@ -51,6 +53,8 @@ CAT_MAP: dict[str, str] = {
     "shopping-and-retail":            "shopping",
     "travel-and-getaways":            "travel",
     "reimbursements":                 "other",
+    "personal-care":                  "personal_care",
+    "grooming-and-beauty":            "personal_care",
     # ── Legacy Streamlit names ─────────────────────────────────────────────
     "Food & Drink":   "dining",
     "Groceries":      "groceries",
@@ -90,6 +94,7 @@ CAT_META: dict[str, dict] = {
     "savings":       {"name": "Savings",          "group": "transfer", "color": "#34d399", "icon": "⊕"},
     "education":     {"name": "Education",        "group": "variable", "color": "#818cf8", "icon": "◈"},
     "self_dev":      {"name": "Self Development", "group": "variable", "color": "#fb7185", "icon": "◍"},
+    "personal_care": {"name": "Personal Care",    "group": "variable", "color": "#f0abfc", "icon": "◎"},
     "other":         {"name": "Other",            "group": "variable", "color": "#94a3b8", "icon": "○"},
 }
 

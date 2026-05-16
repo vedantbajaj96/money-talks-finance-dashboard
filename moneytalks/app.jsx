@@ -271,6 +271,7 @@ const ACCENT_PRESETS = {
 // ─── SVG icons ────────────────────────────────────────────────────
 const Icon = ({ name, size = 18 }) => {
   const paths = {
+    sync:        'M4 12a8 8 0 0 1 14-5l3-3v6h-6M20 12a8 8 0 0 1-14 5l-3 3v-6h6',
     overview:    'M3 12h4l3-8 4 16 3-8h4',
     txns:        'M3 6h18M3 12h18M3 18h12',
     income:      'M7 17l5-5 4 4 5-9M16 7h5v5',
@@ -504,15 +505,12 @@ function TopBar({ tab, monthKey, setMonthKey, search, setSearch }) {
       </div>
       <div className="topbar-right">
         {/* Sync button */}
-        <button onClick={manualSync} disabled={syncing} title={syncState?.last_sync ? `Last sync: ${fmtLastSync(syncState.last_sync)}` : 'Sync now'}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 5,
-            background: 'none', border: '1px solid var(--line)', borderRadius: 8,
-            padding: '5px 10px', cursor: syncing ? 'default' : 'pointer',
-            color: 'var(--muted)', fontSize: 12, fontFamily: 'inherit',
-          }}>
-          <span style={{ display: 'inline-block', animation: syncing ? 'spin 1s linear infinite' : 'none', fontSize: 13 }}>↻</span>
-          <span style={{ display: window.innerWidth > 640 ? 'inline' : 'none' }}>
+        <button className="icon-btn sync-btn" onClick={manualSync} disabled={syncing}
+          title={syncState?.last_sync ? `Last synced ${fmtLastSync(syncState.last_sync)}` : 'Sync now'}>
+          <span style={{ display: 'inline-flex', animation: syncing ? 'spin 1s linear infinite' : 'none' }}>
+            <Icon name="sync" size={16} />
+          </span>
+          <span className="sync-btn-label">
             {syncing ? 'Syncing…' : syncState?.last_sync ? fmtLastSync(syncState.last_sync) : 'Sync'}
           </span>
         </button>
@@ -680,7 +678,19 @@ function App() {
         if (!arrayKeys.includes(k)) window.FIN[k] = data[k];
       });
       setFinVersion(v => v + 1);
-      setTxnOverrides({});
+      // Only clear overrides that are now reflected in the fresh data.
+      // If the write hasn't flushed yet, the refreshed data will be stale —
+      // keep the override so the UI doesn't snap back to the old category.
+      setTxnOverrides(prev => {
+        if (!Object.keys(prev).length) return prev;
+        const txnMap = {};
+        (data.transactions || []).forEach(t => { txnMap[t.id] = t; });
+        const next = { ...prev };
+        Object.keys(next).forEach(id => {
+          if (txnMap[id] && txnMap[id].category === next[id]) delete next[id];
+        });
+        return next;
+      });
     }).catch(() => {});
   }, []);
 
@@ -721,7 +731,7 @@ function App() {
       <main className="main">
         <TopBar tab={tab} monthKey={monthKey} setMonthKey={setMonthKey}
                 search={search} setSearch={setSearch} />
-        <div className="page">
+        <div className={`page${tab ? ` tab-${tab}` : ''}`}>
           {/* key=tab resets the boundary whenever the user switches tabs */}
           <ErrorBoundary key={tab}>
             {renderTab()}
