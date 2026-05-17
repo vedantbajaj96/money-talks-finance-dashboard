@@ -6,6 +6,7 @@ this module rather than constructing paths themselves.
 """
 from __future__ import annotations
 
+import datetime
 import json
 import shutil
 from pathlib import Path
@@ -120,6 +121,45 @@ def save_budgets(username: str, data: dict) -> None:
     f = budgets_file(username)
     f.parent.mkdir(parents=True, exist_ok=True)
     f.write_text(json.dumps(data, indent=2))
+
+
+# ---------------------------------------------------------------------------
+# Pre-sync backup  (keeps last 5 snapshots per user)
+# ---------------------------------------------------------------------------
+
+def backup_before_sync(username: str) -> Path | None:
+    """Copy transactions.parquet to backups/ with a timestamp. Keeps last 5."""
+    src = data_file(username)
+    if not src.exists():
+        return None
+    backup_dir = user_dir(username) / "backups"
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    ts   = datetime.datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    dest = backup_dir / f"transactions_{ts}.parquet"
+    shutil.copy2(src, dest)
+    # Prune: keep only the 5 most recent backups
+    backups = sorted(backup_dir.glob("transactions_*.parquet"))
+    for old in backups[:-5]:
+        old.unlink(missing_ok=True)
+    return dest
+
+
+def restore_latest_backup(username: str) -> bool:
+    """Restore the most recent backup over the live parquet. Returns True on success."""
+    backup_dir = user_dir(username) / "backups"
+    backups = sorted(backup_dir.glob("transactions_*.parquet"))
+    if not backups:
+        return False
+    shutil.copy2(backups[-1], data_file(username))
+    return True
+
+
+def count_user_edited(username: str) -> int:
+    """Count rows with user_edited=True in the live parquet."""
+    df = load_df(username)
+    if df is None or "user_edited" not in df.columns:
+        return 0
+    return int(df["user_edited"].fillna(False).astype(bool).sum())
 
 
 # ---------------------------------------------------------------------------
