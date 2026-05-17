@@ -90,9 +90,11 @@ def _categorize_batch_ollama(
         "stream":   False,
     }).encode()
 
+    import os
+    _ollama_host = os.environ.get("OLLAMA_HOST", "localhost")
     conn = None
     try:
-        conn = http.client.HTTPConnection("localhost", 11434, timeout=90)
+        conn = http.client.HTTPConnection(_ollama_host, 11434, timeout=90)
         conn.request("POST", "/v1/chat/completions",
                      body=payload,
                      headers={"Content-Type": "application/json"})

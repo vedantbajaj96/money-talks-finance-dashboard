@@ -43,10 +43,11 @@ def get_fin(current_user: str = Depends(get_current_user)) -> dict:
 # ---------------------------------------------------------------------------
 
 def _check_ollama() -> bool:
-    import http.client
+    import http.client, os
+    _host = os.environ.get("OLLAMA_HOST", "localhost")
     conn = None
     try:
-        conn = http.client.HTTPConnection("localhost", 11434, timeout=2)
+        conn = http.client.HTTPConnection(_host, 11434, timeout=2)
         conn.request("GET", "/api/tags")
         return conn.getresponse().status == 200
     except Exception:

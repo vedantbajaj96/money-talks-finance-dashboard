@@ -4,6 +4,19 @@ services:
     ports:
       - "8502:8502"
     volumes:
-      # Bind-mount data/ so your transactions & config persist on the host
-      - ./data:/app/data
+      - moneytalks_data:/app/data
     restart: unless-stopped
+    environment:
+      - OLLAMA_HOST=ollama
+    depends_on:
+      - ollama
+
+  ollama:
+    image: ollama/ollama
+    volumes:
+      - ollama_models:/root/.ollama
+    restart: unless-stopped
+
+volumes:
+  moneytalks_data:
+  ollama_models:
