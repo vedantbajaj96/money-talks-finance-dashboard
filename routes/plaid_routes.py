@@ -79,7 +79,7 @@ async def plaid_sync(body: dict[str, Any] = {}, current_user: str = Depends(get_
         df, errors, stats = sync_all_transactions(existing, cfg=cfg, data_dir=data_dir)
         if stats["added"] > 0:
             # Only auto-categorize rows that the user hasn't manually edited
-            user_edited = df.get("user_edited", pd.Series(False, index=df.index)).fillna(False).astype(bool)
+            user_edited = df.get("user_edited", pd.Series(False, index=df.index)).fillna(False).infer_objects(copy=False).astype(bool)
             unedited_idx = df.index[~user_edited]
             if len(unedited_idx) > 0:
                 recategorized = categorize_transactions(df.loc[unedited_idx])

@@ -185,8 +185,8 @@ async def update_transaction(
         fp_source = _fingerprint(source_desc)
         # Require 2+ words in fingerprint — single-word descriptions are too generic
         if fp_source and len(fp_source.split()) >= 2:
-            not_approved  = ~df["approved"].fillna(False).astype(bool) if "approved" in df.columns else pd.Series(True, index=df.index)
-            unedited      = ~(df.get("user_edited", False).fillna(False).astype(bool)) | mask
+            not_approved  = ~df["approved"].fillna(False).infer_objects(copy=False).astype(bool) if "approved" in df.columns else pd.Series(True, index=df.index)
+            unedited      = ~(df.get("user_edited", False).fillna(False).infer_objects(copy=False).astype(bool)) | mask
             similar_mask  = df["description"].apply(_fingerprint) == fp_source
             # Only update rows with the same original category AND same transaction type —
             # prevents income/payment rows being changed when you fix an expense
@@ -504,7 +504,7 @@ def get_review_batch(current_user: str = Depends(get_current_user)) -> dict:
     _SKIP = {"transfer", "savings", "refund"}
     reviewable    = df[~df["category"].apply(lambda c: _mc(str(c or "")) in _SKIP)]
     _still_pending = reviewable["category"].isin(["Pending Review", "pending review", ""]) | reviewable["category"].isna()
-    approved_mask = reviewable["approved"].fillna(False).astype(bool) & ~_still_pending
+    approved_mask = reviewable["approved"].fillna(False).infer_objects(copy=False).astype(bool) & ~_still_pending
     total         = len(reviewable)
     n_approved    = int(approved_mask.sum())
 
@@ -611,8 +611,8 @@ async def approve_batch(body: dict[str, Any], current_user: str = Depends(get_cu
             fp = _fp(source_desc)
             # Require 2+ words — single-word names like "Store" are too generic
             if fp and len(fp.split()) >= 2:
-                not_approved  = ~df["approved"].fillna(False).astype(bool)
-                not_edited    = ~df.get("user_edited", pd.Series(False, index=df.index)).fillna(False).astype(bool)
+                not_approved  = ~df["approved"].fillna(False).infer_objects(copy=False).astype(bool)
+                not_edited    = ~df.get("user_edited", pd.Series(False, index=df.index)).fillna(False).infer_objects(copy=False).astype(bool)
                 similar       = df["description"].apply(_fp) == fp
                 same_orig_cat = df["category"] == orig_cat
                 source_type   = df.loc[mask, "transaction_type"].iloc[0] if "transaction_type" in df.columns else None
@@ -657,7 +657,7 @@ async def approve_batch(body: dict[str, Any], current_user: str = Depends(get_cu
     _SKIP = {"transfer", "savings", "refund"}
     reviewable     = df[~df["category"].apply(lambda c: _mc(str(c or "")) in _SKIP)]
     _still_pending = reviewable["category"].isin(["Pending Review", "pending review", ""]) | reviewable["category"].isna()
-    n_approved     = int((reviewable["approved"].fillna(False).astype(bool) & ~_still_pending).sum())
+    n_approved     = int((reviewable["approved"].fillna(False).infer_objects(copy=False).astype(bool) & ~_still_pending).sum())
     return {
         "ok":           True,
         "approved":     n_approved,

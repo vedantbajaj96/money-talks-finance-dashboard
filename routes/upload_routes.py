@@ -110,7 +110,7 @@ async def repair_data(current_user: str = Depends(get_current_user)) -> dict:
             axis=1,
         )
 
-    user_edited_mask = df.get("user_edited", pd.Series(False, index=df.index)).fillna(False).astype(bool)
+    user_edited_mask = df.get("user_edited", pd.Series(False, index=df.index)).fillna(False).infer_objects(copy=False).astype(bool)
     pending       = (df["category"].isin(["Pending Review", None, ""]) | df["category"].isna()) & ~user_edited_mask
     pending_count = int(pending.sum())
 

@@ -114,8 +114,8 @@ def build_fin_data(username: str) -> dict:
     # Pre-build approved / user_edited sets for confidence scoring
     try:
         _conf_df = pd.read_parquet(data_file(username), columns=["txn_id", "approved", "user_edited"])
-        _approved_ids    = set(_conf_df.loc[_conf_df["approved"].fillna(False).astype(bool), "txn_id"].dropna())
-        _user_edited_ids = set(_conf_df.loc[_conf_df["user_edited"].fillna(False).astype(bool), "txn_id"].dropna())
+        _approved_ids    = set(_conf_df.loc[_conf_df["approved"].fillna(False).infer_objects(copy=False).astype(bool), "txn_id"].dropna())
+        _user_edited_ids = set(_conf_df.loc[_conf_df["user_edited"].fillna(False).infer_objects(copy=False).astype(bool), "txn_id"].dropna())
     except Exception:
         _approved_ids    = set()
         _user_edited_ids = set()

@@ -1138,6 +1138,7 @@ function TxnList({ txns, compact = false, onRecategorize, refreshFin }) {
   const [menuId, setMenuId]         = useState(null);
   const [sortCol, setSortCol]       = useState('date');
   const [sortDir, setSortDir]       = useState('desc');
+  const [dateOverrides, setDateOverrides] = useState({});
 
   function toggleSort(col) {
     if (sortCol === col) setSortDir(d => d === 'desc' ? 'asc' : 'desc');
@@ -1158,6 +1159,7 @@ function TxnList({ txns, compact = false, onRecategorize, refreshFin }) {
 
   async function saveDate(txnId, newDate) {
     setEditDateId(null);
+    setDateOverrides(prev => ({ ...prev, [txnId]: newDate }));
     try {
       const res = await fetch(`/api/transactions/${txnId}`, {
         method: 'PATCH',
@@ -1165,7 +1167,7 @@ function TxnList({ txns, compact = false, onRecategorize, refreshFin }) {
         body: JSON.stringify({ date: newDate }),
       });
       if (!res.ok) console.error('Date save failed:', res.status, await res.text());
-      if (refreshFin) refreshFin();
+      setTimeout(() => { if (refreshFin) refreshFin(); }, 300);
     } catch(e) { console.error('Date save error:', e); }
   }
 
@@ -1229,7 +1231,7 @@ function TxnList({ txns, compact = false, onRecategorize, refreshFin }) {
               </div>
               {canEdit && editDateId === t.id ? (
                 <DateEditor
-                  currentDate={t.date}
+                  currentDate={dateOverrides[t.id] ?? t.date}
                   onSave={d => saveDate(t.id, d)}
                   onCancel={() => setEditDateId(null)}
                 />
@@ -1240,7 +1242,7 @@ function TxnList({ txns, compact = false, onRecategorize, refreshFin }) {
                   style={canEdit ? { cursor: 'pointer', textDecoration: 'underline dotted', textUnderlineOffset: 2 } : {}}
                   onClick={canEdit ? () => setEditDateId(t.id) : undefined}
                 >
-                  {t.date.slice(5).replace('-', '/')}
+                  {(dateOverrides[t.id] ?? t.date).slice(5).replace('-', '/')}
                 </div>
               )}
               <div className={`txn-amt ${t.amount >= 0 ? 'pos' : 'neg'}`}>
@@ -2258,11 +2260,10 @@ function AccountList() {
   );
 }
 
-function AccountsTab() {
+function AccountsTab({ onSync, syncing }) {
   const { useState, useEffect } = React;
   const [plaidAccounts, setPlaidAccounts] = useState([]);
   const [configured, setConfigured]       = useState(false);
-  const [syncing, setSyncing]             = useState(false);
   const [syncResult, setSyncResult]       = useState(null);
   const [linking, setLinking]             = useState(false);
   const [error, setError]                 = useState('');
@@ -2313,27 +2314,6 @@ function AccountsTab() {
     }
   }
 
-  async function syncNow(full = false) {
-    setSyncing(true);
-    setSyncResult(null);
-    try {
-      const res  = await fetch('/api/plaid/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ full }),
-      });
-      const data = await res.json();
-      setSyncResult({ ...data, full });
-      // Reload the page after a successful sync so window.FIN reflects new transactions
-      if (data.ok && (data.stats?.added > 0 || data.stats?.modified > 0 || data.stats?.removed > 0)) {
-        setTimeout(() => { if (refreshFin) refreshFin(); }, 1200);
-      }
-    } catch (e) {
-      setSyncResult({ ok: false, error: String(e) });
-    } finally {
-      setSyncing(false);
-    }
-  }
 
   async function removeAccount(item_id) {
     await fetch(`/api/plaid/accounts/${item_id}`, { method: 'DELETE' });
@@ -2348,13 +2328,13 @@ function AccountsTab() {
           <h3>Linked accounts</h3>
           {plaidAccounts.length > 0 && (
             <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={() => syncNow(false)} disabled={syncing} style={{
+              <button onClick={() => onSync && onSync()} disabled={syncing} style={{
                 background: 'var(--accent)', color: '#052015', border: 'none',
                 borderRadius: 8, padding: '6px 14px', fontSize: 13, fontWeight: 600,
                 fontFamily: 'inherit', cursor: syncing ? 'default' : 'pointer',
                 opacity: syncing ? 0.6 : 1,
               }}>{syncing ? 'Syncing…' : 'Sync now'}</button>
-              <button onClick={() => syncNow(true)} disabled={syncing} title="Reset cursors and re-pull full transaction history" style={{
+              <button onClick={() => onSync && onSync(true)} disabled={syncing} title="Reset cursors and re-pull full transaction history" style={{
                 background: 'transparent', color: 'var(--muted)',
                 border: '1px solid var(--border)',
                 borderRadius: 8, padding: '6px 14px', fontSize: 13,

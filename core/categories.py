@@ -184,7 +184,7 @@ def detect_refund_pairs(df: "pd.DataFrame") -> "tuple[pd.DataFrame, int]":
     if df.empty or "expense_amount" not in df.columns:
         return df, 0
 
-    user_edited = df.get("user_edited", pd.Series(False, index=df.index)).fillna(False).astype(bool)
+    user_edited = df.get("user_edited", pd.Series(False, index=df.index)).fillna(False).infer_objects(copy=False).astype(bool)
     editable    = ~user_edited
     dates       = pd.to_datetime(df["date"])
     descs       = df["description"].astype(str).str.strip().str.lower()

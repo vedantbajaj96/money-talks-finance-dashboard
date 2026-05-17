@@ -159,7 +159,7 @@ def count_user_edited(username: str) -> int:
     df = load_df(username)
     if df is None or "user_edited" not in df.columns:
         return 0
-    return int(df["user_edited"].fillna(False).astype(bool).sum())
+    return int(df["user_edited"].fillna(False).infer_objects(copy=False).astype(bool).sum())
 
 
 # ---------------------------------------------------------------------------

@@ -370,62 +370,13 @@ function Sidebar({ active, onChange, layout }) {
 }
 
 // ─── Topbar ───────────────────────────────────────────────────────
-function TopBar({ tab, monthKey, setMonthKey, search, setSearch }) {
+function TopBar({ tab, monthKey, setMonthKey, search, setSearch, syncState, syncing, syncProgress, manualSync, fmtLastSync }) {
   const [me,          setMe]          = useState(null);
   const [showProfile, setShowProfile] = useState(false);
-  const [syncState,   setSyncState]   = useState(null);  // {last_sync, needs_sync}
-  const [syncing,     setSyncing]     = useState(false);
-  const [syncProgress, setSyncProgress] = useState(null); // {step, pct, error}
 
   useEffect(() => {
     fetch('/api/auth/me').then(r => r.json()).then(setMe).catch(() => {});
-    // Check sync status and auto-sync if stale
-    fetch('/api/plaid/sync_status').then(r => r.json()).then(d => {
-      setSyncState(d);
-      if (d.needs_sync) {
-        setSyncing(true);
-        fetch('/api/plaid/sync', { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' })
-          .then(r => r.json())
-          .then(res => {
-            setSyncing(false);
-            if (res.last_sync) setSyncState({ last_sync: res.last_sync, needs_sync: false });
-            if ((res.stats?.added || 0) + (res.stats?.modified || 0) > 0) {
-              setTimeout(() => window.location.reload(), 800);
-            }
-          })
-          .catch(() => setSyncing(false));
-      }
-    }).catch(() => {});
   }, []);
-
-  async function manualSync() {
-    if (syncing) return;
-    setSyncing(true);
-    setSyncProgress({ step: 'Connecting to bank…', pct: 10, error: null });
-    try {
-      setSyncProgress({ step: 'Fetching transactions…', pct: 35, error: null });
-      const r   = await fetch('/api/plaid/sync', { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' });
-      setSyncProgress({ step: 'Categorizing…', pct: 70, error: null });
-      const res = await r.json();
-      if (!r.ok || res.error) {
-        setSyncProgress({ step: res.error || res.detail || 'Sync failed', pct: 100, error: true });
-        setTimeout(() => { setSyncing(false); setSyncProgress(null); }, 4000);
-        return;
-      }
-      setSyncProgress({ step: 'Saving…', pct: 90, error: null });
-      if (res.last_sync) setSyncState({ last_sync: res.last_sync, needs_sync: false });
-      const added = (res.stats?.added || 0) + (res.stats?.modified || 0);
-      setSyncProgress({ step: added > 0 ? `Done — ${added} new transactions` : 'Already up to date', pct: 100, error: null });
-      setTimeout(() => {
-        setSyncing(false);
-        setSyncProgress(null);
-        if (added > 0) window.location.reload();
-      }, 1200);
-    } catch (e) {
-      setSyncProgress({ step: 'Connection failed. Check your internet.', pct: 100, error: true });
-      setTimeout(() => { setSyncing(false); setSyncProgress(null); }, 4000);
-    }
-  }
 
   function fmtLastSync(iso) {
     if (!iso) return null;
@@ -447,43 +398,6 @@ function TopBar({ tab, monthKey, setMonthKey, search, setSearch }) {
 
   return (
     <>
-    {syncProgress && (
-      <div style={{
-        position: 'fixed', inset: 0, zIndex: 9999,
-        background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-      }}>
-        <div style={{
-          background: 'var(--surface)', borderRadius: 20,
-          border: '1px solid var(--line)', padding: '36px 40px',
-          minWidth: 320, textAlign: 'center', boxShadow: '0 24px 64px rgba(0,0,0,0.3)',
-        }}>
-          <div style={{ fontSize: 32, marginBottom: 12 }}>
-            {syncProgress.error ? '⚠️' : '🔄'}
-          </div>
-          <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)', marginBottom: 6 }}>
-            {syncProgress.error ? 'Sync failed' : 'Syncing your accounts'}
-          </div>
-          <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 20 }}>
-            {syncProgress.step}
-          </div>
-          {/* Progress bar */}
-          <div style={{ height: 6, background: 'var(--line)', borderRadius: 3, overflow: 'hidden' }}>
-            <div style={{
-              height: '100%', borderRadius: 3,
-              width: `${syncProgress.pct}%`,
-              background: syncProgress.error ? 'var(--terra)' : 'var(--accent)',
-              transition: 'width 0.4s ease',
-            }} />
-          </div>
-          {!syncProgress.error && (
-            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 10 }}>
-              Don't close the app — this takes a few seconds
-            </div>
-          )}
-        </div>
-      </div>
-    )}
     <header className="topbar">
       <div className="topbar-left">
         <h1 className="page-title">{tabName}</h1>
@@ -654,11 +568,62 @@ function App() {
   const [txnOverrides, setTxnOverrides] = useState({});
   const [finVersion, setFinVersion]     = useState(0);
 
+  // Sync state — lifted here so AccountsTab can trigger the same sync UI
+  const [syncState,    setSyncState]    = useState(null);
+  const [syncing,      setSyncing]      = useState(false);
+  const [syncProgress, setSyncProgress] = useState(null);
+
   useEffect(() => {
     fetch('/api/review').then(r => r.json()).then(d => {
       setTab(d.remaining === 0 ? 'monthly' : 'review');
     }).catch(() => setTab('review'));
+    // Auto-sync on load if stale
+    fetch('/api/plaid/sync_status').then(r => r.json()).then(d => {
+      setSyncState(d);
+      if (d.needs_sync) {
+        setSyncing(true);
+        fetch('/api/plaid/sync', { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' })
+          .then(r => r.json())
+          .then(res => {
+            setSyncing(false);
+            if (res.last_sync) setSyncState({ last_sync: res.last_sync, needs_sync: false });
+            if ((res.stats?.added || 0) + (res.stats?.modified || 0) > 0) {
+              setTimeout(() => window.location.reload(), 800);
+            }
+          })
+          .catch(() => setSyncing(false));
+      }
+    }).catch(() => {});
   }, []);
+
+  const manualSync = useCallback(async (full = false) => {
+    if (syncing) return;
+    setSyncing(true);
+    setSyncProgress({ step: full ? 'Resetting cursors…' : 'Connecting to bank…', pct: 10, error: null });
+    try {
+      setSyncProgress({ step: 'Fetching transactions…', pct: 35, error: null });
+      const r   = await fetch('/api/plaid/sync', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ full }) });
+      setSyncProgress({ step: 'Categorizing…', pct: 70, error: null });
+      const res = await r.json();
+      if (!r.ok || res.error) {
+        setSyncProgress({ step: res.error || res.detail || 'Sync failed', pct: 100, error: true });
+        setTimeout(() => { setSyncing(false); setSyncProgress(null); }, 4000);
+        return;
+      }
+      setSyncProgress({ step: 'Saving…', pct: 90, error: null });
+      if (res.last_sync) setSyncState({ last_sync: res.last_sync, needs_sync: false });
+      const added = (res.stats?.added || 0) + (res.stats?.modified || 0);
+      setSyncProgress({ step: added > 0 ? `Done — ${added} new transactions` : 'Already up to date', pct: 100, error: null });
+      setTimeout(() => {
+        setSyncing(false);
+        setSyncProgress(null);
+        if (added > 0) window.location.reload();
+      }, 1200);
+    } catch (e) {
+      setSyncProgress({ step: 'Connection failed. Check your internet.', pct: 100, error: true });
+      setTimeout(() => { setSyncing(false); setSyncProgress(null); }, 4000);
+    }
+  }, [syncing]);
 
   // Re-fetch /api/fin and update window.FIN so all tabs see latest data.
   // Arrays are mutated in-place so module-level destructured references (TRANSACTIONS etc.) stay valid.
@@ -716,7 +681,7 @@ function App() {
       case 'categories':  return <CategoriesTab  {...props} />;
       case 'trends':      return <TrendsTab />;
       case 'networth':    return <NetWorthTab />;
-      case 'accounts':    return <AccountsTab />;
+      case 'accounts':    return <AccountsTab onSync={manualSync} syncing={syncing} />;
       case 'recurring':   return <RecurringTab />;
       case 'chat':        return <ChatTab />;
       case 'settings':    return <SettingsTab refreshFin={refreshFin} />;
@@ -727,10 +692,48 @@ function App() {
 
   return (
     <div className={`app density-${t.density} ${t.monoNumbers ? 'mono' : ''}`} style={cssVars}>
+      {syncProgress && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 9999,
+          background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <div style={{
+            background: 'var(--surface)', borderRadius: 20,
+            border: '1px solid var(--line)', padding: '36px 40px',
+            minWidth: 320, textAlign: 'center', boxShadow: '0 24px 64px rgba(0,0,0,0.3)',
+          }}>
+            <div style={{ fontSize: 32, marginBottom: 12 }}>
+              {syncProgress.error ? '⚠️' : '🔄'}
+            </div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)', marginBottom: 6 }}>
+              {syncProgress.error ? 'Sync failed' : 'Syncing your accounts'}
+            </div>
+            <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 20 }}>
+              {syncProgress.step}
+            </div>
+            <div style={{ height: 6, background: 'var(--line)', borderRadius: 3, overflow: 'hidden' }}>
+              <div style={{
+                height: '100%', borderRadius: 3,
+                width: `${syncProgress.pct}%`,
+                background: syncProgress.error ? 'var(--terra)' : 'var(--accent)',
+                transition: 'width 0.4s ease',
+              }} />
+            </div>
+            {!syncProgress.error && (
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 10 }}>
+                Don't close the app — this takes a few seconds
+              </div>
+            )}
+          </div>
+        </div>
+      )}
       <Sidebar active={tab} onChange={setTab} layout={t.sidebarLayout} />
       <main className="main">
         <TopBar tab={tab} monthKey={monthKey} setMonthKey={setMonthKey}
-                search={search} setSearch={setSearch} />
+                search={search} setSearch={setSearch}
+                syncState={syncState} syncing={syncing} syncProgress={syncProgress}
+                manualSync={manualSync} />
         <div className={`page${tab ? ` tab-${tab}` : ''}`}>
           {/* key=tab resets the boundary whenever the user switches tabs */}
           <ErrorBoundary key={tab}>

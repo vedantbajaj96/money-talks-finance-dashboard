@@ -30,11 +30,47 @@ Run:
 from __future__ import annotations
 
 import datetime
+import logging
+import logging.handlers
 import subprocess
+import sys
+import traceback
 import warnings
 warnings.filterwarnings("ignore", message=".*urllib3.*", category=UserWarning)
 warnings.filterwarnings("ignore", message=".*OpenSSL.*")
+
+import pandas as _pd
+_pd.set_option('future.no_silent_downcasting', True)
 from pathlib import Path
+
+# ---------------------------------------------------------------------------
+# Logging — set up before anything else so startup errors are captured too
+# ---------------------------------------------------------------------------
+
+_BASE_DIR_EARLY = Path(__file__).parent
+_log_file    = _BASE_DIR_EARLY / "server.log"
+_log_handler = logging.handlers.RotatingFileHandler(
+    _log_file, maxBytes=1 * 1024 * 1024, backupCount=3, encoding="utf-8"
+)
+_log_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s — %(message)s"))
+
+logging.basicConfig(level=logging.INFO, handlers=[_log_handler])
+for _name in ("uvicorn", "uvicorn.access", "uvicorn.error", "fastapi"):
+    logging.getLogger(_name).addHandler(_log_handler)
+
+logger = logging.getLogger("moneytalks")
+
+
+def _excepthook(exc_type, exc_value, exc_tb):
+    """Catch any unhandled exception that would crash the process."""
+    msg = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
+    logger.critical("UNHANDLED EXCEPTION — process crash\n%s", msg)
+    _log_handler.flush()
+    sys.__excepthook__(exc_type, exc_value, exc_tb)
+
+sys.excepthook = _excepthook
+
+# ---------------------------------------------------------------------------
 
 import uvicorn
 from fastapi import FastAPI, Request, Response
@@ -96,6 +132,20 @@ print("JSX ready.", flush=True)
 
 app = FastAPI(title="MoneyTalks API")
 
+
+@app.middleware("http")
+async def log_exceptions(request: Request, call_next):
+    try:
+        return await call_next(request)
+    except Exception as exc:
+        logger.error(
+            "Unhandled exception on %s %s\n%s",
+            request.method, request.url.path,
+            traceback.format_exc(),
+        )
+        raise
+
+
 app.include_router(auth_router)
 app.include_router(data_router)
 app.include_router(categories_router)
@@ -147,5 +197,6 @@ def serve_frontend(filename: str = "", request: Request = None) -> Response:
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
+    logger.info("Starting MoneyTalks at http://localhost:8502")
     print("Starting MoneyTalks at http://localhost:8502")
     uvicorn.run(app, host="0.0.0.0", port=8502, log_level="info")
