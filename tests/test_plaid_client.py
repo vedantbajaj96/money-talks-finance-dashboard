@@ -20,7 +20,7 @@ import pandas as pd
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-import plaid_client as pc  # noqa: E402
+import core.plaid_client as pc  # noqa: E402
 
 
 # ---------------------------------------------------------------------------

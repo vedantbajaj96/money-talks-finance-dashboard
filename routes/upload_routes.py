@@ -26,7 +26,7 @@ async def upload_csv(
     except Exception as e:
         raise HTTPException(400, f"Could not read CSV: {e}")
 
-    from parsers import detect_format, parse_chase_bank, parse_chase_cc, parse_amex, deduplicate
+    from core.parsers import detect_format, parse_chase_bank, parse_chase_cc, parse_amex, deduplicate
     fmt = detect_format(raw_df)
     if fmt == "chase_bank":
         parsed = parse_chase_bank(raw_df)

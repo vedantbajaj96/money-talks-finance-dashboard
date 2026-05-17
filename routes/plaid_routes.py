@@ -20,7 +20,7 @@ async def plaid_link_token(current_user: str = Depends(get_current_user)) -> dic
     if not cfg.get("plaid_client_id") or not cfg.get("plaid_secret"):
         raise HTTPException(400, "Plaid keys not configured — add them in Settings")
     try:
-        from plaid_client import create_link_token
+        from core.plaid_client import create_link_token
         return {"link_token": create_link_token(cfg=cfg)}
     except Exception as e:
         raise HTTPException(500, str(e))
@@ -29,7 +29,7 @@ async def plaid_link_token(current_user: str = Depends(get_current_user)) -> dic
 @router.post("/api/plaid/exchange")
 async def plaid_exchange(body: dict[str, Any], current_user: str = Depends(get_current_user)) -> dict:
     try:
-        from plaid_client import exchange_and_save
+        from core.plaid_client import exchange_and_save
         exchange_and_save(
             body["public_token"],
             body.get("institution_name", "Unknown"),
@@ -44,7 +44,7 @@ async def plaid_exchange(body: dict[str, Any], current_user: str = Depends(get_c
 @router.get("/api/plaid/accounts")
 def plaid_accounts(current_user: str = Depends(get_current_user)) -> dict:
     try:
-        from plaid_client import get_connected_accounts, is_configured
+        from core.plaid_client import get_connected_accounts, is_configured
         cfg      = load_config(current_user)
         data_dir = str(user_dir(current_user))
         return {
@@ -58,7 +58,7 @@ def plaid_accounts(current_user: str = Depends(get_current_user)) -> dict:
 @router.post("/api/plaid/sync")
 async def plaid_sync(body: dict[str, Any] = {}, current_user: str = Depends(get_current_user)) -> dict:
     try:
-        from plaid_client import sync_all_transactions, refresh_all, _load_items, _save_items
+        from core.plaid_client import sync_all_transactions, refresh_all, _load_items, _save_items
         from categorizer.rules import categorize_transactions
 
         cfg      = load_config(current_user)
@@ -158,7 +158,7 @@ def plaid_sync_status(current_user: str = Depends(get_current_user)) -> dict:
 @router.delete("/api/plaid/accounts/{item_id}")
 async def plaid_remove_account(item_id: str, current_user: str = Depends(get_current_user)) -> dict:
     try:
-        from plaid_client import remove_account
+        from core.plaid_client import remove_account
         remove_account(item_id, data_dir=str(user_dir(current_user)))
         return {"ok": True}
     except Exception as e:

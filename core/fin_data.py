@@ -38,7 +38,7 @@ def build_fin_data(username: str) -> dict:
     # ── ACCOUNTS ──────────────────────────────────────────────────────────
     plaid_balances: dict[str, dict] = {}
     try:
-        from plaid_client import get_account_balances, is_configured
+        from core.plaid_client import get_account_balances, is_configured
         cfg = load_config(username)
         if is_configured(cfg):
             data_dir = str(user_dir(username))
@@ -225,7 +225,7 @@ def build_fin_data(username: str) -> dict:
     recurring = []
     try:
         import calendar as _cal
-        from subscriptions import detect_recurring
+        from core.subscriptions import detect_recurring
         df = pd.read_parquet(data_file(username))
         rec_df = detect_recurring(df)
         if not rec_df.empty:
