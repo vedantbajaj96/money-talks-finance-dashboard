@@ -49,8 +49,9 @@ def build_fin_data(username: str) -> dict:
                 bal       = float(b["current_balance"] or 0)
                 signed_bal = -bal if acct_type in ("credit", "loan") else bal
                 if key not in plaid_balances:
-                    plaid_balances[key] = {"balance": 0.0}
+                    plaid_balances[key] = {"balance": 0.0, "acct_types": set()}
                 plaid_balances[key]["balance"] += signed_bal
+                plaid_balances[key]["acct_types"].add(acct_type)
     except Exception:
         pass
 
@@ -71,6 +72,24 @@ def build_fin_data(username: str) -> dict:
         }
         for i, s in enumerate(sources)
     ]
+
+    # Investment-only accounts (e.g. Wealthfront) have no transactions so they
+    # never appear in sources. Add them from the Plaid balance fetch directly.
+    source_set = set(sources)
+    for j, (key, pb) in enumerate(plaid_balances.items()):
+        if key not in source_set:
+            acct_types = pb.get("acct_types", set())
+            atype = "investment" if "investment" in acct_types else ("credit" if pb["balance"] < 0 else "checking")
+            inst_name = key.removeprefix("Plaid – ")
+            accounts.append({
+                "id":      key,
+                "name":    key,
+                "inst":    inst_name,
+                "type":    atype,
+                "last4":   "????",
+                "balance": pb["balance"],
+                "color":   ACCOUNT_COLORS[(len(sources) + j) % len(ACCOUNT_COLORS)],
+            })
 
     # ── CATEGORIES ────────────────────────────────────────────────────────
     raw_cats = [
