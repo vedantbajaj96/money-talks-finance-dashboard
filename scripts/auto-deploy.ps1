@@ -1,13 +1,12 @@
-# auto-deploy.ps1
+# scripts/auto-deploy.ps1
 # Polls GitHub every 5 minutes (via Scheduled Task) and rebuilds the
 # Docker stack if there are new commits on main.
 #
-# One-time setup (run as Administrator in the repo directory):
+# One-time setup (run as Administrator in the repo root):
 #
-#   $dir = (Get-Location).Path
+#   $script = Join-Path (Get-Location).Path "scripts\auto-deploy.ps1"
 #   $action = New-ScheduledTaskAction -Execute "powershell.exe" `
-#     -Argument "-NonInteractive -File `"$dir\auto-deploy.ps1`"" `
-#     -WorkingDirectory $dir
+#     -Argument "-NonInteractive -File `"$script`""
 #   $trigger = New-ScheduledTaskTrigger -RepetitionInterval (New-TimeSpan -Minutes 5) -Once -At (Get-Date)
 #   $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 10)
 #   Register-ScheduledTask -TaskName "MoneyTalks AutoDeploy" -Action $action -Trigger $trigger -Settings $settings -RunLevel Highest -Force
@@ -16,14 +15,17 @@
 #   Unregister-ScheduledTask -TaskName "MoneyTalks AutoDeploy" -Confirm:$false
 
 $ErrorActionPreference = "Stop"
-$logFile = Join-Path $PSScriptRoot "deploy.log"
+
+# Script lives in scripts/ — git and docker must run from the repo root
+$repoRoot = Split-Path $PSScriptRoot
+$logFile  = Join-Path $repoRoot "deploy.log"
 
 function Log($msg) {
     $line = "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')  $msg"
     Add-Content -Path $logFile -Value $line
 }
 
-Set-Location $PSScriptRoot
+Set-Location $repoRoot
 
 # Trim log to last 500 lines so it doesn't grow forever
 if (Test-Path $logFile) {
