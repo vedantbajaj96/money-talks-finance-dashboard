@@ -1,14 +1,37 @@
+# User data & secrets
 config.json
 data/
+.env
+
+# Python
 __pycache__/
 *.pyc
+*.pyo
+
+# Node
+node_modules/
+moneytalks/node_modules/
+npm-debug.log*
+
+# Compiled JSX (generated at build/startup time)
+moneytalks/*.js.compiled
+
+# Test artifacts
+.pytest_cache/
+test-results/
+htmlcov/
+.coverage
+
+# Logs
+*.log
+deploy.log
+
+# OS
 .DS_Store
+.claude/
+Design Ideas/
+
+# Misc
 *.parquet
 *.db
 *.sqlite
-.env
-Design Ideas/
-.claude/
-moneytalks/node_modules/
-moneytalks/*.js.compiled
-deploy.log
