@@ -147,9 +147,7 @@ async def update_transaction(
                 df.loc[mask, "transaction_type"] = "expense"
     if "date" in body:
         try:
-            new_date = pd.to_datetime(body["date"])
-            # Store as string "YYYY-MM-DD" to match how the column is read by the frontend
-            df.loc[mask, "date"] = new_date.strftime("%Y-%m-%d")
+            df.loc[mask, "date"] = pd.to_datetime(body["date"])
         except Exception:
             raise HTTPException(400, "Invalid date format")
     if "description" in body:
