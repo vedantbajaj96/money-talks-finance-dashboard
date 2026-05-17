@@ -11,3 +11,4 @@ Design Ideas/
 .claude/
 moneytalks/node_modules/
 moneytalks/*.js.compiled
+deploy.log
