@@ -51,6 +51,37 @@ The first account you register becomes the admin.
 
 ---
 
+## Getting started (first time)
+
+Once the app is running and you've registered your account:
+
+### Option A — Connect your bank via Plaid (recommended)
+
+1. Go to **Settings** and enter your Plaid API keys (get them free at [dashboard.plaid.com](https://dashboard.plaid.com) — use Sandbox for testing, Production for real banks).
+2. Go to the **Accounts** tab and click **Link a bank account**.
+3. Search for your bank, log in, and select the accounts to connect.
+4. Click **Sync now** — transactions from the last 90 days are imported automatically.
+5. Plaid syncs automatically every 24 hours after that.
+
+### Option B — Upload a CSV export
+
+If you don't want to use Plaid, export a CSV from your bank and upload it in **Settings → Upload Bank CSV**.
+
+Supported formats out of the box:
+- Chase Bank (checking/savings)
+- Chase Credit Card
+- American Express
+
+### After importing
+
+1. Open the **Review** tab — your transactions are waiting with AI-suggested categories.
+2. Confirm or correct each one. Any category you set manually is locked and will never be overwritten.
+3. That's it — the **Monthly**, **Trends**, and **Net Worth** tabs will populate as you approve transactions.
+
+> **Adding a partner?** Log out, register a second account — it gets its own separate data. The first account you created is the admin and can manage users.
+
+---
+
 ## Remote access (Tailscale)
 
 To access from your phone or another computer:
