@@ -74,6 +74,46 @@ def _validate_results(
 # Provider-specific batch functions
 # ---------------------------------------------------------------------------
 
+def _categorize_batch_ollama(
+    descriptions: list[str],
+    transaction_types: list[str],
+    model: str = "llama3.2:latest",
+) -> tuple[list[str] | None, str | None]:
+    """Send one batch to a local Ollama model via its OpenAI-compatible endpoint."""
+    import http.client
+    import json as _j
+
+    prompt  = _build_prompt(descriptions, transaction_types)
+    payload = _j.dumps({
+        "model":    model,
+        "messages": [{"role": "user", "content": prompt}],
+        "stream":   False,
+    }).encode()
+
+    conn = None
+    try:
+        conn = http.client.HTTPConnection("localhost", 11434, timeout=90)
+        conn.request("POST", "/v1/chat/completions",
+                     body=payload,
+                     headers={"Content-Type": "application/json"})
+        resp     = conn.getresponse()
+        raw_text = _j.loads(resp.read())["choices"][0]["message"]["content"].strip()
+
+        match = re.search(r"\[.*\]", raw_text, re.DOTALL)
+        if match:
+            raw_text = match.group(0)
+
+        return _validate_results(_j.loads(raw_text), transaction_types, len(descriptions))
+    except Exception as exc:
+        return None, f"Ollama error: {exc}"
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
 def _categorize_batch_claude(
     descriptions: list[str],
     api_key: str | None,
@@ -176,7 +216,9 @@ def llm_categorize_all(
         batch_descs = descriptions[i : i + _BATCH_SIZE]
         batch_types = transaction_types[i : i + _BATCH_SIZE]
 
-        if provider == "gemini":
+        if provider == "ollama":
+            results, error = _categorize_batch_ollama(batch_descs, transaction_types=batch_types)
+        elif provider == "gemini":
             results, error = _categorize_batch_gemini(batch_descs, api_key=api_key, transaction_types=batch_types)
         else:
             results, error = _categorize_batch_claude(batch_descs, api_key=api_key, transaction_types=batch_types)

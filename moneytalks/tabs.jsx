@@ -3424,7 +3424,7 @@ function SettingsTab({ refreshFin }) {
           <div>
             <Label>Preferred provider</Label>
             <div style={{ display: 'flex', gap: 10 }}>
-              {['claude', 'gemini'].map(p => (
+              {['claude', 'gemini', 'ollama'].map(p => (
                 <button key={p} onClick={() => setProvider(p)} style={{
                   flex: 1, padding: '9px 0', borderRadius: 9, fontSize: 14,
                   fontFamily: 'inherit', cursor: 'pointer', fontWeight: 500,
@@ -3432,10 +3432,15 @@ function SettingsTab({ refreshFin }) {
                   background: provider === p ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : 'var(--bg)',
                   color: provider === p ? 'var(--accent)' : 'var(--muted)',
                 }}>
-                  {p === 'claude' ? 'Claude (Anthropic)' : 'Gemini (Google)'}
+                  {p === 'claude' ? 'Claude (Anthropic)' : p === 'gemini' ? 'Gemini (Google)' : 'Ollama (Local)'}
                 </button>
               ))}
             </div>
+            {provider === 'ollama' && (
+              <div style={{ marginTop: 8, fontSize: 12, color: cfg?.has_ollama ? 'var(--accent)' : '#f87171', lineHeight: 1.5 }}>
+                {cfg?.has_ollama ? '● Ollama is running (llama3.2)' : '● Ollama not detected — make sure it\'s running on localhost:11434'}
+              </div>
+            )}
           </div>
 
           <div>

@@ -47,15 +47,18 @@ async def upload_csv(
     cfg        = load_config(current_user)
     claude_key = cfg.get("anthropic_api_key", "")
     gemini_key = cfg.get("gemini_api_key", "")
+    provider   = cfg.get("preferred_provider", "claude")
     pending_mask = parsed["category"].isin(["Pending Review", "", None]) | parsed["category"].isna()
-    if pending_mask.any() and (claude_key or gemini_key):
+    if pending_mask.any() and (claude_key or gemini_key or provider == "ollama"):
         try:
             from categorizer.llm import llm_categorize_all
-            provider = cfg.get("preferred_provider", "claude")
-            api_key  = claude_key if provider == "claude" else gemini_key
-            if not api_key:
-                provider = "gemini" if provider == "claude" else "claude"
-                api_key  = gemini_key or claude_key
+            if provider == "ollama":
+                api_key = None
+            else:
+                api_key = claude_key if provider == "claude" else gemini_key
+                if not api_key:
+                    provider = "gemini" if provider == "claude" else "claude"
+                    api_key  = gemini_key or claude_key
             pending_df = parsed[pending_mask]
             descs = pending_df["description"].tolist()
             types = pending_df.get("transaction_type", pd.Series("expense", index=pending_df.index)).fillna("expense").tolist()
@@ -115,8 +118,9 @@ async def repair_data(current_user: str = Depends(get_current_user)) -> dict:
     pending_count = int(pending.sum())
 
     llm_done = 0
-    cfg = load_config(current_user)
-    if pending_count > 0 and (cfg.get("anthropic_api_key") or cfg.get("gemini_api_key")):
+    cfg          = load_config(current_user)
+    _repair_prov = cfg.get("preferred_provider", "claude")
+    if pending_count > 0 and (cfg.get("anthropic_api_key") or cfg.get("gemini_api_key") or _repair_prov == "ollama"):
         try:
             from categorizer.llm import llm_categorize_all
             pending_mask = (df["category"].isin(["Pending Review", None, ""]) | df["category"].isna()) & ~user_edited_mask
@@ -124,11 +128,14 @@ async def repair_data(current_user: str = Depends(get_current_user)) -> dict:
             descs = pending_df["description"].tolist()
             types = pending_df["transaction_type"].fillna("expense").tolist()
 
-            provider = cfg.get("preferred_provider", "claude")
-            api_key  = cfg.get("anthropic_api_key") if provider == "claude" else cfg.get("gemini_api_key")
-            if not api_key:
-                provider = "gemini" if provider == "claude" else "claude"
-                api_key  = cfg.get("gemini_api_key") or cfg.get("anthropic_api_key")
+            provider = _repair_prov
+            if provider == "ollama":
+                api_key = None
+            else:
+                api_key = cfg.get("anthropic_api_key") if provider == "claude" else cfg.get("gemini_api_key")
+                if not api_key:
+                    provider = "gemini" if provider == "claude" else "claude"
+                    api_key  = cfg.get("gemini_api_key") or cfg.get("anthropic_api_key")
 
             categories, err = llm_categorize_all(descs, api_key=api_key, provider=provider, transaction_types=types)
             if categories:

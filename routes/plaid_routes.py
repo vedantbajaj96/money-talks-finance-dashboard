@@ -91,6 +91,31 @@ async def plaid_sync(body: dict[str, Any] = {}, current_user: str = Depends(get_
             mask = df["transaction_type"].isna() | (df["transaction_type"].astype(str) == "None")
             df.loc[mask & (df["expense_amount"] >= 0), "transaction_type"] = "expense"
             df.loc[mask & (df["expense_amount"] < 0),  "transaction_type"] = "income"
+
+            # LLM categorization for still-pending unedited rows.
+            # Result goes into category but approved stays False → shows in Review tab.
+            pending_llm = (
+                df["category"].isin(["Pending Review", "pending review", ""]) | df["category"].isna()
+            ) & ~user_edited
+            if pending_llm.any():
+                _provider = cfg.get("preferred_provider", "claude")
+                _api_key  = (
+                    None if _provider == "ollama"
+                    else cfg.get("anthropic_api_key") if _provider == "claude"
+                    else cfg.get("gemini_api_key")
+                )
+                if _api_key or _provider == "ollama":
+                    try:
+                        from categorizer.llm import llm_categorize_all
+                        _pend_df  = df[pending_llm]
+                        _descs    = _pend_df["description"].tolist()
+                        _types    = _pend_df["transaction_type"].fillna("expense").tolist()
+                        _cats, _  = llm_categorize_all(_descs, api_key=_api_key, provider=_provider, transaction_types=_types)
+                        if _cats:
+                            df.loc[pending_llm, "category"] = _cats
+                    except Exception:
+                        pass
+
             save_df(current_user, df)
 
         # Integrity check: user-edited row count must never decrease after sync.
