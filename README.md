@@ -1,6 +1,6 @@
 # MoneyTalks
 
-A self-hosted personal finance dashboard. Connect your bank accounts via Plaid, upload CSVs, and let a local AI (Ollama) categorize everything — all running on your own hardware with no data leaving your network.
+Track your monthly spending without handing your data to some SaaS company. Connect your bank accounts and credit cards via Plaid (read-only), or just upload a CSV export — MoneyTalks pulls in your transactions and uses a local AI to categorize everything automatically. You get a clean dashboard showing where your money's going, your net worth across accounts, recurring bills, and more. Runs entirely on your own machine, so your financial data stays yours.
 
 <img width="1468" height="772" alt="image" src="https://github.com/user-attachments/assets/e0129934-d898-4c4f-9cef-5e563ee56d10" />
 
