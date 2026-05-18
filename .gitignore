@@ -2,6 +2,7 @@
 config.json
 data/
 .env
+user_rules.py
 
 # Python
 __pycache__/
