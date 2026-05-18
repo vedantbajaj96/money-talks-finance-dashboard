@@ -604,6 +604,7 @@ function App() {
       setSyncProgress({ step: 'Fetching transactions…', pct: 35, error: null });
       const r   = await fetch('/api/plaid/sync', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ full }) });
       setSyncProgress({ step: 'Categorizing…', pct: 70, error: null });
+      if (r.status === 401) { window.location.href = '/login.html'; return; }
       const res = await r.json();
       if (!r.ok || res.error) {
         setSyncProgress({ step: res.error || res.detail || 'Sync failed', pct: 100, error: true });
