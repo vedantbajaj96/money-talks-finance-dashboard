@@ -627,7 +627,8 @@ async def approve_batch(body: dict[str, Any], current_user: str = Depends(get_cu
                 continue  # genuinely no category — skip
             # Auto-assign the resolved category
             df.loc[mask, "category"] = reverse_map.get(resolved, resolved)
-        df.loc[mask, "approved"] = True
+        df.loc[mask, "approved"]    = True
+        df.loc[mask, "user_edited"] = True   # approved = user has seen & confirmed it; lock against future re-categorization
         if txn_id in overrides:
             ll_cat   = overrides[txn_id]
             orig_cat = df.loc[mask, "category"].iloc[0]   # save before mutating
