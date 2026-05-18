@@ -5,8 +5,10 @@ Usage:
     python evals/score_eval.py                        # reads evals/categorization_eval.xlsx
     python evals/score_eval.py --file my_eval.xlsx
 
-Reads the 'correct' column you filled in and scores Ollama, Gemini, and the
-keyword rules. Also breaks down errors by why_wrong tag so you know where to focus.
+Fill in:
+  your_pick — the correct category for each transaction
+  correct   — Yes / No (did the best model get it right?)
+  why_wrong — tag misses: keyword_missing / prompt_issue / ambiguous / wrong_type
 
 Run this after every prompt/rules change to see if accuracy improved.
 """
@@ -31,12 +33,12 @@ def score(file_path: Path) -> None:
 
     df = pd.read_excel(file_path, sheet_name="Transactions")
 
-    # Only score rows where 'correct' is filled in
-    labeled = df[df["correct"].notna() & (df["correct"].astype(str).str.strip() != "")].copy()
+    # Only score rows where your_pick (ground truth) is filled in
+    labeled = df[df["your_pick"].notna() & (df["your_pick"].astype(str).str.strip() != "")].copy()
 
     if labeled.empty:
-        print("No rows have the 'correct' column filled in yet.")
-        print("Open the Excel and fill in the correct category for each transaction.")
+        print("No rows have 'your_pick' filled in yet.")
+        print("Open the Excel and fill in the correct category in 'your_pick' for each row.")
         sys.exit(0)
 
     total = len(labeled)
@@ -47,9 +49,9 @@ def score(file_path: Path) -> None:
         if col not in labeled.columns or labeled[col].eq("NO KEY").all():
             continue
         valid = labeled[labeled[col] != "ERROR"]
-        correct = (valid[col].str.strip() == valid["correct"].str.strip()).sum()
-        pct = correct / len(valid) * 100 if len(valid) > 0 else 0
-        print(f"{col:<15} {correct:>3} / {len(valid):>3}   ({pct:.0f}%)")
+        n_correct = (valid[col].str.strip() == valid["your_pick"].str.strip()).sum()
+        pct = n_correct / len(valid) * 100 if len(valid) > 0 else 0
+        print(f"{col:<15} {n_correct:>3} / {len(valid):>3}   ({pct:.0f}%)")
 
     print("=" * 50)
 
@@ -78,12 +80,12 @@ def score(file_path: Path) -> None:
     best_col = next((c for c in ["claude", "gemini", "llama3.2"] if c in labeled.columns), None)
     if best_col:
         print(f"\nTop misses ({best_col} wrong, sorted by frequency):")
-        wrong = labeled[labeled[best_col].str.strip() != labeled["correct"].str.strip()]
+        wrong = labeled[labeled[best_col].str.strip() != labeled["your_pick"].str.strip()]
         if not wrong.empty:
             miss_counts = Counter(wrong["description"].astype(str).str[:50])
             for desc, count in miss_counts.most_common(10):
                 row = wrong[wrong["description"].astype(str).str[:50] == desc].iloc[0]
-                print(f"  '{desc[:40]:<40}'  {best_col}={row[best_col]:<25} correct={row['correct']}")
+                print(f"  '{desc[:40]:<40}'  {best_col}={row[best_col]:<25} your_pick={row['your_pick']}")
         else:
             print(f"  None — {best_col} got everything right!")
 

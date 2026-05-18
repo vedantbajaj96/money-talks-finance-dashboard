@@ -14,7 +14,7 @@ const babel = require('@babel/core'), fs = require('fs'); \
 "
 
 # ── Stage 2: Python runtime ────────────────────────────────────────
-FROM python:3.11-slim
+FROM python:3.14-slim
 WORKDIR /app
 
 # Create non-root user for runtime security
@@ -23,8 +23,8 @@ RUN groupadd -g 1000 appuser && useradd -d /app -u 1000 -g appuser -s /sbin/nolo
 # Install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt && \
-    find /usr/local/lib/python3.11 -type f -name '*.pyc' -delete && \
-    find /usr/local/lib/python3.11 -type d -name '__pycache__' -delete
+    find /usr/local/lib/python3.14 -type f -name '*.pyc' -delete && \
+    find /usr/local/lib/python3.14 -type d -name '__pycache__' -delete
 
 # Copy application code
 COPY --chown=appuser:appuser . .

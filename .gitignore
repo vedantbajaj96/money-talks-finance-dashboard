@@ -31,6 +31,9 @@ deploy.log
 .claude/
 Design Ideas/
 
+# Python venv
+.venv/
+
 # Misc
 *.parquet
 *.db

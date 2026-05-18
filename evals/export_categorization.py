@@ -33,6 +33,7 @@ import pandas as pd
 from core.store import data_file, load_config
 from categorizer.rules import categorize, categorize_income
 from categorizer.llm import llm_categorize_all, _categorize_batch_ollama
+from categorizer.constants import ALL_CATEGORIES, INCOME_CATEGORIES, REIMBURSEMENT_CATEGORY
 
 
 def _keyword_category(description: str, expense_amount: float) -> str:
@@ -134,7 +135,6 @@ def run_export(username: str, n: int, out_path: Path) -> None:
         "gemini":       df["gemini"],
         "claude":       df["claude"],
         "your_pick":    df["your_pick"],
-        "correct":      "",   # fill in manually
         "why_wrong":    "",   # keyword_missing / prompt_issue / ambiguous / wrong_type
     })
 
@@ -144,38 +144,34 @@ def run_export(username: str, n: int, out_path: Path) -> None:
     with pd.ExcelWriter(out_path, engine="openpyxl") as writer:
         export.to_excel(writer, sheet_name="Transactions", index=False)
 
-        all_cats = [
-            "Financial & Transfers", "Housing & Utilities", "Connectivity",
-            "Food Delivery", "Commute & Transport", "Groceries", "Dining & Drinks",
-            "Fitness & Active", "Health & Medical", "Professional Development",
-            "Shopping & Retail", "Entertainment", "Travel & Getaways",
-            "Paycheck & Salary", "Freelance & Side Income",
-            "Investment & Dividend Income", "Reimbursements", "Other Income",
-        ]
+        all_cats = ALL_CATEGORIES + [REIMBURSEMENT_CATEGORY] + INCOME_CATEGORIES
         pd.DataFrame({
             "category": all_cats,
             "type": (["expense"] * 13) + (["income"] * 5),
         }).to_excel(writer, sheet_name="Categories", index=False)
 
         ws = writer.sheets["Transactions"]
-        for col, width in {"A":12,"B":45,"C":10,"D":10,"E":25,"F":25,"G":25,"H":25,"I":25,"J":25,"K":20}.items():
+        for col, width in {"A":12,"B":45,"C":10,"D":10,"E":25,"F":25,"G":25,"H":25,"I":25,"J":20}.items():
             ws.column_dimensions[col].width = width
         ws.freeze_panes = "A2"
 
-        # Dropdown for the 'correct' column (col J) from the Categories sheet
+        # Dropdown for your_pick (col I) — hidden col K holds category list (works in Excel Online)
         from openpyxl.worksheet.datavalidation import DataValidation
+        for i, cat in enumerate(all_cats):
+            ws.cell(row=i + 2, column=11, value=cat)
+        ws.column_dimensions["K"].hidden = True
         dv = DataValidation(
             type="list",
-            formula1="Categories!$A$2:$A$19",
+            formula1="$K$2:$K$19",
             allow_blank=True,
             showDropDown=False,
         )
-        dv.sqref = f"J2:J{len(export) + 1}"
+        dv.sqref = f"I2:I{len(export) + 1}"
         ws.add_data_validation(dv)
 
     print(f"\nExported to: {out_path}")
     print(f"  {len(export)} transactions  |  {int(user_edited.sum())} already have your pick")
-    print(f"\nNext: fill in 'correct' column, then run:  python3 evals/score_eval.py")
+    print(f"\nNext: fill in 'your_pick' column, then run:  python3 evals/score_eval.py")
 
 
 if __name__ == "__main__":
