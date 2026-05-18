@@ -533,9 +533,7 @@ def get_review_batch(current_user: str = Depends(get_current_user)) -> dict:
             df.loc[idx, "user_edited"] = False
         save_df(current_user, df)
 
-    from core.categories import map_category as _mc
-    _SKIP = {"transfer", "savings", "refund"}
-    reviewable    = df[~df["category"].apply(lambda c: _mc(str(c or "")) in _SKIP)]
+    reviewable    = df
     _still_pending = reviewable["category"].isin(["Pending Review", "pending review", ""]) | reviewable["category"].isna()
     approved_mask = reviewable["approved"].fillna(False).infer_objects(copy=False).astype(bool) & ~_still_pending
     total         = len(reviewable)
@@ -605,6 +603,8 @@ async def approve_batch(body: dict[str, Any], current_user: str = Depends(get_cu
         df["approved"] = False
     if "user_edited" not in df.columns:
         df["user_edited"] = False
+    if "original_category" not in df.columns:
+        df["original_category"] = df["category"]
 
     reverse_map = {v: k for k, v in CAT_MAP.items()}
 
@@ -627,6 +627,10 @@ async def approve_batch(body: dict[str, Any], current_user: str = Depends(get_cu
                 continue  # genuinely no category — skip
             # Auto-assign the resolved category
             df.loc[mask, "category"] = reverse_map.get(resolved, resolved)
+        # Stamp original_category once — never overwrite after first set
+        orig_already = df.loc[mask, "original_category"].iloc[0]
+        if not orig_already or pd.isna(orig_already):
+            df.loc[mask, "original_category"] = df.loc[mask, "category"].iloc[0]
         df.loc[mask, "approved"]    = True
         df.loc[mask, "user_edited"] = True   # approved = user has seen & confirmed it; lock against future re-categorization
         if txn_id in overrides:

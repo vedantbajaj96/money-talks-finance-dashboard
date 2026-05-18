@@ -57,7 +57,6 @@ CAT_MAP: dict[str, str] = {
     "personal-care":                  "personal_care",
     "grooming-and-beauty":            "personal_care",
     # ── Legacy Streamlit names ─────────────────────────────────────────────
-    "Food & Drink":   "dining",
     "Groceries":      "groceries",
     "Shopping":       "shopping",
     "Transportation": "transport",
@@ -174,7 +173,7 @@ def _resolve_category(
     return cat_id
 
 
-def detect_refund_pairs(df: "pd.DataFrame") -> "tuple[pd.DataFrame, int]":
+def detect_refund_pairs(df: "pd.DataFrame", user_rules_path: "Path | None" = None) -> "tuple[pd.DataFrame, int]":
     """Auto-categorize matched charge/refund pairs as 'Refund / Return'.
 
     Two cases handled:
@@ -189,13 +188,26 @@ def detect_refund_pairs(df: "pd.DataFrame") -> "tuple[pd.DataFrame, int]":
       - Same description (case-insensitive)
       - Credit arrives within 90 days of the charge
       - Neither transaction has been manually edited
+      - Neither transaction is already handled by user rules
 
     Returns (modified_df, number_of_pairs_found).
     """
     import pandas as pd
+    from pathlib import Path as _Path
 
     if df.empty or "expense_amount" not in df.columns:
         return df, 0
+
+    # Skip transactions already claimed by user rules
+    _apply_rules = None
+    if user_rules_path is not None and _Path(user_rules_path).exists():
+        from categorizer.rules import _load_apply_rules
+        _apply_rules = _load_apply_rules(user_rules_path)
+
+    def _rule_handled(idx) -> bool:
+        if _apply_rules is None:
+            return False
+        return bool(_apply_rules(str(df.at[idx, "description"]), float(df.at[idx, "expense_amount"])))
 
     user_edited = df.get("user_edited", pd.Series(False, index=df.index)).fillna(False).infer_objects(copy=False).astype(bool)
     editable    = ~user_edited
@@ -203,8 +215,8 @@ def detect_refund_pairs(df: "pd.DataFrame") -> "tuple[pd.DataFrame, int]":
     descs       = df["description"].astype(str).str.strip().str.lower()
     amounts     = df["expense_amount"].astype(float)
 
-    charge_idx = list(df.index[editable & (amounts > 0)])
-    credit_idx = list(df.index[editable & (amounts < 0)])
+    charge_idx = [i for i in df.index[editable & (amounts > 0)] if not _rule_handled(i)]
+    credit_idx = [i for i in df.index[editable & (amounts < 0)] if not _rule_handled(i)]
 
     full_refund_matched = set()   # both sides marked Refund / Return
     partial_credits     = set()   # only the credit marked Refund / Return

@@ -59,10 +59,11 @@ async def upload_csv(
                 if not api_key:
                     provider = "gemini" if provider == "claude" else "claude"
                     api_key  = gemini_key or claude_key
-            pending_df = parsed[pending_mask]
-            descs = pending_df["description"].tolist()
-            types = pending_df.get("transaction_type", pd.Series("expense", index=pending_df.index)).fillna("expense").tolist()
-            categories, _ = llm_categorize_all(descs, api_key=api_key, provider=provider, transaction_types=types)
+            pending_df  = parsed[pending_mask]
+            descs       = pending_df["description"].tolist()
+            types       = pending_df.get("transaction_type", pd.Series("expense", index=pending_df.index)).fillna("expense").tolist()
+            extra_cats  = [c["name"] for c in cfg.get("custom_categories", [])]
+            categories, _ = llm_categorize_all(descs, api_key=api_key, provider=provider, transaction_types=types, extra_expense_cats=extra_cats)
             if categories:
                 parsed.loc[pending_mask, "category"] = categories
         except Exception:
@@ -71,7 +72,7 @@ async def upload_csv(
     existing = load_df(current_user)
     combined = pd.concat([existing, parsed], ignore_index=True) if existing is not None else parsed.copy()
     combined, dupes_removed = deduplicate(combined)
-    combined, _ = detect_refund_pairs(combined)
+    combined, _ = detect_refund_pairs(combined, user_rules_path=user_dir(current_user) / "user_rules.py")
     save_df(current_user, combined)
 
     return {
@@ -137,7 +138,8 @@ async def repair_data(current_user: str = Depends(get_current_user)) -> dict:
                     provider = "gemini" if provider == "claude" else "claude"
                     api_key  = cfg.get("gemini_api_key") or cfg.get("anthropic_api_key")
 
-            categories, err = llm_categorize_all(descs, api_key=api_key, provider=provider, transaction_types=types)
+            extra_cats  = [c["name"] for c in cfg.get("custom_categories", [])]
+            categories, err = llm_categorize_all(descs, api_key=api_key, provider=provider, transaction_types=types, extra_expense_cats=extra_cats)
             if categories:
                 df.loc[pending_mask, "category"] = categories
                 still_pending = df["category"].isin(["Pending Review", None, ""]) | df["category"].isna()
@@ -145,7 +147,7 @@ async def repair_data(current_user: str = Depends(get_current_user)) -> dict:
         except Exception:
             pass
 
-    df, refund_pairs = detect_refund_pairs(df)
+    df, refund_pairs = detect_refund_pairs(df, user_rules_path=user_dir(current_user) / "user_rules.py")
     save_df(current_user, df)
     return {
         "ok":             True,

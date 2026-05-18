@@ -107,17 +107,18 @@ async def plaid_sync(body: dict[str, Any] = {}, current_user: str = Depends(get_
                 if _api_key or _provider == "ollama":
                     try:
                         from categorizer.llm import llm_categorize_all
-                        _pend_df  = df[pending_llm]
-                        _descs    = _pend_df["description"].tolist()
-                        _types    = _pend_df["transaction_type"].fillna("expense").tolist()
-                        _cats, _  = llm_categorize_all(_descs, api_key=_api_key, provider=_provider, transaction_types=_types)
+                        _pend_df    = df[pending_llm]
+                        _descs      = _pend_df["description"].tolist()
+                        _types      = _pend_df["transaction_type"].fillna("expense").tolist()
+                        _extra_cats = [c["name"] for c in cfg.get("custom_categories", [])]
+                        _cats, _    = llm_categorize_all(_descs, api_key=_api_key, provider=_provider, transaction_types=_types, extra_expense_cats=_extra_cats)
                         if _cats:
                             df.loc[pending_llm, "category"] = _cats
                     except Exception:
                         pass
 
             from core.categories import detect_refund_pairs
-            df, _ = detect_refund_pairs(df)
+            df, _ = detect_refund_pairs(df, user_rules_path=user_dir(current_user) / "user_rules.py")
             save_df(current_user, df)
 
         # Integrity check: user-edited row count must never decrease after sync.

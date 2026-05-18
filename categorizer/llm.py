@@ -45,9 +45,9 @@ def _extract_json_array(text: str) -> list | None:
     return None
 
 
-def _build_prompt(descriptions: list[str], transaction_types: list[str]) -> str:
+def _build_prompt(descriptions: list[str], transaction_types: list[str], extra_expense_cats: list[str] | None = None) -> str:
     """Assemble the categorization prompt used by both Claude and Gemini."""
-    expense_cats = "\n".join(f"- {c}" for c in ALL_CATEGORIES)
+    expense_cats = "\n".join(f"- {c}" for c in ALL_CATEGORIES + (extra_expense_cats or []))
     income_cats  = "\n".join(f"- {c}" for c in INCOME_CATEGORIES)
     numbered     = "\n".join(
         f"{i + 1}. [{t.upper()}] {desc}"
@@ -77,6 +77,7 @@ def _validate_results(
     raw: list,
     transaction_types: list[str],
     expected_count: int,
+    extra_expense_cats: list[str] | None = None,
 ) -> tuple[list[str] | None, str | None]:
     """
     Validate LLM output: ensure every category is a known value and the
@@ -87,7 +88,7 @@ def _validate_results(
             f"LLM returned {len(raw)} categories for {expected_count} descriptions."
         )
 
-    all_valid = set(ALL_CATEGORIES) | set(INCOME_CATEGORIES)
+    all_valid = set(ALL_CATEGORIES) | set(INCOME_CATEGORIES) | set(extra_expense_cats or [])
     validated = [
         cat if cat in all_valid
         else ("Other Income" if t == "income" else "Shopping & Retail")
@@ -104,12 +105,13 @@ def _categorize_batch_ollama(
     descriptions: list[str],
     transaction_types: list[str],
     model: str = "llama3.2:latest",
+    extra_expense_cats: list[str] | None = None,
 ) -> tuple[list[str] | None, str | None]:
     """Send one batch to a local Ollama model via its OpenAI-compatible endpoint."""
     import http.client
     import json as _j
 
-    prompt  = _build_prompt(descriptions, transaction_types)
+    prompt  = _build_prompt(descriptions, transaction_types, extra_expense_cats)
     payload = _j.dumps({
         "model":    model,
         "messages": [{"role": "user", "content": prompt}],
@@ -130,7 +132,7 @@ def _categorize_batch_ollama(
         parsed = _extract_json_array(raw_text)
         if parsed is None:
             return None, f"Could not extract JSON array from response: {raw_text[:100]}"
-        return _validate_results(parsed, transaction_types, len(descriptions))
+        return _validate_results(parsed, transaction_types, len(descriptions), extra_expense_cats)
     except Exception as exc:
         return None, f"Ollama error: {exc}"
     finally:
@@ -145,6 +147,7 @@ def _categorize_batch_claude(
     descriptions: list[str],
     api_key: str | None,
     transaction_types: list[str],
+    extra_expense_cats: list[str] | None = None,
 ) -> tuple[list[str] | None, str | None]:
     """Send one batch to Claude and return validated categories."""
     try:
@@ -158,7 +161,7 @@ def _categorize_batch_claude(
 
     try:
         client   = anthropic.Anthropic(api_key=resolved_key)
-        prompt   = _build_prompt(descriptions, transaction_types)
+        prompt   = _build_prompt(descriptions, transaction_types, extra_expense_cats)
         response = client.messages.create(
             model="claude-opus-4-6",
             max_tokens=1024,
@@ -169,7 +172,7 @@ def _categorize_batch_claude(
         parsed = _extract_json_array(raw_text)
         if parsed is None:
             return None, f"Could not extract JSON array from response: {raw_text[:100]}"
-        return _validate_results(parsed, transaction_types, len(descriptions))
+        return _validate_results(parsed, transaction_types, len(descriptions), extra_expense_cats)
 
     except Exception as exc:
         return None, str(exc)
@@ -179,6 +182,7 @@ def _categorize_batch_gemini(
     descriptions: list[str],
     api_key: str,
     transaction_types: list[str],
+    extra_expense_cats: list[str] | None = None,
 ) -> tuple[list[str] | None, str | None]:
     """Send one batch to Gemini and return validated categories."""
     try:
@@ -188,7 +192,7 @@ def _categorize_batch_gemini(
 
     try:
         client   = genai.Client(api_key=api_key)
-        prompt   = _build_prompt(descriptions, transaction_types)
+        prompt   = _build_prompt(descriptions, transaction_types, extra_expense_cats)
         response = client.models.generate_content(
             model="gemini-3.1-flash-lite",
             contents=prompt,
@@ -198,7 +202,7 @@ def _categorize_batch_gemini(
         parsed = _extract_json_array(raw_text)
         if parsed is None:
             return None, f"Could not extract JSON array from response: {raw_text[:100]}"
-        return _validate_results(parsed, transaction_types, len(descriptions))
+        return _validate_results(parsed, transaction_types, len(descriptions), extra_expense_cats)
 
     except Exception as exc:
         return None, str(exc)
@@ -213,6 +217,7 @@ def llm_categorize_all(
     api_key: str | None = None,
     provider: str = "claude",
     transaction_types: list[str] | None = None,
+    extra_expense_cats: list[str] | None = None,
 ) -> tuple[list[str] | None, str | None]:
     """
     Categorize all descriptions via the LLM, processing in batches of
@@ -242,11 +247,11 @@ def llm_categorize_all(
         batch_types = transaction_types[i : i + _BATCH_SIZE]
 
         if provider == "ollama":
-            results, error = _categorize_batch_ollama(batch_descs, transaction_types=batch_types)
+            results, error = _categorize_batch_ollama(batch_descs, transaction_types=batch_types, extra_expense_cats=extra_expense_cats)
         elif provider == "gemini":
-            results, error = _categorize_batch_gemini(batch_descs, api_key=api_key, transaction_types=batch_types)
+            results, error = _categorize_batch_gemini(batch_descs, api_key=api_key, transaction_types=batch_types, extra_expense_cats=extra_expense_cats)
         else:
-            results, error = _categorize_batch_claude(batch_descs, api_key=api_key, transaction_types=batch_types)
+            results, error = _categorize_batch_claude(batch_descs, api_key=api_key, transaction_types=batch_types, extra_expense_cats=extra_expense_cats)
 
         if error:
             return None, error
