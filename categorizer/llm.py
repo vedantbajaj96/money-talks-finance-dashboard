@@ -12,11 +12,37 @@ from __future__ import annotations
 
 import json
 import os
-import re
 
 from .constants import ALL_CATEGORIES, INCOME_CATEGORIES
 
 _BATCH_SIZE = 50  # descriptions per API call
+
+
+def _extract_json_array(text: str) -> list | None:
+    """
+    Robustly extract the first JSON array from a string.
+    Falls back through several strategies before giving up.
+    """
+    import json as _j
+    # Strategy 1: the whole text is already valid JSON
+    try:
+        result = _j.loads(text)
+        if isinstance(result, list):
+            return result
+    except Exception:
+        pass
+    # Strategy 2: find the first '[' and last ']' that enclose valid JSON
+    start = text.find("[")
+    if start != -1:
+        for end in range(len(text) - 1, start, -1):
+            if text[end] == "]":
+                try:
+                    result = _j.loads(text[start: end + 1])
+                    if isinstance(result, list):
+                        return result
+                except Exception:
+                    continue
+    return None
 
 
 def _build_prompt(descriptions: list[str], transaction_types: list[str]) -> str:
@@ -101,11 +127,10 @@ def _categorize_batch_ollama(
         resp     = conn.getresponse()
         raw_text = _j.loads(resp.read())["choices"][0]["message"]["content"].strip()
 
-        match = re.search(r"\[.*\]", raw_text, re.DOTALL)
-        if match:
-            raw_text = match.group(0)
-
-        return _validate_results(_j.loads(raw_text), transaction_types, len(descriptions))
+        parsed = _extract_json_array(raw_text)
+        if parsed is None:
+            return None, f"Could not extract JSON array from response: {raw_text[:100]}"
+        return _validate_results(parsed, transaction_types, len(descriptions))
     except Exception as exc:
         return None, f"Ollama error: {exc}"
     finally:
@@ -141,11 +166,10 @@ def _categorize_batch_claude(
         )
         raw_text = response.content[0].text.strip()
 
-        match = re.search(r"\[.*\]", raw_text, re.DOTALL)
-        if match:
-            raw_text = match.group(0)
-
-        return _validate_results(json.loads(raw_text), transaction_types, len(descriptions))
+        parsed = _extract_json_array(raw_text)
+        if parsed is None:
+            return None, f"Could not extract JSON array from response: {raw_text[:100]}"
+        return _validate_results(parsed, transaction_types, len(descriptions))
 
     except Exception as exc:
         return None, str(exc)
@@ -171,11 +195,10 @@ def _categorize_batch_gemini(
         )
         raw_text = response.text.strip()
 
-        match = re.search(r"\[.*\]", raw_text, re.DOTALL)
-        if match:
-            raw_text = match.group(0)
-
-        return _validate_results(json.loads(raw_text), transaction_types, len(descriptions))
+        parsed = _extract_json_array(raw_text)
+        if parsed is None:
+            return None, f"Could not extract JSON array from response: {raw_text[:100]}"
+        return _validate_results(parsed, transaction_types, len(descriptions))
 
     except Exception as exc:
         return None, str(exc)
