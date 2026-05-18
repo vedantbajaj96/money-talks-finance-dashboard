@@ -419,7 +419,7 @@ function TopBar({ tab, monthKey, setMonthKey, search, setSearch, syncState, sync
       </div>
       <div className="topbar-right">
         {/* Sync button */}
-        <button className="icon-btn sync-btn" onClick={manualSync} disabled={syncing}
+        <button className="icon-btn sync-btn" onClick={() => manualSync()} disabled={syncing}
           title={syncState?.last_sync ? `Last synced ${fmtLastSync(syncState.last_sync)}` : 'Sync now'}>
           <span style={{ display: 'inline-flex', animation: syncing ? 'spin 1s linear infinite' : 'none' }}>
             <Icon name="sync" size={16} />
