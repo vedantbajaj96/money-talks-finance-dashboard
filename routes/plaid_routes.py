@@ -116,6 +116,8 @@ async def plaid_sync(body: dict[str, Any] = {}, current_user: str = Depends(get_
                     except Exception:
                         pass
 
+            from core.categories import detect_refund_pairs
+            df, _ = detect_refund_pairs(df)
             save_df(current_user, df)
 
         # Integrity check: user-edited row count must never decrease after sync.

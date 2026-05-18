@@ -170,12 +170,19 @@ def _resolve_category(
 
 
 def detect_refund_pairs(df: "pd.DataFrame") -> "tuple[pd.DataFrame, int]":
-    """Auto-categorize matched charge/refund pairs as 'refund'.
+    """Auto-categorize matched charge/refund pairs as 'Refund / Return'.
 
-    A pair matches when:
+    Two cases handled:
+      1. Full refund  — credit amount == charge amount (within $0.01):
+         both the charge and the credit are marked "Refund / Return" so neither
+         shows up as expense or income (they cancel out).
+      2. Partial refund — credit amount < charge amount, same description,
+         within 90 days: only the credit is marked "Refund / Return".
+         The original charge keeps its category (e.g. Groceries stays Groceries).
+
+    Conditions for a match:
       - Same description (case-insensitive)
-      - Same absolute amount (within $0.01)
-      - The credit arrives within 90 days of the charge
+      - Credit arrives within 90 days of the charge
       - Neither transaction has been manually edited
 
     Returns (modified_df, number_of_pairs_found).
@@ -194,34 +201,46 @@ def detect_refund_pairs(df: "pd.DataFrame") -> "tuple[pd.DataFrame, int]":
     charge_idx = list(df.index[editable & (amounts > 0)])
     credit_idx = list(df.index[editable & (amounts < 0)])
 
-    matched    = set()
+    full_refund_matched = set()   # both sides marked Refund / Return
+    partial_credits     = set()   # only the credit marked Refund / Return
     pair_count = 0
 
     for ci in credit_idx:
-        if ci in matched:
+        if ci in full_refund_matched or ci in partial_credits:
             continue
         credit_amt  = abs(amounts[ci])
         credit_date = dates[ci]
         credit_desc = descs[ci]
 
         for di in charge_idx:
-            if di in matched:
-                continue
-            if abs(amounts[di] - credit_amt) > 0.01:
+            if di in full_refund_matched:
                 continue
             if descs[di] != credit_desc:
                 continue
             days_diff = (credit_date - dates[di]).days
-            if 0 <= days_diff <= 90:
-                matched.add(ci)
-                matched.add(di)
+            if not (0 <= days_diff <= 90):
+                continue
+            charge_amt = amounts[di]
+            if abs(charge_amt - credit_amt) <= 0.01:
+                # Full refund — cancel both sides
+                full_refund_matched.add(ci)
+                full_refund_matched.add(di)
+                pair_count += 1
+                break
+            elif credit_amt < charge_amt:
+                # Partial refund — only mark the credit
+                partial_credits.add(ci)
                 pair_count += 1
                 break
 
-    if matched:
+    if full_refund_matched or partial_credits:
         df = df.copy()
-        df.loc[list(matched), "category"]    = "Refund / Return"
-        df.loc[list(matched), "user_edited"] = True
+        if full_refund_matched:
+            df.loc[list(full_refund_matched), "category"]    = "Refund / Return"
+            df.loc[list(full_refund_matched), "user_edited"] = True
+        if partial_credits:
+            df.loc[list(partial_credits), "category"]    = "Refund / Return"
+            df.loc[list(partial_credits), "user_edited"] = True
 
     return df, pair_count
 
