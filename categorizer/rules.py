@@ -147,7 +147,7 @@ def categorize_transactions(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
 
     def _categorize_row(row):
-        rule_cat = apply_rules(row["description"])
+        rule_cat = apply_rules(row["description"], float(row.get("expense_amount", 0)))
         if rule_cat is not None:
             return (rule_cat, None)
         if row["expense_amount"] < 0:

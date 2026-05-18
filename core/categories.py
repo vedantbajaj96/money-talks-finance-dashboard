@@ -159,6 +159,11 @@ def _resolve_category(
     if cat_id == "transfer":
         return "transfer"
 
+    # Refund / Return is always neutral — never reclassified as income even if
+    # the amount is negative (it's a credit, not earned income).
+    if cat_id == "refund":
+        return "refund"
+
     if raw_category in _REIMBURSEMENT_CATS or cat_id == "reimbursements":
         return "other"
 
