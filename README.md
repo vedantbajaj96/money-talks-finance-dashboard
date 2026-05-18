@@ -2,22 +2,37 @@
 
 A self-hosted personal finance dashboard. Connect your bank accounts via Plaid, upload CSVs, and let a local AI (Ollama) categorize everything — all running on your own hardware with no data leaving your network.
 
+<img width="1468" height="772" alt="image" src="https://github.com/user-attachments/assets/e0129934-d898-4c4f-9cef-5e563ee56d10" />
+
 ---
 
 ## Features
 
 - **Bank sync** — Connect Chase, Amex, Wealthfront, and 10,000+ institutions via Plaid. Auto-syncs every 24 hours.
+
+  <img width="924" height="540" alt="image" src="https://github.com/user-attachments/assets/eb10e26a-b221-45a0-b434-87576ff0ea5d" />
+
 - **CSV upload** — Drop in a Chase Bank, Chase Credit Card, or Amex CSV export and it parses automatically.
 - **AI categorization** — Uses a local Ollama model (llama3.2) to categorize transactions. Falls back to Claude or Gemini if configured. Your data never leaves your machine with Ollama.
 - **Review queue** — Every new transaction goes through a review step before it's finalized. AI pre-fills the category; you confirm or correct it.
-- **Your edits are permanent** — Manually set categories are never overwritten by syncs or re-categorization.
+
+  <img width="1468" height="772" alt="image" src="https://github.com/user-attachments/assets/51dfecca-201d-4dcb-9f6c-b3f105879171" />
+  
 - **Monthly breakdown** — Spending by category, income vs. expenses, month-over-month trends.
+
+  <img width="1468" height="772" alt="image" src="https://github.com/user-attachments/assets/acba4828-0e90-4b21-aa9e-1c6692a7d488" />
+
 - **Net Worth** — Live balances from all linked accounts including investment accounts (Wealthfront, etc.).
 - **Recurring transactions** — Automatically detected subscriptions and bills.
-- **Budgets** — Set monthly limits per category.
+
+  <img width="1468" height="772" alt="image" src="https://github.com/user-attachments/assets/61c4d066-e723-44d4-9504-0275a32a5ab8" />
+
 - **Semantic search** — Search transactions by meaning, not just keyword (e.g. "coffee shops last month").
 - **Multi-user** — First account becomes admin and can create accounts for others (e.g. a partner).
 - **Self-hosted** — Runs entirely on your own hardware via Docker. No SaaS, no subscription.
+- **Chat- with your data**- Use chat to talk to your dashboard and ask for insights
+
+  <img width="1468" height="772" alt="image" src="https://github.com/user-attachments/assets/a587458b-81e3-4f96-bf6a-a7ba43950f88" />
 
 ---
 
