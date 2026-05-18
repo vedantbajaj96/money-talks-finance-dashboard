@@ -2,8 +2,13 @@
 from __future__ import annotations
 
 import datetime
+import os
 import secrets
 from typing import Any
+
+# Set SECURE_COOKIES=true when serving over HTTPS (e.g. public domain with TLS).
+# Leave unset for local dev or Tailscale (HTTP) — secure=True breaks HTTP cookies.
+_SECURE_COOKIES = os.environ.get("SECURE_COOKIES", "false").lower() == "true"
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
@@ -50,7 +55,7 @@ async def auth_setup(body: dict[str, Any], response: Response) -> dict:
     migrate_legacy_data(dest)
 
     token = _create_session(username, is_admin=True)
-    response.set_cookie(SESSION_COOKIE, token, httponly=True, samesite="lax",
+    response.set_cookie(SESSION_COOKIE, token, httponly=True, samesite="lax", secure=_SECURE_COOKIES,
                         max_age=int(SESSION_TTL.total_seconds()))
     return {"ok": True, "username": username, "is_admin": True}
 
@@ -65,7 +70,7 @@ async def auth_login(body: dict[str, Any], response: Response) -> dict:
         raise HTTPException(401, "Invalid username or password")
 
     token = _create_session(username, is_admin=bool(user.get("is_admin")))
-    response.set_cookie(SESSION_COOKIE, token, httponly=True, samesite="lax",
+    response.set_cookie(SESSION_COOKIE, token, httponly=True, samesite="lax", secure=_SECURE_COOKIES,
                         max_age=int(SESSION_TTL.total_seconds()))
     return {"ok": True, "username": username, "is_admin": bool(user.get("is_admin"))}
 

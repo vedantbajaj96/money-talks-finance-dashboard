@@ -82,6 +82,14 @@ Supported formats out of the box:
 
 ---
 
+## Security
+
+- **Keep it on localhost or Tailscale.** The app is designed for personal/household use on a trusted private network. Tailscale is the recommended way to access it remotely — traffic is encrypted at the network layer so plain HTTP is fine.
+- **If you expose it publicly** (e.g. behind a reverse proxy with a real domain and TLS certificate), set the `SECURE_COOKIES=true` environment variable so session cookies are HTTPS-only. Add it to `docker-compose.yml` under `environment:`.
+- **Plaid access tokens and API keys** are stored in the Docker volume on your own machine and are never sent anywhere except the respective APIs (Plaid, Ollama runs fully locally).
+
+---
+
 ## Remote access (Tailscale)
 
 To access from your phone or another computer:
