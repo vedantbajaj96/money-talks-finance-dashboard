@@ -137,7 +137,7 @@ function MonthlyTab({ monthKey, txnOverrides, setTxnOverrides, refreshFin }) {
   const monthTxns = rawMonthTxns.map(t =>
     txnOverrides && txnOverrides[t.id] ? { ...t, category: txnOverrides[t.id] } : t
   );
-  const breakdown = sumByCategory(monthTxns).slice(0, 6);
+  const breakdown = sumByCategory(monthTxns);
   const incomeSeries  = MONTHS.map((m) => ({ label: m.short, value: monthSummary(m.key).income }));
   const expenseSeries = MONTHS.map((m) => ({ label: m.short, value: monthSummary(m.key).expenses }));
   const prevIdx = MONTHS.findIndex((m) => m.key === monthKey) - 1;
