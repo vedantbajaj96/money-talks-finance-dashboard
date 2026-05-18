@@ -82,7 +82,7 @@ async def plaid_sync(body: dict[str, Any] = {}, current_user: str = Depends(get_
             user_edited = df.get("user_edited", pd.Series(False, index=df.index)).fillna(False).infer_objects(copy=False).astype(bool)
             unedited_idx = df.index[~user_edited]
             if len(unedited_idx) > 0:
-                recategorized = categorize_transactions(df.loc[unedited_idx])
+                recategorized = categorize_transactions(df.loc[unedited_idx], user_rules_path=user_dir(current_user) / "user_rules.py")
                 df.loc[unedited_idx, "category"] = recategorized["category"].values
                 if "suggested_category" in recategorized.columns:
                     df.loc[unedited_idx, "suggested_category"] = recategorized["suggested_category"].values

@@ -12,6 +12,9 @@ suggested_category is a best-guess pre-fill for the Sanity Check UI.
 
 from __future__ import annotations
 
+import importlib.util
+from pathlib import Path
+
 import pandas as pd
 
 from .constants import (
@@ -131,21 +134,38 @@ def categorize_income(description: str) -> tuple[str, str | None]:
 # DataFrame-level entry point
 # ---------------------------------------------------------------------------
 
-def categorize_transactions(df: pd.DataFrame) -> pd.DataFrame:
+def _load_apply_rules(user_rules_path: Path | None = None):
+    """Load apply_rules from user-specific file, falling back to repo template."""
+    _ROOT = Path(__file__).parent.parent
+
+    candidates = []
+    if user_rules_path is not None:
+        candidates.append(user_rules_path)
+    candidates.append(_ROOT / "user_rules.py")  # repo template fallback
+
+    for path in candidates:
+        if path.exists():
+            spec = importlib.util.spec_from_file_location("user_rules", path)
+            mod  = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            return getattr(mod, "apply_rules", lambda desc, amount=0.0: None)
+
+    return lambda desc, amount=0.0: None
+
+
+def categorize_transactions(df: pd.DataFrame, user_rules_path: Path | None = None) -> pd.DataFrame:
     """
     Add 'category' and 'suggested_category' columns to a transactions DataFrame.
 
     Priority order:
-      1. User-defined rules (user_rules.py) — highest priority, always win
+      1. User-defined rules (data/<username>/user_rules.py) — highest priority
+         Falls back to the repo-level user_rules.py template if not found.
       2. Income keyword matching for negative amounts
       3. Expense keyword matching for positive amounts
 
     Returns a copy of df with the two new columns.
     """
-    try:
-        from user_rules import apply_rules  # local import to avoid circular dependency
-    except ImportError:
-        apply_rules = lambda desc, amount=0.0: None
+    apply_rules = _load_apply_rules(user_rules_path)
 
     df = df.copy()
 

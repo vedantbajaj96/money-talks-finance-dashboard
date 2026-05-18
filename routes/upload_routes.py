@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
 from core.auth import get_current_user
 from core.categories import detect_refund_pairs
-from core.store import load_config, load_df, save_df
+from core.store import load_config, load_df, save_df, user_dir
 
 router = APIRouter()
 
@@ -42,7 +42,7 @@ async def upload_csv(
         raise HTTPException(400, "No valid transactions found in file")
 
     from categorizer.rules import categorize_transactions
-    parsed = categorize_transactions(parsed)
+    parsed = categorize_transactions(parsed, user_rules_path=user_dir(current_user) / "user_rules.py")
 
     cfg        = load_config(current_user)
     claude_key = cfg.get("anthropic_api_key", "")

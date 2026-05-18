@@ -189,6 +189,27 @@ All settings are in the app under **Settings**:
 
 User data is stored in `data/<username>/` — transactions as Parquet, config as JSON. The `data/` directory is gitignored and never leaves your machine.
 
+### Custom categorization rules
+
+You can add your own rules to override the built-in categorizer. Create `data/<username>/user_rules.py` (copy from the repo-level `user_rules.py` template):
+
+```python
+RULES = [
+    ("starbucks", "Dining & Drinks"),   # simple substring match
+]
+
+AMOUNT_RULES = [
+    # Costco $40–$85 → gas; anything else → groceries
+    ("costco", 40.0, 85.0, "Commute & Transport"),
+    ("costco", None, None, "Groceries"),
+]
+```
+
+- `RULES` — `(pattern, category)`: fires if the description contains the pattern (case-insensitive)
+- `AMOUNT_RULES` — `(pattern, min, max, category)`: same, but only within the given amount range. Use `None` for open-ended bounds.
+- Amount rules are checked first; the first match wins.
+- Your user file is gitignored — it never gets committed.
+
 ---
 
 ## Tech stack
