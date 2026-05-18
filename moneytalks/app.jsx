@@ -713,13 +713,18 @@ function App() {
             <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 20 }}>
               {syncProgress.step}
             </div>
-            <div style={{ height: 6, background: 'var(--line)', borderRadius: 3, overflow: 'hidden' }}>
-              <div style={{
-                height: '100%', borderRadius: 3,
-                width: `${syncProgress.pct}%`,
-                background: syncProgress.error ? 'var(--terra)' : 'var(--accent)',
-                transition: 'width 0.4s ease',
-              }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+              <div style={{ flex: 1, height: 6, background: 'var(--line)', borderRadius: 3, overflow: 'hidden' }}>
+                <div style={{
+                  height: '100%', borderRadius: 3,
+                  width: `${syncProgress.pct}%`,
+                  background: syncProgress.error ? 'var(--terra)' : 'var(--accent)',
+                  transition: 'width 0.4s ease',
+                }} />
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--muted)', minWidth: 32, textAlign: 'right' }}>
+                {syncProgress.pct}%
+              </div>
             </div>
             {!syncProgress.error && (
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 10 }}>
