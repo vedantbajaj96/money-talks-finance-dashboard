@@ -142,7 +142,10 @@ def categorize_transactions(df: pd.DataFrame) -> pd.DataFrame:
 
     Returns a copy of df with the two new columns.
     """
-    from user_rules import apply_rules  # local import to avoid circular dependency
+    try:
+        from user_rules import apply_rules  # local import to avoid circular dependency
+    except ImportError:
+        apply_rules = lambda desc, amount=0.0: None
 
     df = df.copy()
 
