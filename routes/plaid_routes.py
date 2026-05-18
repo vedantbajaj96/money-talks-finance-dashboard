@@ -2,7 +2,11 @@
 from __future__ import annotations
 
 import datetime
+import logging
+import time
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 import pandas as pd
 
@@ -74,9 +78,17 @@ async def plaid_sync(body: dict[str, Any] = {}, current_user: str = Depends(get_
                 item["cursor"] = None
             _save_items(items, data_dir=data_dir)
 
+        t0 = time.monotonic()
         refresh_all(cfg=cfg, data_dir=data_dir)
+        t_refresh = time.monotonic()
+        logger.info("[sync:%s] refresh_all done in %.1fs", current_user, t_refresh - t0)
+
         existing = load_df(current_user)
         df, errors, stats = sync_all_transactions(existing, cfg=cfg, data_dir=data_dir)
+        t_sync = time.monotonic()
+        logger.info("[sync:%s] transactions fetched in %.1fs — added=%s modified=%s removed=%s",
+                    current_user, t_sync - t_refresh,
+                    stats.get("added", 0), stats.get("modified", 0), stats.get("removed", 0))
         if stats["added"] > 0:
             # Only auto-categorize rows that the user hasn't manually edited
             user_edited = df.get("user_edited", pd.Series(False, index=df.index)).fillna(False).infer_objects(copy=False).astype(bool)
@@ -139,6 +151,8 @@ async def plaid_sync(body: dict[str, Any] = {}, current_user: str = Depends(get_
         cfg2 = load_config(current_user)
         cfg2["last_sync"] = datetime.datetime.utcnow().isoformat() + "Z"
         save_config(current_user, cfg2)
+        t_total = time.monotonic()
+        logger.info("[sync:%s] total sync time: %.1fs", current_user, t_total - t0)
         return {"ok": True, "stats": stats, "errors": errors, "last_sync": cfg2["last_sync"]}
     except Exception as e:
         raise HTTPException(500, str(e))
