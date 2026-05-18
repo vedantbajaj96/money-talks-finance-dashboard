@@ -1,0 +1,33 @@
+# Compose override for public HTTPS via Caddy + Let's Encrypt.
+#
+# Usage (from repo root):
+#   DOMAIN=yourdomain.com docker compose \
+#     -f docker-compose.yml \
+#     -f scripts/docker-compose.https.yml \
+#     up -d
+#
+# Prerequisites:
+#   - Domain DNS A record pointing at this server
+#   - Port 80 and 443 open on the server firewall
+
+services:
+  moneytalks:
+    environment:
+      - SECURE_COOKIES=true   # enable Secure flag on session cookies over HTTPS
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./scripts/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      - DOMAIN=${DOMAIN}
+
+volumes:
+  caddy_data:
+  caddy_config:

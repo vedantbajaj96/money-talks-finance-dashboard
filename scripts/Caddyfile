@@ -1,0 +1,14 @@
+# scripts/Caddyfile — reverse proxy with automatic HTTPS
+#
+# Usage:
+#   1. Point your domain's DNS A record at this server's IP
+#   2. Set DOMAIN=yourdomain.com in docker-compose.https.yml
+#   3. docker compose -f docker-compose.yml -f scripts/docker-compose.https.yml up -d
+#
+# Caddy automatically obtains and renews a Let's Encrypt TLS certificate.
+# Also set SECURE_COOKIES=true in docker-compose.https.yml so session
+# cookies are marked Secure.
+
+{$DOMAIN} {
+    reverse_proxy moneytalks:8502
+}

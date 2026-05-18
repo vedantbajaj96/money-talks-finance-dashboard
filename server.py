@@ -75,7 +75,10 @@ sys.excepthook = _excepthook
 import uvicorn
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import FileResponse, RedirectResponse
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
+from core import limiter
 from core.auth import SESSION_COOKIE, _sessions
 from routes.auth_routes import router as auth_router
 from routes.categories_routes import router as categories_router
@@ -131,6 +134,8 @@ print("JSX ready.", flush=True)
 # ---------------------------------------------------------------------------
 
 app = FastAPI(title="MoneyTalks API")
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
 @app.middleware("http")

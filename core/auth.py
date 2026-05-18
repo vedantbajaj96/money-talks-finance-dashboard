@@ -97,7 +97,7 @@ def _hash_password(password: str, salt: str | None = None) -> tuple[str, str]:
     """Return (hex_hash, salt). Generates a new salt when none is given."""
     if salt is None:
         salt = secrets.token_hex(16)
-    dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 200_000)
+    dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 600_000)
     return dk.hex(), salt
 
 

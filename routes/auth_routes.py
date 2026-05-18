@@ -12,6 +12,7 @@ _SECURE_COOKIES = os.environ.get("SECURE_COOKIES", "false").lower() == "true"
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
+from core import limiter
 from core.auth import (
     SESSION_COOKIE, SESSION_TTL,
     _create_session, _hash_password, _verify_password,
@@ -61,7 +62,8 @@ async def auth_setup(body: dict[str, Any], response: Response) -> dict:
 
 
 @router.post("/api/auth/login")
-async def auth_login(body: dict[str, Any], response: Response) -> dict:
+@limiter.limit("5/minute")
+async def auth_login(request: Request, body: dict[str, Any], response: Response) -> dict:
     username = (body.get("username") or "").strip().lower()
     password = body.get("password") or ""
     users    = _load_users()

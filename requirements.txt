@@ -8,3 +8,4 @@ google-genai
 plaid-python
 sentence-transformers
 python-multipart
+slowapi
