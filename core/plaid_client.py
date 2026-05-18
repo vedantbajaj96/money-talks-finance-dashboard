@@ -43,9 +43,10 @@ from plaid.model.transactions_refresh_request import TransactionsRefreshRequest
 from plaid.model.transactions_sync_request import TransactionsSyncRequest
 
 # Default data directory (module-level fallback; per-user callers pass data_dir explicitly)
-_MODULE_DIR  = Path(os.path.dirname(os.path.abspath(__file__)))
-_DEFAULT_DATA_DIR  = _MODULE_DIR / "data"
-_DEFAULT_CFG_FILE  = _MODULE_DIR / "config.json"
+# _MODULE_DIR is core/, so parent is the project root where data/ actually lives.
+_MODULE_DIR        = Path(os.path.dirname(os.path.abspath(__file__)))
+_DEFAULT_DATA_DIR  = _MODULE_DIR.parent / "data"
+_DEFAULT_CFG_FILE  = _MODULE_DIR.parent / "data" / "config.json"
 
 _ENV_MAP = {
     "sandbox":    plaid.Environment.Sandbox,
@@ -400,7 +401,12 @@ def sync_all_transactions(
                 if mask.any():
                     merchant = _best_description(txn)
                     df.loc[mask, "expense_amount"] = float(txn["amount"])
-                    df.loc[mask, "description"]    = merchant
+                    # Don't overwrite description if the user manually edited this row
+                    if has_user_edited:
+                        update_mask = mask & ~df["user_edited"].fillna(False).infer_objects(copy=False).astype(bool)
+                    else:
+                        update_mask = mask
+                    df.loc[update_mask, "description"] = merchant
         total_modified += len(modified)
 
         # Apply additions

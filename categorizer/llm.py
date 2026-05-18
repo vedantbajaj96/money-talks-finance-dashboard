@@ -166,7 +166,7 @@ def _categorize_batch_gemini(
         client   = genai.Client(api_key=api_key)
         prompt   = _build_prompt(descriptions, transaction_types)
         response = client.models.generate_content(
-            model="gemini-3-flash-preview",
+            model="gemini-3.1-flash-lite",
             contents=prompt,
         )
         raw_text = response.text.strip()

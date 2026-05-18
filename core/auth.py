@@ -11,6 +11,7 @@ import datetime
 import hashlib
 import json
 import secrets
+import threading
 from pathlib import Path
 
 from fastapi import HTTPException, Request
@@ -38,6 +39,7 @@ class _SessionStore:
         self._path = path
         self._data: dict[str, dict] = {}
         self._loaded = False
+        self._lock = threading.Lock()
 
     def _load(self) -> None:
         if self._loaded:
@@ -64,26 +66,31 @@ class _SessionStore:
         self._path.write_text(json.dumps(serializable, indent=2))
 
     def get(self, token: str, default=None):
-        self._load()
-        return self._data.get(token, default)
+        with self._lock:
+            self._load()
+            return self._data.get(token, default)
 
     def __setitem__(self, token: str, session: dict) -> None:
-        self._load()
-        self._data[token] = session
-        self._save()
+        with self._lock:
+            self._load()
+            self._data[token] = session
+            self._save()
 
     def __delitem__(self, token: str) -> None:
-        self._load()
-        self._data.pop(token, None)
-        self._save()
+        with self._lock:
+            self._load()
+            self._data.pop(token, None)
+            self._save()
 
     def __contains__(self, token: object) -> bool:
-        self._load()
-        return token in self._data
+        with self._lock:
+            self._load()
+            return token in self._data
 
     def items(self):
-        self._load()
-        return list(self._data.items())
+        with self._lock:
+            self._load()
+            return list(self._data.items())
 
 
 _sessions = _SessionStore(SESSIONS_FILE)

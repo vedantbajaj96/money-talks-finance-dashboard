@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import datetime
 import hashlib
+import logging
 import re
 from typing import Any
 
@@ -10,6 +11,8 @@ import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException
 
 from core.auth import get_current_user
+
+logger = logging.getLogger("moneytalks")
 from core.categories import CAT_MAP, _resolve_category
 from core.fin_data import build_fin_data
 from core.search import semantic_txn_search
@@ -23,6 +26,19 @@ router = APIRouter()
 
 REVIEW_BATCH_SIZE = 10
 
+# Blocklist for /api/query — prevent reading arbitrary files via DuckDB table functions
+_BLOCKED = re.compile(
+    r'\bread_(parquet|csv|json|text|csv_auto)\b|glob\s*\(|read_blob\b',
+    re.IGNORECASE,
+)
+
+
+def _fingerprint(s: str) -> str:
+    """Normalize a transaction description for fuzzy matching."""
+    s = re.sub(r"\b\d[\d/\-]*\d\b", "", str(s).lower())
+    s = re.sub(r"[^a-z ]+", " ", s)
+    return " ".join(s.split()[:4])
+
 
 # ---------------------------------------------------------------------------
 # Financial data
@@ -35,6 +51,7 @@ def get_fin(current_user: str = Depends(get_current_user)) -> dict:
     try:
         return build_fin_data(current_user)
     except Exception:
+        logger.exception("build_fin_data failed for user %s", current_user)
         return {"hasData": False}
 
 
@@ -99,6 +116,8 @@ async def run_query(body: dict[str, Any], current_user: str = Depends(get_curren
     sql = body.get("sql", "").strip()
     if not sql.upper().startswith("SELECT"):
         raise HTTPException(400, "Only SELECT queries are allowed")
+    if _BLOCKED.search(sql):
+        raise HTTPException(400, "Table functions are not allowed")
     if not data_file(current_user).exists():
         raise HTTPException(404, "No data")
     try:
@@ -153,7 +172,7 @@ async def update_transaction(
     reverse_map = {v: k for k, v in CAT_MAP.items()}
 
     # Save original category before mutating (needed for auto-learn scope)
-    orig_cat = df.loc[mask, "category"].iloc[0] if "category" in body else None
+    orig_cat = df.loc[mask, "category"].iloc[0] if ("category" in body and "category" in df.columns) else None
 
     if "category" in body:
         ll_cat = body["category"]
@@ -196,16 +215,11 @@ async def update_transaction(
         ll_cat      = body["category"]
         new_raw_cat = reverse_map.get(ll_cat, ll_cat)
 
-        def _fingerprint(s: str) -> str:
-            s = re.sub(r"\b\d[\d/\-]*\d\b", "", str(s).lower())
-            s = re.sub(r"[^a-z ]+", " ", s)
-            return " ".join(s.split()[:4])
-
         fp_source = _fingerprint(source_desc)
         # Require 2+ words in fingerprint — single-word descriptions are too generic
         if fp_source and len(fp_source.split()) >= 2:
             not_approved  = ~df["approved"].fillna(False).infer_objects(copy=False).astype(bool) if "approved" in df.columns else pd.Series(True, index=df.index)
-            unedited      = ~(df.get("user_edited", False).fillna(False).infer_objects(copy=False).astype(bool)) | mask
+            unedited      = ~(df.get("user_edited", pd.Series(False, index=df.index)).fillna(False).infer_objects(copy=False).astype(bool)) | mask
             similar_mask  = df["description"].apply(_fingerprint) == fp_source
             # Only update rows with the same original category AND same transaction type —
             # prevents income/payment rows being changed when you fix an expense
@@ -622,17 +636,12 @@ async def approve_batch(body: dict[str, Any], current_user: str = Depends(get_cu
 
             source_desc = df.loc[mask, "description"].iloc[0]
 
-            def _fp(s: str) -> str:
-                s = re.sub(r"\b\d[\d/\-]*\d\b", "", str(s).lower())
-                s = re.sub(r"[^a-z ]+", " ", s)
-                return " ".join(s.split()[:4])
-
-            fp = _fp(source_desc)
+            fp = _fingerprint(source_desc)
             # Require 2+ words — single-word names like "Store" are too generic
             if fp and len(fp.split()) >= 2:
                 not_approved  = ~df["approved"].fillna(False).infer_objects(copy=False).astype(bool)
                 not_edited    = ~df.get("user_edited", pd.Series(False, index=df.index)).fillna(False).infer_objects(copy=False).astype(bool)
-                similar       = df["description"].apply(_fp) == fp
+                similar       = df["description"].apply(_fingerprint) == fp
                 same_orig_cat = df["category"] == orig_cat
                 source_type   = df.loc[mask, "transaction_type"].iloc[0] if "transaction_type" in df.columns else None
                 same_type     = (df["transaction_type"] == source_type) if source_type and "transaction_type" in df.columns else pd.Series(True, index=df.index)

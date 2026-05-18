@@ -196,12 +196,19 @@ def build_fin_data(username: str) -> dict:
         transactions = expanded
 
     # ── NET WORTH HISTORY ─────────────────────────────────────────────────
-    nw_rows = conn.execute("""
+    if "transaction_type" in col_names:
+        _nw_inc = "CASE WHEN transaction_type = 'income'  THEN ABS(expense_amount) ELSE 0 END"
+        _nw_exp = "CASE WHEN transaction_type = 'expense' THEN expense_amount       ELSE 0 END"
+    else:
+        _nw_inc = "CASE WHEN expense_amount < 0 THEN ABS(expense_amount) ELSE 0 END"
+        _nw_exp = "CASE WHEN expense_amount > 0 THEN expense_amount       ELSE 0 END"
+
+    nw_rows = conn.execute(f"""
         WITH monthly AS (
             SELECT
                 strftime(date, '%Y-%m') AS month,
-                SUM(CASE WHEN transaction_type = 'income'  THEN ABS(expense_amount) ELSE 0 END) AS inc,
-                SUM(CASE WHEN transaction_type = 'expense' THEN expense_amount       ELSE 0 END) AS exp
+                SUM({_nw_inc}) AS inc,
+                SUM({_nw_exp}) AS exp
             FROM txns
             GROUP BY month
         )
