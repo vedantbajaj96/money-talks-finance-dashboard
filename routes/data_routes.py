@@ -181,7 +181,9 @@ async def update_transaction(
         if "transaction_type" in df.columns:
             if ll_cat == "income":
                 df.loc[mask, "transaction_type"] = "income"
-            elif ll_cat not in ("transfer", "savings", "refund"):
+            elif ll_cat in ("transfer", "savings", "refund"):
+                df.loc[mask, "transaction_type"] = "transfer"
+            else:
                 df.loc[mask, "transaction_type"] = "expense"
     if "date" in body:
         try:
