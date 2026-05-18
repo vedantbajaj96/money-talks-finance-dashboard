@@ -94,10 +94,12 @@ async def plaid_sync(body: dict[str, Any] = {}, current_user: str = Depends(get_
             user_edited = df.get("user_edited", pd.Series(False, index=df.index)).fillna(False).infer_objects(copy=False).astype(bool)
             unedited_idx = df.index[~user_edited]
             if len(unedited_idx) > 0:
+                t_rules0 = time.monotonic()
                 recategorized = categorize_transactions(df.loc[unedited_idx], user_rules_path=user_dir(current_user) / "user_rules.py")
                 df.loc[unedited_idx, "category"] = recategorized["category"].values
                 if "suggested_category" in recategorized.columns:
                     df.loc[unedited_idx, "suggested_category"] = recategorized["suggested_category"].values
+                logger.info("[sync:%s] rule categorization done in %.1fs (%d rows)", current_user, time.monotonic() - t_rules0, len(unedited_idx))
             if "transaction_type" not in df.columns:
                 df["transaction_type"] = None
             mask = df["transaction_type"].isna() | (df["transaction_type"].astype(str) == "None")
@@ -123,7 +125,9 @@ async def plaid_sync(body: dict[str, Any] = {}, current_user: str = Depends(get_
                         _descs      = _pend_df["description"].tolist()
                         _types      = _pend_df["transaction_type"].fillna("expense").tolist()
                         _extra_cats = [c["name"] for c in cfg.get("custom_categories", [])]
+                        t_llm0 = time.monotonic()
                         _cats, _    = llm_categorize_all(_descs, api_key=_api_key, provider=_provider, transaction_types=_types, extra_expense_cats=_extra_cats)
+                        logger.info("[sync:%s] LLM categorization (%s) done in %.1fs (%d rows)", current_user, _provider, time.monotonic() - t_llm0, len(_descs))
                         if _cats:
                             df.loc[pending_llm, "category"] = _cats
                     except Exception:

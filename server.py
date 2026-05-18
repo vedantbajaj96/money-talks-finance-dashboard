@@ -139,13 +139,20 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
 @app.middleware("http")
-async def log_exceptions(request: Request, call_next):
+async def log_requests(request: Request, call_next):
+    import time as _time
+    _t0 = _time.monotonic()
     try:
-        return await call_next(request)
+        response = await call_next(request)
+        _ms = (_time.monotonic() - _t0) * 1000
+        if _ms > 200:  # only log slow requests (>200ms) to avoid noise
+            logger.info("SLOW %s %s → %s in %.0fms", request.method, request.url.path, response.status_code, _ms)
+        return response
     except Exception as exc:
+        _ms = (_time.monotonic() - _t0) * 1000
         logger.error(
-            "Unhandled exception on %s %s\n%s",
-            request.method, request.url.path,
+            "Unhandled exception on %s %s (%.0fms)\n%s",
+            request.method, request.url.path, _ms,
             traceback.format_exc(),
         )
         raise
