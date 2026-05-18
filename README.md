@@ -100,16 +100,42 @@ To access from your phone or another computer:
 
 ---
 
-## Auto-deploy on Windows (optional)
+## Running on Windows as a permanent server
 
-If the server is a Windows machine, the included `auto-deploy.ps1` script polls GitHub every 5 minutes and rebuilds the Docker stack when new commits land.
+### Prevent the machine from sleeping
+
+The app needs to stay running. In **Settings → Power & Sleep**, set both "Screen" and "Sleep" to **Never** when plugged in.
+
+### Data migration (one-time, from another machine)
+
+If you have existing data on another machine, zip it up and copy it to the Windows Docker volume:
+
+**On your old machine:**
+```bash
+cd /path/to/finance-dashboard
+zip -r data_backup.zip data/
+```
+
+Transfer `data_backup.zip` to the Windows machine (USB, shared folder, etc.), unzip it, then copy into the running container:
+
+```powershell
+# Get the container name
+docker compose ps
+
+# Copy data into the container
+docker cp data/. <moneytalks-container-name>:/app/data/
+```
+
+### Auto-deploy (optional)
+
+The included `scripts/auto-deploy.ps1` polls GitHub every 5 minutes and rebuilds the Docker stack when new commits land.
 
 **One-time setup** — run as Administrator in the repo folder:
 
 ```powershell
 $dir = (Get-Location).Path
 $action = New-ScheduledTaskAction -Execute "powershell.exe" `
-  -Argument "-NonInteractive -File `"$dir\auto-deploy.ps1`"" `
+  -Argument "-NonInteractive -File `"$dir\scripts\auto-deploy.ps1`"" `
   -WorkingDirectory $dir
 $trigger = New-ScheduledTaskTrigger -RepetitionInterval (New-TimeSpan -Minutes 5) -Once -At (Get-Date)
 $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 10)
