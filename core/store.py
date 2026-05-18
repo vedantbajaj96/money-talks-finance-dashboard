@@ -138,7 +138,7 @@ def backup_before_sync(username: str) -> Path | None:
     dest = backup_dir / f"transactions_{ts}.parquet"
     shutil.copy2(src, dest)
     # Prune: keep only the 5 most recent backups
-    backups = sorted(backup_dir.glob("transactions_*.parquet"))
+    backups = sorted(backup_dir.glob("transactions_*.parquet"), key=lambda p: p.stat().st_mtime)
     for old in backups[:-5]:
         old.unlink(missing_ok=True)
     return dest
@@ -147,7 +147,7 @@ def backup_before_sync(username: str) -> Path | None:
 def restore_latest_backup(username: str) -> bool:
     """Restore the most recent backup over the live parquet. Returns True on success."""
     backup_dir = user_dir(username) / "backups"
-    backups = sorted(backup_dir.glob("transactions_*.parquet"))
+    backups = sorted(backup_dir.glob("transactions_*.parquet"), key=lambda p: p.stat().st_mtime)
     if not backups:
         return False
     shutil.copy2(backups[-1], data_file(username))
