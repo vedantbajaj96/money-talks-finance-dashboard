@@ -43,7 +43,7 @@ def score(file_path: Path) -> None:
     print(f"\nScoring {total} labeled transactions\n")
     print("=" * 50)
 
-    for col in ["keyword_rule", "ollama", "gemini"]:
+    for col in ["keyword_rule", "llama3.2", "gemini", "claude"]:
         if col not in labeled.columns or labeled[col].eq("NO KEY").all():
             continue
         valid = labeled[labeled[col] != "ERROR"]
@@ -74,17 +74,18 @@ def score(file_path: Path) -> None:
     else:
         print("\nTip: fill in the 'why_wrong' column for misses to get a breakdown of root causes.")
 
-    # ── Worst offenders ───────────────────────────────────────────────────
-    print("\nTop misses (ollama wrong, sorted by frequency):")
-    if "ollama" in labeled.columns:
-        wrong = labeled[labeled["ollama"].str.strip() != labeled["correct"].str.strip()]
+    # ── Worst offenders (use best available model) ────────────────────────
+    best_col = next((c for c in ["claude", "gemini", "llama3.2"] if c in labeled.columns), None)
+    if best_col:
+        print(f"\nTop misses ({best_col} wrong, sorted by frequency):")
+        wrong = labeled[labeled[best_col].str.strip() != labeled["correct"].str.strip()]
         if not wrong.empty:
             miss_counts = Counter(wrong["description"].astype(str).str[:50])
             for desc, count in miss_counts.most_common(10):
                 row = wrong[wrong["description"].astype(str).str[:50] == desc].iloc[0]
-                print(f"  '{desc[:40]:<40}'  ollama={row['ollama']:<25} correct={row['correct']}")
+                print(f"  '{desc[:40]:<40}'  {best_col}={row[best_col]:<25} correct={row['correct']}")
         else:
-            print("  None — Ollama got everything right!")
+            print(f"  None — {best_col} got everything right!")
 
 
 if __name__ == "__main__":

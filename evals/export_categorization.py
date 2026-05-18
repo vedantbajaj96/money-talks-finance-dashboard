@@ -1,6 +1,6 @@
 """
-evals/export_categorization.py — Export last N transactions with Ollama + Gemini
-categorizations side-by-side for manual eval.
+evals/export_categorization.py — Export last N transactions with keyword rules,
+llama3.2, Gemini, and Claude categorizations side-by-side for manual eval.
 
 Usage:
     python evals/export_categorization.py                  # uses vedant, last 100
@@ -10,26 +10,27 @@ Usage:
 Output: evals/categorization_eval.xlsx
 Columns:
     date, description, amount, type,
-    keyword_rule   — what the keyword rules engine picks (no AI)
-    ollama         — what Ollama picks
-    gemini         — what Gemini picks
-    your_pick      — your manually set category (if you edited it)
-    correct        — blank: fill this in yourself
-    why_wrong      — blank: tag misses (keyword_missing / prompt_issue / ambiguous / wrong_type)
+    keyword_rule  — what the keyword rules engine picks (no AI)
+    llama3.2      — local Ollama model
+    gemini        — Gemini 3.1 flash-lite
+    claude        — Claude (Opus)
+    your_pick     — your manually set category (if you edited it)
+    correct       — blank: fill this in yourself
+    why_wrong     — blank: tag misses (keyword_missing / prompt_issue / ambiguous / wrong_type)
 """
 from __future__ import annotations
 
 import argparse
 import sys
+import time
 from pathlib import Path
 
-# Allow running from repo root or from evals/
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
 import pandas as pd
 
-from core.store import data_file, load_config, user_dir
+from core.store import data_file, load_config
 from categorizer.rules import categorize, categorize_income
 from categorizer.llm import llm_categorize_all, _categorize_batch_ollama
 
@@ -42,6 +43,36 @@ def _keyword_category(description: str, expense_amount: float) -> str:
     return cat
 
 
+def _run_ollama(descs: list[str], types: list[str], model: str, label: str) -> list[str]:
+    """Run Ollama one-at-a-time with 3 retries per transaction."""
+    results: list[str] = []
+    t0 = time.time()
+    for i, (desc, txn_type) in enumerate(zip(descs, types)):
+        result = "ERROR"
+        for _ in range(3):
+            cats, err = _categorize_batch_ollama([desc], transaction_types=[txn_type], model=model)
+            if cats and not err:
+                result = cats[0]
+                break
+        results.append(result)
+        print(f"  {label}: {i + 1}/{len(descs)}", end="\r")
+    secs = time.time() - t0
+    errors = results.count("ERROR")
+    print(f"\n  {label}: {secs:.1f}s  ({secs/len(descs):.2f}s/txn)  errors={errors}")
+    return results
+
+
+def _run_cloud(descs: list[str], types: list[str], api_key: str, provider: str) -> list[str]:
+    t0 = time.time()
+    cats, err = llm_categorize_all(descs, api_key=api_key, provider=provider, transaction_types=types)
+    secs = time.time() - t0
+    if err:
+        print(f"  {provider} error: {err}")
+        return ["ERROR"] * len(descs)
+    print(f"  {provider}: {secs:.1f}s  ({secs/len(descs):.2f}s/txn)")
+    return cats
+
+
 def run_export(username: str, n: int, out_path: Path) -> None:
     parquet = data_file(username)
     if not parquet.exists():
@@ -50,52 +81,43 @@ def run_export(username: str, n: int, out_path: Path) -> None:
 
     df = pd.read_parquet(parquet)
     df = df.sort_values("date", ascending=False).head(n).reset_index(drop=True)
-
     print(f"Loaded {len(df)} transactions for '{username}'")
 
-    # ── Keyword rules (no AI) ─────────────────────────────────────────────
-    print("Running keyword rules...")
-    df["keyword_rule"] = df.apply(
-        lambda r: _keyword_category(str(r["description"]), float(r.get("expense_amount", 0))),
-        axis=1,
-    )
-
-    # ── Ollama ────────────────────────────────────────────────────────────
-    print("Running Ollama categorization (this may take a minute)...")
+    cfg   = load_config(username)
     descs = df["description"].astype(str).tolist()
     types = df.apply(
         lambda r: "income" if float(r.get("expense_amount", 0)) < 0 else "expense",
         axis=1,
     ).tolist()
 
-    # Process one at a time — llama3.2 fails JSON output on batches
-    ollama_results: list[str] = []
-    for i, (desc, txn_type) in enumerate(zip(descs, types)):
-        cats, err = _categorize_batch_ollama([desc], transaction_types=[txn_type])
-        if err or cats is None:
-            ollama_results.append("ERROR")
-        else:
-            ollama_results.append(cats[0])
-        print(f"  Ollama: {i + 1}/{len(descs)}", end="\r")
-    print()
-    df["ollama"] = ollama_results
+    # ── Keyword rules ─────────────────────────────────────────────────────
+    print("Running keyword rules...")
+    df["keyword_rule"] = df.apply(
+        lambda r: _keyword_category(str(r["description"]), float(r.get("expense_amount", 0))),
+        axis=1,
+    )
+
+    # ── llama3.2 ──────────────────────────────────────────────────────────
+    print("Running llama3.2...")
+    df["llama3.2"] = _run_ollama(descs, types, "llama3.2:latest", "llama3.2")
 
     # ── Gemini ────────────────────────────────────────────────────────────
-    cfg = load_config(username)
     gemini_key = cfg.get("gemini_api_key")
     if gemini_key:
-        print("Running Gemini categorization...")
-        gemini_cats, err = llm_categorize_all(
-            descs, api_key=gemini_key, provider="gemini", transaction_types=types
-        )
-        if err:
-            print(f"  Gemini error: {err} — filling with 'ERROR'")
-            df["gemini"] = "ERROR"
-        else:
-            df["gemini"] = gemini_cats
+        print("Running Gemini...")
+        df["gemini"] = _run_cloud(descs, types, gemini_key, "gemini")
     else:
-        print("  No Gemini API key found — skipping Gemini column")
+        print("  No Gemini key — skipping")
         df["gemini"] = "NO KEY"
+
+    # ── Claude ────────────────────────────────────────────────────────────
+    claude_key = cfg.get("anthropic_api_key")
+    if claude_key:
+        print("Running Claude...")
+        df["claude"] = _run_cloud(descs, types, claude_key, "claude")
+    else:
+        print("  No Claude key — skipping")
+        df["claude"] = "NO KEY"
 
     # ── Your manual picks ─────────────────────────────────────────────────
     user_edited = df.get("user_edited", pd.Series(False, index=df.index)).fillna(False).astype(bool)
@@ -108,8 +130,9 @@ def run_export(username: str, n: int, out_path: Path) -> None:
         "amount":       df["expense_amount"].round(2),
         "type":         pd.Series(types),
         "keyword_rule": df["keyword_rule"],
-        "ollama":       df["ollama"],
+        "llama3.2":     df["llama3.2"],
         "gemini":       df["gemini"],
+        "claude":       df["claude"],
         "your_pick":    df["your_pick"],
         "correct":      "",   # fill in manually
         "why_wrong":    "",   # keyword_missing / prompt_issue / ambiguous / wrong_type
@@ -121,7 +144,6 @@ def run_export(username: str, n: int, out_path: Path) -> None:
     with pd.ExcelWriter(out_path, engine="openpyxl") as writer:
         export.to_excel(writer, sheet_name="Transactions", index=False)
 
-        # Second sheet: category reference list
         all_cats = [
             "Financial & Transfers", "Housing & Utilities", "Connectivity",
             "Food Delivery", "Commute & Transport", "Groceries", "Dining & Drinks",
@@ -130,47 +152,37 @@ def run_export(username: str, n: int, out_path: Path) -> None:
             "Paycheck & Salary", "Freelance & Side Income",
             "Investment & Dividend Income", "Reimbursements", "Other Income",
         ]
-        cat_df = pd.DataFrame({
+        pd.DataFrame({
             "category": all_cats,
             "type": (["expense"] * 13) + (["income"] * 5),
-        })
-        cat_df.to_excel(writer, sheet_name="Categories", index=False)
+        }).to_excel(writer, sheet_name="Categories", index=False)
 
-        # Basic column width formatting
         ws = writer.sheets["Transactions"]
-        col_widths = {
-            "A": 12,  # date
-            "B": 45,  # description
-            "C": 10,  # amount
-            "D": 10,  # type
-            "E": 25,  # keyword_rule
-            "F": 25,  # ollama
-            "G": 25,  # gemini
-            "H": 25,  # your_pick
-            "I": 25,  # correct
-            "J": 20,  # why_wrong
-        }
-        for col, width in col_widths.items():
+        for col, width in {"A":12,"B":45,"C":10,"D":10,"E":25,"F":25,"G":25,"H":25,"I":25,"J":25,"K":20}.items():
             ws.column_dimensions[col].width = width
-
-        # Freeze header row
         ws.freeze_panes = "A2"
 
+        # Dropdown for the 'correct' column (col J) from the Categories sheet
+        from openpyxl.worksheet.datavalidation import DataValidation
+        dv = DataValidation(
+            type="list",
+            formula1="Categories!$A$2:$A$19",
+            allow_blank=True,
+            showDropDown=False,
+        )
+        dv.sqref = f"J2:J{len(export) + 1}"
+        ws.add_data_validation(dv)
+
     print(f"\nExported to: {out_path}")
-    print(f"  {len(export)} transactions")
-    print(f"  {int(user_edited.sum())} rows already have your manual pick")
-    print(f"\nNext steps:")
-    print(f"  1. Open the Excel, fill in the 'correct' column for every row")
-    print(f"  2. Tag misses in 'why_wrong': keyword_missing / prompt_issue / ambiguous / wrong_type")
-    print(f"  3. Run score_eval.py to see accuracy numbers")
+    print(f"  {len(export)} transactions  |  {int(user_edited.sum())} already have your pick")
+    print(f"\nNext: fill in 'correct' column, then run:  python3 evals/score_eval.py")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Export transactions for categorization eval")
-    parser.add_argument("--user", default="vedant", help="Username (default: vedant)")
-    parser.add_argument("--n",    default=100, type=int, help="Number of transactions (default: 100)")
-    parser.add_argument("--out",  default=None, help="Output path (default: evals/categorization_eval.xlsx)")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--user", default="vedant")
+    parser.add_argument("--n",    default=100, type=int)
+    parser.add_argument("--out",  default=None)
     args = parser.parse_args()
-
     out = Path(args.out) if args.out else ROOT / "evals" / "categorization_eval.xlsx"
     run_export(args.user, args.n, out)
