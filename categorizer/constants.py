@@ -15,6 +15,7 @@ spending habits. No logic lives here — just data.
 # ---------------------------------------------------------------------------
 ALL_CATEGORIES = [
     "Financial & Transfers",    # excluded from spend totals
+    "Refund / Return",          # before Financial & Transfers catches generic "refund" keywords
     "Housing & Utilities",
     "Connectivity",
     "Food Delivery",            # before Dining & Drinks and Commute & Transport
@@ -65,8 +66,10 @@ CATEGORY_KEYWORDS = {
         "bank fee", "service charge",
         # Payroll & income (expense side — e.g. outgoing payroll for a business)
         "direct deposit", "payroll", "dividend", "interest paid",
-        # Refunds / cashback
-        "refund", "cashback", "rewards redemption", "cash back",
+    ],
+    "Refund / Return": [
+        "refund", "cashback", "cash back", "rewards redemption",
+        "return credit", "merchandise return", "purchase return",
     ],
     "Housing & Utilities": [
         # Rent & mortgage

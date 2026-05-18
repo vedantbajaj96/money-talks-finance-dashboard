@@ -144,7 +144,7 @@ def run_export(username: str, n: int, out_path: Path) -> None:
     with pd.ExcelWriter(out_path, engine="openpyxl") as writer:
         export.to_excel(writer, sheet_name="Transactions", index=False)
 
-        all_cats = ALL_CATEGORIES + [REIMBURSEMENT_CATEGORY] + INCOME_CATEGORIES
+        all_cats = ALL_CATEGORIES + [REIMBURSEMENT_CATEGORY, "Refund / Return"] + INCOME_CATEGORIES
         pd.DataFrame({
             "category": all_cats,
             "type": (["expense"] * 13) + (["income"] * 5),

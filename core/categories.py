@@ -19,6 +19,7 @@ CAT_MAP: dict[str, str] = {
     "Investment & Dividend Income": "income",
     "Other Income":                 "income",
     "Financial & Transfers":        "transfer",
+    "Refund / Return":              "refund",
     "Housing & Utilities":          "rent",
     "Connectivity":                 "subs",
     "Food Delivery":                "dining",
