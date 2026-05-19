@@ -4075,7 +4075,7 @@ function FeedbackTab() {
 
 // ─── Admin Tab ────────────────────────────────────────────────────────────────
 function AdminTab() {
-  const { useState, useEffect } = React;
+  const { useState, useEffect, useRef } = React;
   const inputStyle = {
     width: '100%', padding: '10px 14px', borderRadius: 10, boxSizing: 'border-box',
     border: '1px solid var(--border)', fontSize: 14, fontFamily: 'inherit',
@@ -4086,8 +4086,23 @@ function AdminTab() {
     borderRadius: 10, padding: '11px 0', fontWeight: 600, fontSize: 14,
     fontFamily: 'inherit', cursor: 'pointer', width: '100%',
   };
+  const ghostBtnStyle = {
+    background: 'none', border: '1px solid var(--border)', color: 'var(--text)',
+    borderRadius: 10, padding: '10px 0', fontWeight: 500, fontSize: 14,
+    fontFamily: 'inherit', cursor: 'pointer', width: '100%',
+  };
 
-  const [cfg, setCfg]         = useState(null);
+  const NAV = [
+    { key: 'status',   label: 'System Status' },
+    { key: 'deploy',   label: 'Deploy' },
+    { key: 'tests',    label: 'Tests' },
+    { key: 'ai',       label: 'AI Provider' },
+    { key: 'users',    label: 'User Accounts' },
+    { key: 'feedback', label: 'Feedback' },
+  ];
+  const [page, setPage] = useState('status');
+
+  const [cfg, setCfg]             = useState(null);
   const [claudeKey, setClaudeKey] = useState('');
   const [geminiKey, setGeminiKey] = useState('');
   const [provider, setProvider]   = useState('gemini');
@@ -4099,13 +4114,109 @@ function AdminTab() {
   const [newAdmin, setNewAdmin]   = useState(false);
   const [userMsg, setUserMsg]     = useState('');
 
+  // Health
+  const [healthChecks, setHealthChecks]   = useState([]);
+  const [endpointPings, setEndpointPings] = useState([]);
+  const [healthLoading, setHealthLoading] = useState(false);
+
+  // Deploy
+  const [deployJobId, setDeployJobId]     = useState(null);
+  const [deployOutput, setDeployOutput]   = useState('');
+  const [deployDone, setDeployDone]       = useState(false);
+  const [deployOk, setDeployOk]           = useState(false);
+  const [deployRunning, setDeployRunning] = useState(false);
+  const deployPollRef                     = useRef(null);
+
+  // Tests
+  const SUITES = [
+    { key: 'unit',        label: 'Unit Tests',        desc: 'Categorization + session store — fast, no I/O' },
+    { key: 'integration', label: 'Integration Tests',  desc: 'Fin data + Plaid client — disk I/O' },
+    { key: 'all',         label: 'Run All',            desc: 'All pytest suites' },
+    { key: 'search',      label: 'Search Eval',        desc: 'ML model eval — slow (~30s+)' },
+  ];
+  const [testJobs, setTestJobs] = useState({});
+  const testPollRefs            = useRef({});
+
+  // Feedback
+  const [feedback, setFeedback] = useState([]);
+
   useEffect(() => {
     fetch('/api/config').then(r => r.json()).then(d => {
       setCfg(d);
       setProvider(d.preferred_provider || 'gemini');
     });
     fetch('/api/auth/users').then(r => r.json()).then(d => setUsers(d.users || [])).catch(() => {});
+    runHealthChecks();
   }, []);
+
+  useEffect(() => {
+    if (page === 'feedback') {
+      fetch('/api/feedback').then(r => r.json()).then(d => setFeedback(d.entries || [])).catch(() => {});
+    }
+  }, [page]);
+
+  useEffect(() => {
+    if (!deployJobId || deployDone) return;
+    deployPollRef.current = setInterval(async () => {
+      const d = await fetch(`/api/admin/job/${deployJobId}`).then(r => r.json()).catch(() => null);
+      if (!d) return;
+      setDeployOutput(d.output || '');
+      if (d.done) {
+        setDeployDone(true); setDeployOk(d.ok); setDeployRunning(false);
+        clearInterval(deployPollRef.current);
+      }
+    }, 1500);
+    return () => clearInterval(deployPollRef.current);
+  }, [deployJobId, deployDone]);
+
+  function startTestPoll(suite, jobId) {
+    if (testPollRefs.current[suite]) clearInterval(testPollRefs.current[suite]);
+    testPollRefs.current[suite] = setInterval(async () => {
+      const d = await fetch(`/api/admin/job/${jobId}`).then(r => r.json()).catch(() => null);
+      if (!d) return;
+      setTestJobs(prev => ({ ...prev, [suite]: { ...prev[suite], output: d.output || '' } }));
+      if (d.done) {
+        setTestJobs(prev => ({ ...prev, [suite]: { ...prev[suite], done: true, ok: d.ok, running: false } }));
+        clearInterval(testPollRefs.current[suite]);
+      }
+    }, 1500);
+  }
+
+  async function runHealthChecks() {
+    setHealthLoading(true);
+    const hd = await fetch('/api/admin/health').then(r => r.json()).catch(() => ({ checks: [] }));
+    setHealthChecks(hd.checks || []);
+    const endpoints = [
+      { name: 'Transactions API', url: '/api/fin?months=1' },
+      { name: 'Config API',       url: '/api/config' },
+      { name: 'Accounts API',     url: '/api/accounts' },
+      { name: 'Search API',       url: '/api/search?q=test' },
+    ];
+    const pings = await Promise.all(endpoints.map(async ({ name, url }) => {
+      const t0 = performance.now();
+      try {
+        const r = await fetch(url, { signal: AbortSignal.timeout(5000) });
+        return { name, ok: r.ok, latency: Math.round(performance.now() - t0) };
+      } catch {
+        return { name, ok: false, latency: null };
+      }
+    }));
+    setEndpointPings(pings);
+    setHealthLoading(false);
+  }
+
+  async function triggerDeploy() {
+    setDeployOutput(''); setDeployDone(false); setDeployOk(false); setDeployRunning(true);
+    const d = await fetch('/api/admin/deploy', { method: 'POST' }).then(r => r.json());
+    setDeployJobId(d.job_id);
+  }
+
+  async function triggerTest(suite) {
+    setTestJobs(prev => ({ ...prev, [suite]: { jobId: null, output: '', done: false, ok: false, running: true } }));
+    const d = await fetch(`/api/admin/test/${suite}`, { method: 'POST' }).then(r => r.json());
+    setTestJobs(prev => ({ ...prev, [suite]: { ...prev[suite], jobId: d.job_id } }));
+    startTestPoll(suite, d.job_id);
+  }
 
   async function saveApiKeys() {
     setSaving(true); setSaved(false);
@@ -4142,170 +4253,256 @@ function AdminTab() {
   }
 
   const Dot = ({ ok }) => (
-    <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', marginRight: 8,
-      background: ok ? 'var(--accent)' : '#f87171' }} />
+    <span style={{
+      display: 'inline-block', width: 8, height: 8, borderRadius: '50%', marginRight: 8, flexShrink: 0,
+      background: ok == null ? 'var(--muted)' : ok ? 'var(--accent)' : '#f87171',
+    }} />
   );
 
-  return (
-    <div style={{ maxWidth: 640, margin: '0 auto', padding: '24px 16px', display: 'grid', gap: 20 }}>
+  const Badge = ({ ok, text }) => (
+    <span style={{
+      fontSize: 11, padding: '2px 8px', borderRadius: 5, fontWeight: 600,
+      background: ok ? 'color-mix(in srgb, var(--accent) 15%, transparent)' : 'color-mix(in srgb, #f87171 15%, transparent)',
+      color: ok ? 'var(--accent)' : '#f87171',
+      border: `1px solid ${ok ? 'color-mix(in srgb, var(--accent) 40%, transparent)' : 'color-mix(in srgb, #f87171 40%, transparent)'}`,
+    }}>{text || (ok ? 'OK' : 'FAIL')}</span>
+  );
 
-      {/* Status */}
-      <SettingsCard title="System Status">
-        <div style={{ display: 'grid', gap: 10, fontSize: 14 }}>
-          {[
-            { label: 'Gemini API key',    ok: cfg?.has_gemini },
-            { label: 'Anthropic API key', ok: cfg?.has_anthropic },
-            { label: 'Plaid connected',   ok: cfg?.has_plaid },
-          ].map(({ label, ok }) => (
-            <div key={label} style={{ display: 'flex', alignItems: 'center' }}>
-              <Dot ok={ok} /><span style={{ color: ok ? 'var(--text)' : 'var(--muted)' }}>{label} — {ok ? 'configured' : 'not set'}</span>
-            </div>
-          ))}
+  const LogOutput = ({ output, done, ok }) => (
+    <div style={{
+      marginTop: 10, background: '#0a0a0a', border: '1px solid var(--border)',
+      borderRadius: 10, padding: '12px 14px', fontFamily: 'monospace', fontSize: 12,
+      color: '#d4d4d4', whiteSpace: 'pre-wrap', maxHeight: 260, overflowY: 'auto', lineHeight: 1.6,
+    }}>
+      {output || 'Starting…'}
+      {done && <div style={{ marginTop: 8, color: ok ? '#4ade80' : '#f87171', fontWeight: 700 }}>
+        {ok ? '✓ Done' : '✗ Failed'}
+      </div>}
+    </div>
+  );
+
+  const SectionLabel = ({ children }) => (
+    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase',
+      letterSpacing: '0.07em', marginBottom: 10 }}>{children}</div>
+  );
+
+  // ── Pages ──────────────────────────────────────────────────────────────────
+
+  const pages = {
+    status: (
+      <div style={{ display: 'grid', gap: 20 }}>
+        <div>
+          <SectionLabel>API Endpoints</SectionLabel>
+          <div style={{ display: 'grid', gap: 9 }}>
+            {endpointPings.length === 0 && healthLoading && (
+              <div style={{ fontSize: 13, color: 'var(--muted)' }}>Pinging endpoints…</div>
+            )}
+            {endpointPings.map(({ name, ok, latency }) => (
+              <div key={name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 13 }}>
+                <span style={{ display: 'flex', alignItems: 'center' }}>
+                  <Dot ok={ok} /><span style={{ color: 'var(--text)' }}>{name}</span>
+                </span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {latency != null && <span style={{ color: 'var(--muted)', fontSize: 12 }}>{latency}ms</span>}
+                  <Badge ok={ok} text={ok ? 'UP' : 'DOWN'} />
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
-      </SettingsCard>
-
-      {/* AI keys */}
-      <SettingsCard title="AI Provider">
-        <div style={{ display: 'grid', gap: 14 }}>
-          <div>
-            <SettingsLabel>Preferred provider</SettingsLabel>
-            <div style={{ display: 'flex', gap: 10 }}>
-              {['claude', 'gemini'].map(p => (
-                <button key={p} onClick={() => setProvider(p)} style={{
-                  flex: 1, padding: '9px 0', borderRadius: 9, fontSize: 14, fontFamily: 'inherit',
-                  cursor: 'pointer', fontWeight: 500,
-                  border: provider === p ? '2px solid var(--accent)' : '1px solid var(--border)',
-                  background: provider === p ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : 'var(--bg)',
-                  color: provider === p ? 'var(--accent)' : 'var(--muted)',
-                }}>
-                  {p === 'claude' ? 'Claude (Anthropic)' : 'Gemini (Google)'}
-                </button>
-              ))}
-            </div>
+        <div>
+          <SectionLabel>Subsystems</SectionLabel>
+          <div style={{ display: 'grid', gap: 9 }}>
+            {healthChecks.map(({ name, ok, detail }) => (
+              <div key={name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 13 }}>
+                <span style={{ display: 'flex', alignItems: 'center' }}>
+                  <Dot ok={ok} /><span style={{ color: 'var(--text)' }}>{name}</span>
+                </span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {detail && <span style={{ color: 'var(--muted)', fontSize: 12 }}>{detail}</span>}
+                  <Badge ok={ok} />
+                </span>
+              </div>
+            ))}
           </div>
-          <div>
-            <SettingsLabel><Dot ok={cfg?.has_gemini} />Gemini API key {cfg?.has_gemini ? '(saved)' : '(not set)'}</SettingsLabel>
-            <input type="password" value={geminiKey} onChange={e => setGeminiKey(e.target.value)} placeholder="AIza…" style={inputStyle} />
-          </div>
-          <div>
-            <SettingsLabel><Dot ok={cfg?.has_anthropic} />Anthropic API key {cfg?.has_anthropic ? '(saved)' : '(not set)'}</SettingsLabel>
-            <input type="password" value={claudeKey} onChange={e => setClaudeKey(e.target.value)} placeholder="sk-ant-…" style={inputStyle} />
-          </div>
-          <button onClick={saveConfig} disabled={saving} style={{ ...btnStyle, opacity: saving ? 0.6 : 1 }}>
-            {saving ? 'Saving…' : saved ? '✓ Saved' : 'Save'}
-          </button>
         </div>
-      </SettingsCard>
+        <button onClick={runHealthChecks} disabled={healthLoading}
+          style={{ ...ghostBtnStyle, opacity: healthLoading ? 0.5 : 1 }}>
+          {healthLoading ? 'Checking…' : 'Refresh status'}
+        </button>
+      </div>
+    ),
 
-      {/* Plaid */}
-      <SettingsCard title="Plaid">
-        <div style={{ display: 'grid', gap: 14 }}>
-          <div>
-            <SettingsLabel><Dot ok={cfg?.has_plaid} />Client ID {cfg?.has_plaid ? '(saved)' : '(not set)'}</SettingsLabel>
-            <input type="password" value={plaidId} onChange={e => setPlaidId(e.target.value)} placeholder="Plaid client_id" style={inputStyle} />
-          </div>
-          <div>
-            <SettingsLabel>Secret</SettingsLabel>
-            <input type="password" value={plaidSecret} onChange={e => setPlaidSecret(e.target.value)} placeholder="Plaid secret" style={inputStyle} />
-          </div>
-          <div>
-            <SettingsLabel>Environment</SettingsLabel>
-            <div style={{ display: 'flex', gap: 10 }}>
-              {['sandbox', 'production'].map(env => (
-                <button key={env} onClick={() => setPlaidEnv(env)} style={{
-                  flex: 1, padding: '9px 0', borderRadius: 9, fontSize: 14, fontFamily: 'inherit',
-                  cursor: 'pointer', fontWeight: 500,
-                  border: plaidEnv === env ? '2px solid var(--accent)' : '1px solid var(--border)',
-                  background: plaidEnv === env ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : 'var(--bg)',
-                  color: plaidEnv === env ? 'var(--accent)' : 'var(--muted)',
-                }}>
-                  {env.charAt(0).toUpperCase() + env.slice(1)}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div>
-            <SettingsLabel>OAuth Redirect URI</SettingsLabel>
-            <input type="text" value={plaidRedirect} onChange={e => setPlaidRedirect(e.target.value)}
-              placeholder="https://your-domain.com/oauth_callback" style={inputStyle} />
-            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 5, lineHeight: 1.5 }}>
-              Required for AMEX, Chase, BofA, Capital One. Must match Plaid Dashboard → Developers → API → Allowed Redirect URIs.
-            </div>
-          </div>
-          <button onClick={saveConfig} disabled={saving} style={{ ...btnStyle, opacity: saving ? 0.6 : 1 }}>
-            {saving ? 'Saving…' : saved ? '✓ Saved' : 'Save Plaid keys'}
-          </button>
+    deploy: (
+      <div style={{ display: 'grid', gap: 14 }}>
+        <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.5 }}>
+          Pulls latest code from GitHub and rebuilds the Docker container.{' '}
+          <strong style={{ color: 'var(--text)' }}>Note:</strong> the app will restart (~10s downtime).
         </div>
-      </SettingsCard>
+        <button onClick={triggerDeploy} disabled={deployRunning}
+          style={{ ...btnStyle, opacity: deployRunning ? 0.6 : 1 }}>
+          {deployRunning ? 'Deploying…' : deployDone ? (deployOk ? '✓ Deployed — Deploy again' : '✗ Failed — Retry') : 'Deploy latest from GitHub'}
+        </button>
+        {(deployRunning || deployOutput) && <LogOutput output={deployOutput} done={deployDone} ok={deployOk} />}
+      </div>
+    ),
 
-      {/* AI Provider */}
-      <SettingsCard title="AI Provider">
-        <div style={{ display: 'grid', gap: 14 }}>
-          <div>
-            <SettingsLabel>Preferred provider</SettingsLabel>
-            <div style={{ display: 'flex', gap: 10 }}>
-              {['claude', 'gemini'].map(p => (
-                <button key={p} onClick={() => setProvider(p)} style={{
-                  flex: 1, padding: '9px 0', borderRadius: 9, fontSize: 14, fontFamily: 'inherit',
-                  cursor: 'pointer', fontWeight: 500,
-                  border: provider === p ? '2px solid var(--accent)' : '1px solid var(--border)',
-                  background: provider === p ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : 'var(--bg)',
-                  color: provider === p ? 'var(--accent)' : 'var(--muted)',
-                }}>
-                  {p === 'claude' ? 'Claude (Anthropic)' : 'Gemini (Google)'}
-                </button>
-              ))}
+    tests: (
+      <div style={{ display: 'grid', gap: 24 }}>
+        {SUITES.map(({ key, label, desc }) => {
+          const job = testJobs[key] || {};
+          const { running, done, ok, output } = job;
+          return (
+            <div key={key} style={{ display: 'grid', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>{label}</div>
+                  <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>{desc}</div>
+                </div>
+                {done && <Badge ok={ok} text={ok ? 'PASSED' : 'FAILED'} />}
+              </div>
+              <button onClick={() => triggerTest(key)} disabled={running}
+                style={{ ...(key === 'all' ? btnStyle : ghostBtnStyle), opacity: running ? 0.6 : 1 }}>
+                {running ? 'Running…' : done ? 'Run again' : `Run ${label}`}
+              </button>
+              {(running || output) && <LogOutput output={output || ''} done={done} ok={ok} />}
             </div>
-          </div>
-          <div>
-            <SettingsLabel><Dot ok={cfg?.has_gemini} />Gemini API key {cfg?.has_gemini ? '(saved)' : '(not set)'}</SettingsLabel>
-            <input type="password" value={geminiKey} onChange={e => setGeminiKey(e.target.value)} placeholder="AIza…" style={inputStyle} />
-          </div>
-          <div>
-            <SettingsLabel><Dot ok={cfg?.has_anthropic} />Anthropic API key {cfg?.has_anthropic ? '(saved)' : '(not set)'}</SettingsLabel>
-            <input type="password" value={claudeKey} onChange={e => setClaudeKey(e.target.value)} placeholder="sk-ant-…" style={inputStyle} />
-          </div>
-          <button onClick={saveApiKeys} disabled={saving} style={{ ...btnStyle, opacity: saving ? 0.6 : 1 }}>
-            {saving ? 'Saving…' : saved ? '✓ Saved' : 'Save'}
-          </button>
-        </div>
-      </SettingsCard>
+          );
+        })}
+      </div>
+    ),
 
-      {/* User management */}
-      <SettingsCard title="User Accounts">
-        <div style={{ display: 'grid', gap: 14 }}>
-          {users.map(u => (
-            <div key={u.username} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              padding: '10px 14px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 14 }}>
-              <span>
-                <strong>{u.username}</strong>
-                {u.is_admin && <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--accent)',
-                  border: '1px solid var(--accent)', borderRadius: 4, padding: '1px 6px' }}>admin</span>}
+    ai: (
+      <div style={{ display: 'grid', gap: 14 }}>
+        <div>
+          <SettingsLabel>Preferred provider</SettingsLabel>
+          <div style={{ display: 'flex', gap: 10 }}>
+            {['claude', 'gemini'].map(p => (
+              <button key={p} onClick={() => setProvider(p)} style={{
+                flex: 1, padding: '9px 0', borderRadius: 9, fontSize: 14, fontFamily: 'inherit',
+                cursor: 'pointer', fontWeight: 500,
+                border: provider === p ? '2px solid var(--accent)' : '1px solid var(--border)',
+                background: provider === p ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : 'var(--bg)',
+                color: provider === p ? 'var(--accent)' : 'var(--muted)',
+              }}>
+                {p === 'claude' ? 'Claude (Anthropic)' : 'Gemini (Google)'}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <SettingsLabel><Dot ok={cfg?.has_gemini} />Gemini API key {cfg?.has_gemini ? '(saved)' : '(not set)'}</SettingsLabel>
+          <input type="password" value={geminiKey} onChange={e => setGeminiKey(e.target.value)} placeholder="AIza…" style={inputStyle} />
+        </div>
+        <div>
+          <SettingsLabel><Dot ok={cfg?.has_anthropic} />Anthropic API key {cfg?.has_anthropic ? '(saved)' : '(not set)'}</SettingsLabel>
+          <input type="password" value={claudeKey} onChange={e => setClaudeKey(e.target.value)} placeholder="sk-ant-…" style={inputStyle} />
+        </div>
+        <button onClick={saveApiKeys} disabled={saving} style={{ ...btnStyle, opacity: saving ? 0.6 : 1 }}>
+          {saving ? 'Saving…' : saved ? '✓ Saved' : 'Save'}
+        </button>
+      </div>
+    ),
+
+    users: (
+      <div style={{ display: 'grid', gap: 14 }}>
+        {users.map(u => (
+          <div key={u.username} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '10px 14px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 14 }}>
+            <span>
+              <strong>{u.username}</strong>
+              {u.is_admin && <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--accent)',
+                border: '1px solid var(--accent)', borderRadius: 4, padding: '1px 6px' }}>admin</span>}
+            </span>
+            {!u.is_admin && (
+              <button onClick={() => deleteUser(u.username)} style={{
+                background: 'none', border: '1px solid #f87171', color: '#f87171',
+                borderRadius: 7, padding: '4px 12px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit',
+              }}>Delete</button>
+            )}
+          </div>
+        ))}
+        <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14, display: 'grid', gap: 10 }}>
+          <SettingsLabel>Add user</SettingsLabel>
+          <input type="text" value={newUser} onChange={e => setNewUser(e.target.value)}
+            placeholder="Username" style={inputStyle} />
+          <input type="password" value={newPass} onChange={e => setNewPass(e.target.value)}
+            placeholder="Password" style={inputStyle} />
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--muted)', cursor: 'pointer' }}>
+            <input type="checkbox" checked={newAdmin} onChange={e => setNewAdmin(e.target.checked)} />
+            Make admin
+          </label>
+          <button onClick={createUser} style={btnStyle}>Create user</button>
+          {userMsg && <div style={{ fontSize: 13, color: 'var(--accent)' }}>{userMsg}</div>}
+        </div>
+      </div>
+    ),
+
+    feedback: (
+      <div style={{ display: 'grid', gap: 14 }}>
+        {feedback.length === 0 && (
+          <div style={{ fontSize: 14, color: 'var(--muted)' }}>No feedback submitted yet.</div>
+        )}
+        {[...feedback].reverse().map(entry => (
+          <div key={entry.id} style={{
+            padding: '14px 16px', borderRadius: 12, border: '1px solid var(--border)',
+            display: 'grid', gap: 6,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
+                {entry.display_name || entry.username}
               </span>
-              {!u.is_admin && (
-                <button onClick={() => deleteUser(u.username)} style={{
-                  background: 'none', border: '1px solid #f87171', color: '#f87171',
-                  borderRadius: 7, padding: '4px 12px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit',
-                }}>Delete</button>
-              )}
+              <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {entry.category && entry.category !== 'general' && (
+                  <span style={{
+                    fontSize: 11, padding: '2px 8px', borderRadius: 5,
+                    background: 'color-mix(in srgb, var(--accent) 12%, transparent)',
+                    color: 'var(--accent)', border: '1px solid color-mix(in srgb, var(--accent) 30%, transparent)',
+                    fontWeight: 600,
+                  }}>{entry.category}</span>
+                )}
+                <span style={{ fontSize: 12, color: 'var(--muted)' }}>
+                  {new Date(entry.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                </span>
+              </span>
             </div>
-          ))}
-
-          <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14, display: 'grid', gap: 10 }}>
-            <SettingsLabel>Add user</SettingsLabel>
-            <input type="text" value={newUser} onChange={e => setNewUser(e.target.value)}
-              placeholder="Username" style={inputStyle} />
-            <input type="password" value={newPass} onChange={e => setNewPass(e.target.value)}
-              placeholder="Password" style={inputStyle} />
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--muted)', cursor: 'pointer' }}>
-              <input type="checkbox" checked={newAdmin} onChange={e => setNewAdmin(e.target.checked)} />
-              Make admin
-            </label>
-            <button onClick={createUser} style={btnStyle}>Create user</button>
-            {userMsg && <div style={{ fontSize: 13, color: 'var(--accent)' }}>{userMsg}</div>}
+            <div style={{ fontSize: 14, color: 'var(--text)', lineHeight: 1.5 }}>{entry.message}</div>
           </div>
+        ))}
+      </div>
+    ),
+  };
+
+  const currentNav = NAV.find(n => n.key === page);
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr', gap: 0, minHeight: '100vh' }}>
+
+      {/* Sidebar */}
+      <div style={{
+        borderRight: '1px solid var(--border)', padding: '24px 12px',
+        background: 'var(--bg)', display: 'flex', flexDirection: 'column', gap: 4,
+      }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase',
+          letterSpacing: '0.07em', padding: '0 10px', marginBottom: 8 }}>Admin</div>
+        {NAV.map(({ key, label }) => (
+          <button key={key} onClick={() => setPage(key)} style={{
+            display: 'block', width: '100%', textAlign: 'left', padding: '9px 12px',
+            borderRadius: 8, border: 'none', fontFamily: 'inherit', fontSize: 14, cursor: 'pointer',
+            fontWeight: page === key ? 600 : 400,
+            background: page === key ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'transparent',
+            color: page === key ? 'var(--accent)' : 'var(--text)',
+          }}>{label}</button>
+        ))}
+      </div>
+
+      {/* Main content */}
+      <div style={{ padding: '32px 40px', overflowY: 'auto', maxWidth: 700 }}>
+        <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--text)', marginBottom: 24 }}>
+          {currentNav?.label}
         </div>
-      </SettingsCard>
+        {pages[page]}
+      </div>
     </div>
   );
 }

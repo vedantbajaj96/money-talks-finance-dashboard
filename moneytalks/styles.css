@@ -89,6 +89,7 @@ button { cursor: pointer; font-family: inherit; }
   padding: 18px 12px;
 }
 .app:has(.sidebar.collapsed) { grid-template-columns: 64px 1fr; }
+.app.no-sidebar { grid-template-columns: 1fr; }
 
 .brand {
   display: flex; align-items: center; gap: 10px;

@@ -84,6 +84,7 @@ from routes.auth_routes import router as auth_router
 from routes.categories_routes import router as categories_router
 from routes.chat_routes import router as chat_router
 from routes.data_routes import router as data_router
+from routes.admin_routes import router as admin_router
 from routes.feedback_routes import router as feedback_router
 from routes.plaid_routes import router as plaid_router
 from routes.upload_routes import router as upload_router
@@ -159,6 +160,7 @@ async def log_requests(request: Request, call_next):
 
 
 app.include_router(auth_router)
+app.include_router(admin_router)
 app.include_router(data_router)
 app.include_router(categories_router)
 app.include_router(upload_router)

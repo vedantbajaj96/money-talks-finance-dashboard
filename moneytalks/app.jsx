@@ -701,7 +701,7 @@ function App() {
   };
 
   return (
-    <div className={`app density-${t.density} ${t.monoNumbers ? 'mono' : ''}`} style={cssVars}>
+    <div className={`app density-${t.density} ${t.monoNumbers ? 'mono' : ''} ${isAdmin ? 'no-sidebar' : ''}`} style={cssVars}>
       {syncProgress && (
         <div style={{
           position: 'fixed', inset: 0, zIndex: 9999,
