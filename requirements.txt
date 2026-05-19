@@ -9,3 +9,4 @@ plaid-python
 sentence-transformers
 python-multipart
 slowapi
+pytest
