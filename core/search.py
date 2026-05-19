@@ -247,15 +247,22 @@ def semantic_txn_search(username: str, q: str) -> dict:
     import numpy as _np
     desc_scores = desc_embs @ q_emb
 
-    # Substring boost: +0.12 if any query word appears literally in the raw description
-    q_words = q.strip().lower().split()
+    # Literal match boost — ensures exact name matches always rank above semantic-only results.
+    # +0.50: full query string contained in description ("whole foods" in "WHOLE FOODS #123")
+    # +0.25: any single query word appears in description
+    # These values exceed the max realistic semantic score (~0.85) when combined with it,
+    # guaranteeing literal hits sort to the top.
+    q_lower = q.strip().lower()
+    q_words = q_lower.split()
     boost = _np.array([
-        0.12 if any(w in desc.lower() for w in q_words) else 0.0
+        0.50 if q_lower in desc.lower() else
+        (0.25 if any(w in desc.lower() for w in q_words) else 0.0)
         for (desc, _) in pairs
     ])
     combined = desc_scores + boost
 
-    threshold = 0.55
+    # Lower threshold slightly so substring-boosted results always pass even if semantically distant
+    threshold = 0.45
     hits = [
         (desc, cat_id, float(s))
         for (desc, cat_id), s in zip(pairs, combined)
