@@ -3,6 +3,10 @@ core/search.py — Semantic search via sentence-transformers.
 
 The model is loaded eagerly at import time so the first search is instant.
 Gracefully degrades to no-op when sentence-transformers isn't installed.
+
+Merchant embeddings are enriched with category keywords at build time so that
+queries like "cab" or "taxi" naturally match "UBER *TRIP" (categorized as
+transport) without needing a manual synonym list.
 """
 from __future__ import annotations
 
@@ -27,6 +31,84 @@ except Exception as _e:
 
 def _get_sem_model():
     return _sem_model
+
+
+# ---------------------------------------------------------------------------
+# Category → descriptive keywords (used to enrich merchant embeddings)
+# ---------------------------------------------------------------------------
+# Each entry expands a category name/slug into natural-language words that
+# a user might type when looking for transactions in that category.
+# This is the only place category knowledge needs to live — no per-merchant
+# synonym tables required.
+
+_CAT_KEYWORDS: dict[str, str] = {
+    # Transport
+    "commute-and-transport": "transport commute ride cab taxi rideshare bus subway train metro ferry car",
+    "Commute & Transport":   "transport commute ride cab taxi rideshare bus subway train metro ferry car",
+    "transport":             "transport commute ride cab taxi rideshare bus subway train metro ferry car",
+    # Dining
+    "dining-and-drinks":     "dining restaurant food bar drinks coffee cafe lunch dinner brunch",
+    "Dining & Drinks":       "dining restaurant food bar drinks coffee cafe lunch dinner brunch",
+    "dining":                "dining restaurant food bar drinks coffee cafe lunch dinner brunch",
+    # Food delivery
+    "food-delivery":         "food delivery doordash grubhub ubereats instacart takeout order",
+    "Food Delivery":         "food delivery doordash grubhub ubereats instacart takeout order",
+    # Groceries
+    "groceries":             "grocery groceries supermarket food market produce",
+    "Groceries":             "grocery groceries supermarket food market produce",
+    # Shopping
+    "shopping-and-retail":   "shopping retail store purchase buy amazon online",
+    "Shopping & Retail":     "shopping retail store purchase buy amazon online",
+    "shopping":              "shopping retail store purchase buy amazon online",
+    # Health / fitness
+    "fitness-and-active":    "fitness gym workout exercise yoga crossfit pilates sports active",
+    "Fitness & Active":      "fitness gym workout exercise yoga crossfit pilates sports active",
+    "health-and-medical":    "health medical doctor pharmacy prescription hospital clinic",
+    "Health & Medical":      "health medical doctor pharmacy prescription hospital clinic",
+    "health":                "health fitness gym medical doctor pharmacy",
+    # Subscriptions
+    "connectivity":          "subscription streaming internet phone mobile wireless broadband",
+    "Connectivity":          "subscription streaming internet phone mobile wireless broadband",
+    "subs":                  "subscription streaming internet phone mobile wireless",
+    # Travel
+    "travel-and-getaways":   "travel flight airline hotel airbnb vacation trip getaway lodging",
+    "Travel & Getaways":     "travel flight airline hotel airbnb vacation trip getaway lodging",
+    "travel":                "travel flight airline hotel airbnb vacation trip getaway",
+    # Housing / utilities
+    "housing-and-utilities": "rent housing apartment utilities electric gas water landlord",
+    "Housing & Utilities":   "rent housing apartment utilities electric gas water landlord",
+    "rent":                  "rent housing apartment utilities electric gas water landlord",
+    # Education
+    "education":             "education school tuition course class learning books",
+    "Education":             "education school tuition course class learning books",
+    # Self development
+    "professional-development": "professional development course training certification conference",
+    "self-development":      "self development personal growth course coaching",
+    "self_dev":              "self development professional course coaching",
+    # Personal care
+    "personal-care":         "personal care haircut grooming salon spa beauty",
+    "Personal Care":         "personal care haircut grooming salon spa beauty",
+    "grooming-and-beauty":   "grooming beauty haircut salon spa barber",
+    # Entertainment
+    "entertainment":         "entertainment movies concert event tickets fun",
+    "Entertainment":         "entertainment movies concert event tickets fun",
+    # Transfers / financial
+    "financial-and-transfers": "transfer payment bank wire zelle venmo",
+    "Financial & Transfers": "transfer payment bank wire zelle venmo",
+    "transfer":              "transfer payment bank wire zelle venmo",
+    # Income
+    "paycheck-and-salary":   "salary paycheck income employer direct deposit",
+    "Paycheck & Salary":     "salary paycheck income employer direct deposit",
+    "income":                "income salary paycheck wages",
+}
+
+
+def _enrich(description: str, category: str) -> str:
+    """Append category keywords to a merchant description before embedding."""
+    keywords = _CAT_KEYWORDS.get(category, "")
+    if keywords:
+        return f"{description} {keywords}"
+    return description
 
 
 # ---------------------------------------------------------------------------
@@ -76,54 +158,17 @@ def semantic_rank(query: str, cats: list) -> list:
 
 
 # ---------------------------------------------------------------------------
-# Query expansion synonyms
-# ---------------------------------------------------------------------------
-
-# Maps a search term to a richer phrase for embedding.
-# Helps bridge the gap between user intent ("cab") and raw merchant names ("UBER *TRIP").
-_QUERY_SYNONYMS: dict[str, str] = {
-    "cab":          "cab taxi rideshare uber lyft ride hailing",
-    "taxi":         "taxi cab rideshare uber lyft ride",
-    "rideshare":    "rideshare uber lyft cab taxi ride",
-    "ride":         "ride uber lyft cab taxi rideshare",
-    "coffee":       "coffee cafe starbucks dunkin espresso latte",
-    "cafe":         "cafe coffee starbucks espresso latte",
-    "grocery":      "grocery supermarket whole foods trader joe safeway kroger",
-    "groceries":    "groceries grocery supermarket whole foods trader joe safeway",
-    "supermarket":  "supermarket grocery whole foods trader joe kroger",
-    "streaming":    "streaming netflix hulu spotify disney plus apple tv subscription",
-    "delivery":     "delivery doordash grubhub uber eats instacart food",
-    "food delivery": "food delivery doordash grubhub uber eats",
-    "gas":          "gas station shell chevron bp exxon fuel petrol",
-    "fuel":         "fuel gas station shell chevron exxon petrol",
-    "pharmacy":     "pharmacy cvs walgreens rite aid drug store",
-    "drugstore":    "drugstore pharmacy cvs walgreens rite aid",
-    "gym":          "gym fitness planet fitness equinox workout crossfit",
-    "fitness":      "fitness gym workout planet fitness equinox",
-    "flight":       "flight airline delta united american southwest jetblue",
-    "airline":      "airline flight delta united american southwest jetblue",
-    "hotel":        "hotel marriott hilton hyatt airbnb lodging accommodation",
-    "parking":      "parking garage lot spplus impark",
-    "phone":        "phone mobile verizon att tmobile sprint wireless",
-    "internet":     "internet broadband comcast xfinity spectrum att fiber",
-    "insurance":    "insurance health dental vision auto home geico progressive",
-    "rent":         "rent housing apartment lease landlord",
-    "dining":       "dining restaurant food bar cafe",
-    "shopping":     "shopping amazon walmart target retail store",
-}
-
-
-def _expand_query(q: str) -> str:
-    """Expand a short query using synonyms for better embedding coverage."""
-    return _QUERY_SYNONYMS.get(q.lower().strip(), q)
-
-
-# ---------------------------------------------------------------------------
 # Transaction semantic search
 # ---------------------------------------------------------------------------
 
 def semantic_txn_search(username: str, q: str) -> dict:
-    """Return merchant names semantically matching the query."""
+    """Return merchant names semantically matching the query.
+
+    Each unique merchant description is embedded together with its category's
+    descriptive keywords (e.g. "UBER *TRIP transport commute ride cab taxi…")
+    so that queries like "cab" or "taxi" naturally surface Uber and Lyft
+    without any manual synonym tables.
+    """
     import numpy as np
 
     if not q.strip():
@@ -141,34 +186,41 @@ def semantic_txn_search(username: str, q: str) -> dict:
     cached = _sem_txn_cache.get(username, {})
     if cached.get("mtime") != mtime:
         conn = get_conn(username)
-        rows = conn.execute(
-            "SELECT DISTINCT description FROM txns ORDER BY description"
-        ).fetchall()
+        # Fetch each unique description together with its most common category
+        rows = conn.execute("""
+            SELECT description, category
+            FROM (
+                SELECT description, category,
+                       ROW_NUMBER() OVER (PARTITION BY description ORDER BY COUNT(*) DESC) AS rn
+                FROM txns
+                WHERE description IS NOT NULL
+                GROUP BY description, category
+            )
+            WHERE rn = 1
+            ORDER BY description
+        """).fetchall()
         merchants = [r[0] for r in rows if r[0]]
         if not merchants:
             return {"merchants": [], "semantic": False}
-        embs = model.encode(merchants, normalize_embeddings=True, show_progress_bar=False)
+        # Enrich each description with category keywords before embedding
+        enriched = [_enrich(r[0], r[1] or "") for r in rows if r[0]]
+        embs = model.encode(enriched, normalize_embeddings=True, show_progress_bar=False)
         _sem_txn_cache[username] = {"mtime": mtime, "merchants": merchants, "embs": embs}
         cached = _sem_txn_cache[username]
 
     merchants = cached["merchants"]
     embs      = cached["embs"]
-
-    # Expand the query to cover synonyms before embedding
-    expanded  = _expand_query(q.strip())
-    q_emb     = model.encode([expanded], normalize_embeddings=True, show_progress_bar=False)[0]
+    q_emb     = model.encode([q.strip()], normalize_embeddings=True, show_progress_bar=False)[0]
     scores    = embs @ q_emb
 
-    # Also apply a substring boost: if any word in the original query appears in
-    # the merchant name, bump its score (catches "uber" when searching "uber")
+    # Substring boost: direct keyword hit in merchant name always surfaces
     q_words = q.strip().lower().split()
-    boosted_scores = []
-    for m, s in zip(merchants, scores):
-        m_lower = m.lower()
-        boost = 0.15 if any(w in m_lower for w in q_words) else 0.0
-        boosted_scores.append(float(s) + boost)
+    boosted_scores = [
+        float(s) + (0.2 if any(w in m.lower() for w in q_words) else 0.0)
+        for m, s in zip(merchants, scores)
+    ]
 
-    threshold = 0.45
+    threshold = 0.40
     hits = [(m, s) for m, s in zip(merchants, boosted_scores) if s > threshold]
     hits.sort(key=lambda x: -x[1])
     top = hits[:20]
