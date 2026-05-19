@@ -640,6 +640,14 @@ async def approve_batch(body: dict[str, Any], current_user: str = Depends(get_cu
             orig_cat = df.loc[mask, "category"].iloc[0]   # save before mutating
             df.loc[mask, "category"]    = reverse_map.get(ll_cat, ll_cat)
             df.loc[mask, "user_edited"] = True
+            # Sync transaction_type to match the new category
+            if "transaction_type" in df.columns:
+                if ll_cat == "income":
+                    df.loc[mask, "transaction_type"] = "income"
+                elif ll_cat in ("transfer", "savings", "refund"):
+                    df.loc[mask, "transaction_type"] = "transfer"
+                else:
+                    df.loc[mask, "transaction_type"] = "expense"
 
             source_desc = df.loc[mask, "description"].iloc[0]
 

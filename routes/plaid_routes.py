@@ -104,7 +104,13 @@ async def plaid_sync(body: dict[str, Any] = {}, current_user: str = Depends(get_
                 df["transaction_type"] = None
             mask = df["transaction_type"].isna() | (df["transaction_type"].astype(str) == "None")
             df.loc[mask & (df["expense_amount"] >= 0), "transaction_type"] = "expense"
-            df.loc[mask & (df["expense_amount"] < 0),  "transaction_type"] = "income"
+            # Only mark as income if category is an actual income category — not just any credit
+            from core.categories import map_category as _mc
+            _income_cats = {"income", "freelance-and-side-income", "paycheck-and-salary",
+                            "investment-and-dividend-income", "other-income"}
+            _is_income_cat = df["category"].apply(lambda c: _mc(str(c or "")) in _income_cats)
+            df.loc[mask & (df["expense_amount"] < 0) & _is_income_cat,  "transaction_type"] = "income"
+            df.loc[mask & (df["expense_amount"] < 0) & ~_is_income_cat, "transaction_type"] = "expense"
 
             # LLM categorization for still-pending unedited rows.
             # Result goes into category but approved stays False → shows in Review tab.
