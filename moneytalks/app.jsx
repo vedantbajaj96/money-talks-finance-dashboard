@@ -370,7 +370,7 @@ function Sidebar({ active, onChange, layout }) {
 }
 
 // ─── Topbar ───────────────────────────────────────────────────────
-function TopBar({ tab, monthKey, setMonthKey, search, setSearch, syncState, syncing, syncProgress, manualSync, fmtLastSync }) {
+function TopBar({ tab, monthKey, setMonthKey, search, setSearch, syncState, syncing, syncProgress, manualSync, fmtLastSync, isAdmin }) {
   const [me,          setMe]          = useState(null);
   const [showProfile, setShowProfile] = useState(false);
 
@@ -418,25 +418,27 @@ function TopBar({ tab, monthKey, setMonthKey, search, setSearch, syncState, sync
         )}
       </div>
       <div className="topbar-right">
-        {/* Sync button */}
-        <button className="icon-btn sync-btn" onClick={() => manualSync()} disabled={syncing}
-          title={syncState?.last_sync ? `Last synced ${fmtLastSync(syncState.last_sync)}` : 'Sync now'}>
-          <span style={{ display: 'inline-flex', animation: syncing ? 'spin 1s linear infinite' : 'none' }}>
-            <Icon name="sync" size={16} />
-          </span>
-          <span className="sync-btn-label">
-            {syncing ? 'Syncing…' : syncState?.last_sync ? fmtLastSync(syncState.last_sync) : 'Sync'}
-          </span>
-        </button>
-        <div className="topbar-search">
-          <Icon name="search" size={14} />
-          <input placeholder="Search transactions, merchants..." value={search}
-            onChange={(e) => setSearch(e.target.value)} />
-          <kbd>⌘K</kbd>
-        </div>
-        <button className="icon-btn" title="Notifications">
-          <Icon name="bell" size={18} />
-        </button>
+        {!isAdmin && <>
+          {/* Sync button */}
+          <button className="icon-btn sync-btn" onClick={() => manualSync()} disabled={syncing}
+            title={syncState?.last_sync ? `Last synced ${fmtLastSync(syncState.last_sync)}` : 'Sync now'}>
+            <span style={{ display: 'inline-flex', animation: syncing ? 'spin 1s linear infinite' : 'none' }}>
+              <Icon name="sync" size={16} />
+            </span>
+            <span className="sync-btn-label">
+              {syncing ? 'Syncing…' : syncState?.last_sync ? fmtLastSync(syncState.last_sync) : 'Sync'}
+            </span>
+          </button>
+          <div className="topbar-search">
+            <Icon name="search" size={14} />
+            <input placeholder="Search transactions, merchants..." value={search}
+              onChange={(e) => setSearch(e.target.value)} />
+            <kbd>⌘K</kbd>
+          </div>
+          <button className="icon-btn" title="Notifications">
+            <Icon name="bell" size={18} />
+          </button>
+        </>}
 
         {/* Avatar button — opens profile panel */}
         <div className="user-chip" style={{ position: 'relative' }}>
@@ -745,10 +747,10 @@ function App() {
       )}
       {!isAdmin && <Sidebar active={tab} onChange={setTab} layout={t.sidebarLayout} />}
       <main className="main">
-        {!isAdmin && <TopBar tab={tab} monthKey={monthKey} setMonthKey={setMonthKey}
+        <TopBar tab={tab} monthKey={monthKey} setMonthKey={setMonthKey}
                 search={search} setSearch={setSearch}
                 syncState={syncState} syncing={syncing} syncProgress={syncProgress}
-                manualSync={manualSync} />}
+                manualSync={manualSync} isAdmin={isAdmin} />
         <div className={`page${tab ? ` tab-${tab}` : ''}`}>
           {/* key=tab resets the boundary whenever the user switches tabs */}
           <ErrorBoundary key={tab}>
