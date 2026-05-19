@@ -1346,13 +1346,13 @@ function MerchantDrawer({ merchant, onClose }) {
   );
 }
 
-function TxnList({ txns, compact = false, onRecategorize, refreshFin, sortCol: initSortCol, sortDir: initSortDir }) {
+function TxnList({ txns, compact = false, onRecategorize, refreshFin, sortCol: initSortCol, sortDir: initSortDir, presorted = false }) {
   const [splitTxn, setSplitTxn]     = useState(null);
   const [editDateId, setEditDateId] = useState(null);
   const [editTxn, setEditTxn]       = useState(null);
   const [menuId, setMenuId]         = useState(null);
   const [activeMerchant, setActiveMerchant] = useState(null);
-  const [sortCol, setSortCol]       = useState(initSortCol || 'date');
+  const [sortCol, setSortCol]       = useState(presorted ? null : (initSortCol || 'date'));
   const [sortDir, setSortDir]       = useState(initSortDir || 'desc');
   const [dateOverrides, setDateOverrides] = useState({});
 
@@ -1361,7 +1361,7 @@ function TxnList({ txns, compact = false, onRecategorize, refreshFin, sortCol: i
     else { setSortCol(col); setSortDir('desc'); }
   }
 
-  const sorted = [...txns].sort((a, b) => {
+  const sorted = sortCol === null ? txns : [...txns].sort((a, b) => {
     let cmp = 0;
     if (sortCol === 'date')   cmp = a.date < b.date ? -1 : a.date > b.date ? 1 : 0;
     if (sortCol === 'amount') cmp = Math.abs(a.amount) - Math.abs(b.amount);
@@ -1888,7 +1888,19 @@ function TransactionsTab({ monthKey, txnOverrides, setTxnOverrides, search: glob
             fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap',
           }}>+ Add</button>
         </div>
-        <TxnList txns={filtered} onRecategorize={recat} refreshFin={refreshFin} />
+        <TxnList
+          key={isSemantic ? 'sem' : 'default'}
+          txns={isSemantic && semMerchants
+            ? [...filtered].sort((a, b) => {
+                const scoreA = semMerchants.get(`${a.merchant}||${a.category}`) ?? semMerchants.get(a.merchant) ?? 0;
+                const scoreB = semMerchants.get(`${b.merchant}||${b.category}`) ?? semMerchants.get(b.merchant) ?? 0;
+                return scoreB - scoreA;
+              })
+            : filtered}
+          presorted={isSemantic}
+          onRecategorize={recat}
+          refreshFin={refreshFin}
+        />
         {filtered.length === 0 && <div className="empty">No transactions match your filters.</div>}
       </div>
       {showAdd && <AddTransactionModal onClose={() => setShowAdd(false)} refreshFin={refreshFin} />}
