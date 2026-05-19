@@ -91,19 +91,41 @@ function loadJSX(url) {
 
 async function bootstrap() {
   // Show loading screen
+  const _loadingQuips = [
+    "Counting your pennies…",
+    "Judging your Uber Eats habits…",
+    "Asking Plaid nicely…",
+    "Calculating how much you spent at Costco…",
+    "Pretending those dining bills are groceries…",
+    "Checking if you're rich yet…",
+    "Converting coffee into net worth…",
+    "Bribing the API…",
+  ];
+  const _quip = _loadingQuips[Math.floor(Math.random() * _loadingQuips.length)];
   document.getElementById('root').innerHTML = `
+    <style>
+      @keyframes _mt_bounce {
+        0%,100% { transform: translateY(0); }
+        50%      { transform: translateY(-12px); }
+      }
+      @keyframes _mt_fade { 0%,100%{opacity:.3} 50%{opacity:1} }
+      ._mt_coin { display:inline-block; font-size:36px; animation: _mt_bounce 1s ease-in-out infinite; }
+      ._mt_coin:nth-child(2) { animation-delay:.15s; }
+      ._mt_coin:nth-child(3) { animation-delay:.30s; }
+      ._mt_quip { animation: _mt_fade 2.5s ease-in-out infinite; }
+    </style>
     <div style="
       display:flex;flex-direction:column;align-items:center;justify-content:center;
-      height:100vh;gap:16px;font-family:Inter,sans-serif;background:#f6f5f2;
+      height:100vh;gap:20px;font-family:Inter,sans-serif;background:#f6f5f2;
     ">
-      <div style="
-        width:44px;height:44px;border-radius:12px;
-        background:linear-gradient(135deg,#5ec98a,#67e8f9);
-        display:flex;align-items:center;justify-content:center;
-        font-size:22px;box-shadow:0 4px 18px -4px rgba(94,201,138,0.5);
-      ">💰</div>
-      <div style="font-size:15px;color:#7a8090;font-weight:500;letter-spacing:0.01em;">
-        Loading your finances…
+      <div style="display:flex;gap:8px;">
+        <span class="_mt_coin">💰</span>
+        <span class="_mt_coin">📈</span>
+        <span class="_mt_coin">💸</span>
+      </div>
+      <div style="text-align:center;">
+        <div style="font-size:18px;font-weight:700;color:#14181f;margin-bottom:6px;">MoneyTalks</div>
+        <div class="_mt_quip" style="font-size:14px;color:#7a8090;font-weight:500;">${_quip}</div>
       </div>
     </div>
   `;
