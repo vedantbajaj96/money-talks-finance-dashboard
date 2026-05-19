@@ -745,10 +745,10 @@ function App() {
       )}
       {!isAdmin && <Sidebar active={tab} onChange={setTab} layout={t.sidebarLayout} />}
       <main className="main">
-        <TopBar tab={tab} monthKey={monthKey} setMonthKey={setMonthKey}
+        {!isAdmin && <TopBar tab={tab} monthKey={monthKey} setMonthKey={setMonthKey}
                 search={search} setSearch={setSearch}
                 syncState={syncState} syncing={syncing} syncProgress={syncProgress}
-                manualSync={manualSync} />
+                manualSync={manualSync} />}
         <div className={`page${tab ? ` tab-${tab}` : ''}`}>
           {/* key=tab resets the boundary whenever the user switches tabs */}
           <ErrorBoundary key={tab}>
