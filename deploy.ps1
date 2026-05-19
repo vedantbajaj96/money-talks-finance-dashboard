@@ -4,8 +4,7 @@
 #        .\deploy.ps1 -Model llama3.2   # override Ollama model (default: llama3.2)
 
 param(
-    [switch]$Full,
-    [string]$Model = "llama3.2"
+    [switch]$Full
 )
 
 $ErrorActionPreference = "Stop"
@@ -43,43 +42,7 @@ if ($LASTEXITCODE -ne 0) { Write-Fail "docker compose up failed" }
 Write-Ok "Containers started"
 
 # ---------------------------------------------------------------------------
-# 4. Wait for Ollama to be ready
-# ---------------------------------------------------------------------------
-Write-Step "Waiting for Ollama to be ready"
-$attempts = 0
-$maxAttempts = 30
-while ($attempts -lt $maxAttempts) {
-    try {
-        $response = Invoke-WebRequest -Uri "http://localhost:11434" -TimeoutSec 2 -ErrorAction Stop
-        Write-Ok "Ollama is ready"
-        break
-    } catch {
-        $attempts++
-        if ($attempts -eq $maxAttempts) {
-            Write-Warn "Ollama didn't respond after 60s — it may still be starting. Check: docker compose logs ollama"
-        } else {
-            Write-Host "    Waiting... ($attempts/$maxAttempts)" -ForegroundColor DarkGray
-            Start-Sleep -Seconds 2
-        }
-    }
-}
-
-# ---------------------------------------------------------------------------
-# 5. Pull Ollama model if not already present
-# ---------------------------------------------------------------------------
-Write-Step "Checking Ollama model ($Model)"
-$modelList = docker compose exec ollama ollama list 2>&1
-if ($modelList -match $Model) {
-    Write-Ok "Model '$Model' already present"
-} else {
-    Write-Host "    Pulling '$Model' — this may take a few minutes on first run..." -ForegroundColor DarkGray
-    docker compose exec ollama ollama pull $Model
-    if ($LASTEXITCODE -ne 0) { Write-Warn "Model pull failed — you can retry with: docker compose exec ollama ollama pull $Model" }
-    else { Write-Ok "Model '$Model' ready" }
-}
-
-# ---------------------------------------------------------------------------
-# 6. Wait for app to be ready
+# 4. Wait for app to be ready
 # ---------------------------------------------------------------------------
 Write-Step "Waiting for app to be ready"
 $attempts = 0

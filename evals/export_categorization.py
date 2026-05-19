@@ -1,6 +1,6 @@
 """
 evals/export_categorization.py — Export last N transactions with keyword rules,
-llama3.2, Gemini, and Claude categorizations side-by-side for manual eval.
+Gemini, and Claude categorizations side-by-side for manual eval.
 
 Usage:
     python evals/export_categorization.py                  # uses vedant, last 100
@@ -12,7 +12,6 @@ Columns:
     date, description, amount, type,
     user_rule     — matched by your personal rules (data/<user>/user_rules.py)
     keyword_rule  — what the keyword rules engine picks (no AI)
-    llama3.2      — local Ollama model  (skipped for user_rule rows)
     gemini        — Gemini flash-lite   (skipped for user_rule rows)
     claude        — Claude              (skipped for user_rule rows)
     your_pick     — pre-filled from user_rule; fill in manually for the rest
@@ -50,7 +49,7 @@ import pandas as pd
 
 from core.store import data_file, load_config, user_dir
 from categorizer.rules import categorize, categorize_income
-from categorizer.llm import llm_categorize_all, _categorize_batch_ollama
+from categorizer.llm import llm_categorize_all
 from categorizer.constants import ALL_CATEGORIES, INCOME_CATEGORIES, REIMBURSEMENT_CATEGORY
 
 
@@ -70,23 +69,6 @@ def _user_rule_category(description: str, expense_amount: float, username: str) 
     return result or ""
 
 
-def _run_ollama(descs: list[str], types: list[str], model: str, label: str) -> tuple[list[str], float]:
-    """Run Ollama one-at-a-time with 3 retries per transaction. Returns (results, elapsed_secs)."""
-    results: list[str] = []
-    t0 = time.time()
-    for i, (desc, txn_type) in enumerate(zip(descs, types)):
-        result = "ERROR"
-        for _ in range(3):
-            cats, err = _categorize_batch_ollama([desc], transaction_types=[txn_type], model=model)
-            if cats and not err:
-                result = cats[0]
-                break
-        results.append(result)
-        print(f"  {label}: {i + 1}/{len(descs)}", end="\r", flush=True)
-    secs = time.time() - t0
-    errors = results.count("ERROR")
-    print(f"\n  {label}: {secs:.1f}s  ({secs/len(descs):.2f}s/txn)  errors={errors}", flush=True)
-    return results, secs
 
 
 def _run_cloud(descs: list[str], types: list[str], api_key: str, provider: str) -> tuple[list[str], float]:
@@ -150,20 +132,10 @@ def run_export(username: str, n: int, out_path: Path) -> None:
 
     timings: dict[str, float] = {}
 
-    # ── llama3.2 ──────────────────────────────────────────────────────────
-    if ai_descs:
-        print(f"\n[1/3] llama3.2 — {len(ai_descs)} transactions...", flush=True)
-        llama_results, t = _run_ollama(ai_descs, ai_types, "llama3.2:latest", "llama3.2")
-        timings["llama3.2"] = t
-    else:
-        llama_results = []
-        timings["llama3.2"] = 0.0
-    df["llama3.2"] = _fill_model(llama_results)
-
     # ── Gemini ────────────────────────────────────────────────────────────
     gemini_key = cfg.get("gemini_api_key")
     if gemini_key and ai_descs:
-        print(f"\n[2/3] Gemini — {len(ai_descs)} transactions...", flush=True)
+        print(f"\n[1/2] Gemini — {len(ai_descs)} transactions...", flush=True)
         gemini_results, t = _run_cloud(ai_descs, ai_types, gemini_key, "gemini")
         timings["gemini"] = t
     else:
@@ -176,7 +148,7 @@ def run_export(username: str, n: int, out_path: Path) -> None:
     # ── Claude ────────────────────────────────────────────────────────────
     claude_key = cfg.get("anthropic_api_key")
     if claude_key and ai_descs:
-        print(f"\n[3/3] Claude — {len(ai_descs)} transactions...", flush=True)
+        print(f"\n[2/2] Claude — {len(ai_descs)} transactions...", flush=True)
         claude_results, t = _run_cloud(ai_descs, ai_types, claude_key, "claude")
         timings["claude"] = t
     else:
@@ -200,7 +172,6 @@ def run_export(username: str, n: int, out_path: Path) -> None:
         "type":         types,
         "user_rule":    df["user_rule"].tolist(),
         "keyword_rule": df["keyword_rule"].tolist(),
-        "llama3.2":     df["llama3.2"].tolist(),
         "gemini":       df["gemini"].tolist(),
         "claude":       df["claude"].tolist(),
         "your_pick":    df["your_pick"].tolist(),

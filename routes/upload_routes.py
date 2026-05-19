@@ -49,16 +49,13 @@ async def upload_csv(
     gemini_key = cfg.get("gemini_api_key", "")
     provider   = cfg.get("preferred_provider", "claude")
     pending_mask = parsed["category"].isin(["Pending Review", "", None]) | parsed["category"].isna()
-    if pending_mask.any() and (claude_key or gemini_key or provider == "ollama"):
+    if pending_mask.any() and (claude_key or gemini_key):
         try:
             from categorizer.llm import llm_categorize_all
-            if provider == "ollama":
-                api_key = None
-            else:
-                api_key = claude_key if provider == "claude" else gemini_key
-                if not api_key:
-                    provider = "gemini" if provider == "claude" else "claude"
-                    api_key  = gemini_key or claude_key
+            api_key = claude_key if provider == "claude" else gemini_key
+            if not api_key:
+                provider = "gemini" if provider == "claude" else "claude"
+                api_key  = gemini_key or claude_key
             pending_df  = parsed[pending_mask]
             descs       = pending_df["description"].tolist()
             types       = pending_df.get("transaction_type", pd.Series("expense", index=pending_df.index)).fillna("expense").tolist()
@@ -121,7 +118,7 @@ async def repair_data(current_user: str = Depends(get_current_user)) -> dict:
     llm_done = 0
     cfg          = load_config(current_user)
     _repair_prov = cfg.get("preferred_provider", "claude")
-    if pending_count > 0 and (cfg.get("anthropic_api_key") or cfg.get("gemini_api_key") or _repair_prov == "ollama"):
+    if pending_count > 0 and (cfg.get("anthropic_api_key") or cfg.get("gemini_api_key")):
         try:
             from categorizer.llm import llm_categorize_all
             pending_mask = (df["category"].isin(["Pending Review", None, ""]) | df["category"].isna()) & ~user_edited_mask
@@ -130,13 +127,10 @@ async def repair_data(current_user: str = Depends(get_current_user)) -> dict:
             types = pending_df["transaction_type"].fillna("expense").tolist()
 
             provider = _repair_prov
-            if provider == "ollama":
-                api_key = None
-            else:
-                api_key = cfg.get("anthropic_api_key") if provider == "claude" else cfg.get("gemini_api_key")
-                if not api_key:
-                    provider = "gemini" if provider == "claude" else "claude"
-                    api_key  = cfg.get("gemini_api_key") or cfg.get("anthropic_api_key")
+            api_key = cfg.get("anthropic_api_key") if provider == "claude" else cfg.get("gemini_api_key")
+            if not api_key:
+                provider = "gemini" if provider == "claude" else "claude"
+                api_key  = cfg.get("gemini_api_key") or cfg.get("anthropic_api_key")
 
             extra_cats  = [c["name"] for c in cfg.get("custom_categories", [])]
             categories, err = llm_categorize_all(descs, api_key=api_key, provider=provider, transaction_types=types, extra_expense_cats=extra_cats)

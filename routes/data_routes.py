@@ -59,23 +59,6 @@ def get_fin(current_user: str = Depends(get_current_user)) -> dict:
 # Config
 # ---------------------------------------------------------------------------
 
-def _check_ollama() -> bool:
-    import http.client, os
-    _host = os.environ.get("OLLAMA_HOST", "localhost")
-    conn = None
-    try:
-        conn = http.client.HTTPConnection(_host, 11434, timeout=2)
-        conn.request("GET", "/api/tags")
-        return conn.getresponse().status == 200
-    except Exception:
-        return False
-    finally:
-        if conn:
-            try:
-                conn.close()
-            except Exception:
-                pass
-
 
 @router.get("/api/config")
 def get_config(current_user: str = Depends(get_current_user)) -> dict:
@@ -83,7 +66,6 @@ def get_config(current_user: str = Depends(get_current_user)) -> dict:
     return {
         "has_anthropic":      bool(cfg.get("anthropic_api_key")),
         "has_gemini":         bool(cfg.get("gemini_api_key")),
-        "has_ollama":         _check_ollama(),
         "preferred_provider": cfg.get("preferred_provider", "claude"),
         "has_plaid":          bool(cfg.get("plaid_client_id") and cfg.get("plaid_secret")),
         "plaid_environment":  cfg.get("plaid_environment", "sandbox"),
@@ -96,7 +78,7 @@ async def update_config(body: dict[str, Any], current_user: str = Depends(get_cu
     cfg = load_config(current_user)
     allowed = {"anthropic_api_key", "gemini_api_key", "preferred_provider",
                "plaid_client_id", "plaid_secret", "plaid_environment",
-               "plaid_redirect_uri", "ollama_model"}
+               "plaid_redirect_uri"}
     for k, v in body.items():
         if k in allowed:
             if v is None:

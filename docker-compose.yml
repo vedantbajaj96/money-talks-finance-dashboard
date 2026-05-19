@@ -6,17 +6,6 @@ services:
     volumes:
       - moneytalks_data:/app/data
     restart: unless-stopped
-    environment:
-      - OLLAMA_HOST=ollama
-    depends_on:
-      - ollama
-
-  ollama:
-    image: ollama/ollama
-    volumes:
-      - ollama_models:/root/.ollama
-    restart: unless-stopped
 
 volumes:
   moneytalks_data:
-  ollama_models:

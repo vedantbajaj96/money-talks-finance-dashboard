@@ -120,11 +120,10 @@ async def plaid_sync(body: dict[str, Any] = {}, current_user: str = Depends(get_
             if pending_llm.any():
                 _provider = cfg.get("preferred_provider", "claude")
                 _api_key  = (
-                    None if _provider == "ollama"
-                    else cfg.get("anthropic_api_key") if _provider == "claude"
+                    cfg.get("anthropic_api_key") if _provider == "claude"
                     else cfg.get("gemini_api_key")
                 )
-                if _api_key or _provider == "ollama":
+                if _api_key:
                     try:
                         from categorizer.llm import llm_categorize_all
                         _pend_df    = df[pending_llm]

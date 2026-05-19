@@ -45,7 +45,7 @@ def score(file_path: Path) -> None:
     print(f"\nScoring {total} labeled transactions\n")
     print("=" * 50)
 
-    for col in ["keyword_rule", "llama3.2", "gemini", "claude"]:
+    for col in ["keyword_rule", "gemini", "claude"]:
         if col not in labeled.columns or labeled[col].eq("NO KEY").all():
             continue
         valid = labeled[labeled[col] != "ERROR"]
@@ -77,7 +77,7 @@ def score(file_path: Path) -> None:
         print("\nTip: fill in the 'why_wrong' column for misses to get a breakdown of root causes.")
 
     # ── Worst offenders (use best available model) ────────────────────────
-    best_col = next((c for c in ["claude", "gemini", "llama3.2"] if c in labeled.columns), None)
+    best_col = next((c for c in ["claude", "gemini"] if c in labeled.columns), None)
     if best_col:
         print(f"\nTop misses ({best_col} wrong, sorted by frequency):")
         wrong = labeled[labeled[best_col].str.strip() != labeled["your_pick"].str.strip()]

@@ -101,47 +101,6 @@ def _validate_results(
 # Provider-specific batch functions
 # ---------------------------------------------------------------------------
 
-def _categorize_batch_ollama(
-    descriptions: list[str],
-    transaction_types: list[str],
-    model: str = "llama3.2:latest",
-    extra_expense_cats: list[str] | None = None,
-) -> tuple[list[str] | None, str | None]:
-    """Send one batch to a local Ollama model via its OpenAI-compatible endpoint."""
-    import http.client
-    import json as _j
-
-    prompt  = _build_prompt(descriptions, transaction_types, extra_expense_cats)
-    payload = _j.dumps({
-        "model":    model,
-        "messages": [{"role": "user", "content": prompt}],
-        "stream":   False,
-    }).encode()
-
-    import os
-    _ollama_host = os.environ.get("OLLAMA_HOST", "localhost")
-    conn = None
-    try:
-        conn = http.client.HTTPConnection(_ollama_host, 11434, timeout=90)
-        conn.request("POST", "/v1/chat/completions",
-                     body=payload,
-                     headers={"Content-Type": "application/json"})
-        resp     = conn.getresponse()
-        raw_text = _j.loads(resp.read())["choices"][0]["message"]["content"].strip()
-
-        parsed = _extract_json_array(raw_text)
-        if parsed is None:
-            return None, f"Could not extract JSON array from response: {raw_text[:100]}"
-        return _validate_results(parsed, transaction_types, len(descriptions), extra_expense_cats)
-    except Exception as exc:
-        return None, f"Ollama error: {exc}"
-    finally:
-        if conn:
-            try:
-                conn.close()
-            except Exception:
-                pass
-
 
 def _categorize_batch_claude(
     descriptions: list[str],
@@ -228,7 +187,7 @@ def llm_categorize_all(
     descriptions : list of str
     api_key : str, optional
         Provider API key. Claude falls back to ANTHROPIC_API_KEY env var.
-    provider : "claude" | "gemini"
+    provider : "claude" | "gemini" (default: "claude")
     transaction_types : list of "expense" | "income", optional
         Must be the same length as descriptions. Defaults to all "expense".
 
@@ -246,9 +205,7 @@ def llm_categorize_all(
         batch_descs = descriptions[i : i + _BATCH_SIZE]
         batch_types = transaction_types[i : i + _BATCH_SIZE]
 
-        if provider == "ollama":
-            results, error = _categorize_batch_ollama(batch_descs, transaction_types=batch_types, extra_expense_cats=extra_expense_cats)
-        elif provider == "gemini":
+        if provider == "gemini":
             results, error = _categorize_batch_gemini(batch_descs, api_key=api_key, transaction_types=batch_types, extra_expense_cats=extra_expense_cats)
         else:
             results, error = _categorize_batch_claude(batch_descs, api_key=api_key, transaction_types=batch_types, extra_expense_cats=extra_expense_cats)

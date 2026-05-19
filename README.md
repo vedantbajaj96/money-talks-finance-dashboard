@@ -13,7 +13,7 @@ Track your monthly spending without handing your data to some SaaS company. Conn
   <img width="924" height="540" alt="image" src="https://github.com/user-attachments/assets/eb10e26a-b221-45a0-b434-87576ff0ea5d" />
 
 - **CSV upload** — Drop in a Chase Bank, Chase Credit Card, or Amex CSV export and it parses automatically.
-- **AI categorization** — Uses a local Ollama model (llama3.2) to categorize transactions. Falls back to Claude or Gemini if configured. Your data never leaves your machine with Ollama.
+- **AI categorization** — Uses Claude or Gemini to categorize transactions automatically.
 - **Review queue** — Every new transaction goes through a review step before it's finalized. AI pre-fills the category; you confirm or correct it.
 
   <img width="1468" height="772" alt="image" src="https://github.com/user-attachments/assets/51dfecca-201d-4dcb-9f6c-b3f105879171" />
@@ -50,13 +50,9 @@ docker compose up -d
 
 The first build takes ~3 minutes (downloads dependencies). Subsequent starts are instant.
 
-### 2. Pull the AI model
+### 2. Add your API key
 
-```bash
-docker compose exec ollama ollama pull llama3.2
-```
-
-Only needed once. The model is stored in a Docker volume and persists across restarts.
+Open `http://localhost:8502`, go to **Settings**, and add your Gemini or Anthropic API key.
 
 ### 3. Open the app
 
@@ -101,7 +97,7 @@ Supported formats out of the box:
 
 - **Keep it on localhost or Tailscale.** The app is designed for personal/household use on a trusted private network. Tailscale is the recommended way to access it remotely — traffic is encrypted at the network layer so plain HTTP is fine.
 - **If you expose it publicly** (e.g. behind a reverse proxy with a real domain and TLS certificate), set the `SECURE_COOKIES=true` environment variable so session cookies are HTTPS-only. Add it to `docker-compose.yml` under `environment:`.
-- **Plaid access tokens and API keys** are stored in the Docker volume on your own machine and are never sent anywhere except the respective APIs (Plaid, Ollama runs fully locally).
+- **Plaid access tokens and API keys** are stored in the Docker volume on your own machine and are never sent anywhere except the respective APIs (Plaid, Claude, Gemini).
 
 ---
 
@@ -172,7 +168,7 @@ cd moneytalks && npm install && cd ..
 python server.py
 ```
 
-Requires Python 3.11+, Node.js 20+, and [Ollama](https://ollama.com) running locally with `llama3.2` pulled.
+Requires Python 3.12+, Node.js 20+.
 
 ---
 
@@ -183,8 +179,8 @@ All settings are in the app under **Settings**:
 | Setting | What it's for |
 |---|---|
 | Plaid keys | Link bank accounts for automatic sync |
-| Anthropic / Gemini key | Optional cloud LLM fallback for categorization |
-| Preferred provider | `ollama` (local), `claude`, or `gemini` |
+| Anthropic / Gemini key | API key for AI categorization |
+| Preferred provider | `claude` or `gemini` |
 | OAuth redirect URI | Required for OAuth banks (Chase, Amex, etc.) |
 
 User data is stored in `data/<username>/` — transactions as Parquet, config as JSON. The `data/` directory is gitignored and never leaves your machine.
@@ -216,6 +212,6 @@ AMOUNT_RULES = [
 
 - **Backend** — Python, FastAPI, DuckDB, pandas, Plaid SDK
 - **Frontend** — React (served as JSX, compiled at startup via Babel)
-- **AI** — Ollama (llama3.2), with Claude / Gemini as optional fallbacks
-- **Search** — sentence-transformers (all-MiniLM-L6-v2), runs locally
+- **AI** — Claude or Gemini for categorization
+- **Search** — sentence-transformers (bge-base-en-v1.5), runs locally
 - **Storage** — Parquet files via PyArrow, no external database required
