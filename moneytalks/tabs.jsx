@@ -1564,8 +1564,17 @@ function TransactionsTab({ monthKey, txnOverrides, setTxnOverrides, search: glob
       try {
         const res  = await fetch(`/api/transactions/search?q=${encodeURIComponent(search)}`);
         const data = await res.json();
-        if (data.semantic && data.merchants) {
-          setSemMerchants(new Map(data.merchants.map(m => [m, data.scores?.[m] ?? 0])));
+        if (data.semantic && (data.matches || data.merchants)) {
+          // New format: matches = [{merchant, category}] keyed as "merchant||category"
+          // Legacy fallback: plain merchants list
+          if (data.matches) {
+            setSemMerchants(new Map(data.matches.map(m => [
+              `${m.merchant}||${m.category}`,
+              data.scores?.[`${m.merchant}||${m.category}`] ?? 0,
+            ])));
+          } else {
+            setSemMerchants(new Map(data.merchants.map(m => [m, data.scores?.[m] ?? 0])));
+          }
           setIsSemantic(true);
         } else {
           setSemMerchants(null);
@@ -1590,8 +1599,11 @@ function TransactionsTab({ monthKey, txnOverrides, setTxnOverrides, search: glob
     if (acctFilter !== 'all' && t.account !== acctFilter) return false;
     if (search) {
       if (semMerchants) {
-        // Semantic results: match against server-returned merchants OR substring fallback
-        if (!semMerchants.has(t.merchant)) {
+        // Semantic results: match on merchant+category pair, or merchant alone (legacy),
+        // with substring fallback for notes/tags
+        const semKey = `${t.merchant}||${t.category}`;
+        const legacyKey = t.merchant;
+        if (!semMerchants.has(semKey) && !semMerchants.has(legacyKey)) {
           const q = search.toLowerCase();
           const substringHit = t.merchant.toLowerCase().includes(q) ||
                                (t.notes || '').toLowerCase().includes(q) ||
