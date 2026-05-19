@@ -123,18 +123,24 @@ async function bootstrap() {
     "Compiling evidence that you really do love Costco…",
     "Checking if 'investment' and 'dinner' can be the same thing. Jury's out…",
   ];
-  const _quip = _loadingQuips[Math.floor(Math.random() * _loadingQuips.length)];
+  const _shuffle = (arr) => arr.map(v => [Math.random(), v]).sort((a,b) => a[0]-b[0]).map(v => v[1]);
+  const _shuffled = _shuffle(_loadingQuips);
+  let _qi = 0;
   document.getElementById('root').innerHTML = `
     <style>
       @keyframes _mt_bounce {
         0%,100% { transform: translateY(0); }
         50%      { transform: translateY(-12px); }
       }
-      @keyframes _mt_fade { 0%,100%{opacity:.3} 50%{opacity:1} }
+      @keyframes _mt_quipfade {
+        0%   { opacity: 0; transform: translateY(6px); }
+        15%  { opacity: 1; transform: translateY(0); }
+        85%  { opacity: 1; transform: translateY(0); }
+        100% { opacity: 0; transform: translateY(-6px); }
+      }
       ._mt_coin { display:inline-block; font-size:36px; animation: _mt_bounce 1s ease-in-out infinite; }
       ._mt_coin:nth-child(2) { animation-delay:.15s; }
       ._mt_coin:nth-child(3) { animation-delay:.30s; }
-      ._mt_quip { animation: _mt_fade 2.5s ease-in-out infinite; }
     </style>
     <div style="
       display:flex;flex-direction:column;align-items:center;justify-content:center;
@@ -147,16 +153,30 @@ async function bootstrap() {
       </div>
       <div style="text-align:center;">
         <div style="font-size:18px;font-weight:700;color:#14181f;margin-bottom:6px;">MoneyTalks</div>
-        <div class="_mt_quip" style="font-size:14px;color:#7a8090;font-weight:500;">${_quip}</div>
+        <div id="_mt_quip_el" style="font-size:14px;color:#7a8090;font-weight:500;min-height:1.4em;"></div>
       </div>
     </div>
   `;
+  function _showNextQuip() {
+    const el = document.getElementById('_mt_quip_el');
+    if (!el) return;
+    el.style.animation = 'none';
+    el.textContent = _shuffled[_qi % _shuffled.length];
+    el.style.animation = 'none';
+    void el.offsetWidth; // force reflow
+    el.style.animation = `_mt_quipfade ${_QUIP_INTERVAL}ms ease both`;
+    _qi++;
+  }
+  const _QUIP_INTERVAL = 5000 + Math.random() * 2000;
+  _showNextQuip();
+  const _quipTimer = setInterval(_showNextQuip, _QUIP_INTERVAL);
 
   let data;
   try {
     const res = await fetch('/api/fin');
     if (res.status === 401) { window.location.href = '/login'; return; }
     data = await res.json();
+    clearInterval(_quipTimer);
   } catch (e) {
     document.getElementById('root').innerHTML = `
       <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;

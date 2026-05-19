@@ -167,6 +167,12 @@ function MonthlyTab({ monthKey, txnOverrides, setTxnOverrides, refreshFin }) {
   return (
     <div className="tab-body">
       <div className="grid-4">
+        <div onClick={() => setSelectedCat(c => c === 'income' ? null : 'income')}
+          style={{ cursor: 'pointer', outline: selectedCat === 'income' ? '2px solid var(--green)' : 'none', borderRadius: 16 }}>
+          <SummaryCard label="Income" n={summary.income} accent="var(--green)"
+            trend={prev ? trend(summary.income, prev.income) : null}
+            spark={incomeSeries.map((p) => p.value)} />
+        </div>
         <SummaryCard label="Expenses" n={summary.expenses} accent="var(--terra)"
           trend={prev ? trend(summary.expenses, prev.expenses) : null}
           spark={expenseSeries.map((p) => p.value)} />
@@ -174,12 +180,6 @@ function MonthlyTab({ monthKey, txnOverrides, setTxnOverrides, refreshFin }) {
           sub={`${summary.income > 0 ? ((summary.net / summary.income) * 100).toFixed(0) : 0}% savings rate`} />
         <SummaryCard label="Saved" n={summary.savings} accent="var(--accent2)"
           sub="auto-transfers + IRA" />
-        <div onClick={() => setSelectedCat(c => c === 'income' ? null : 'income')}
-          style={{ cursor: 'pointer', outline: selectedCat === 'income' ? '2px solid var(--green)' : 'none', borderRadius: 16 }}>
-          <SummaryCard label="Income" n={summary.income} accent="var(--green)"
-            trend={prev ? trend(summary.income, prev.income) : null}
-            spark={incomeSeries.map((p) => p.value)} />
-        </div>
       </div>
       {selectedCat === 'income' && (() => {
         const incomeTxns = monthTxns.filter(t => t.category === 'income').sort((a,b) => Math.abs(b.amount) - Math.abs(a.amount));
@@ -232,23 +232,25 @@ function MonthlyTab({ monthKey, txnOverrides, setTxnOverrides, refreshFin }) {
           </div>
         </div>
       </div>
-      <div className="card">
-        <div className="card-head">
-          <h3>
+      {selectedCat !== 'income' && (
+        <div className="card">
+          <div className="card-head">
+            <h3>
+              {catInfo
+                ? <><span className="cat-dot" style={{ background: catInfo.color, display: 'inline-block', marginRight: 6 }} />{catInfo.name}</>
+                : 'Recent transactions'}
+            </h3>
             {catInfo
-              ? <><span className="cat-dot" style={{ background: catInfo.color, display: 'inline-block', marginRight: 6 }} />{catInfo.name}</>
-              : 'Recent transactions'}
-          </h3>
-          {catInfo
-            ? <button onClick={() => setSelectedCat(null)} style={{
-                background: 'none', border: '1px solid var(--line)', borderRadius: 6,
-                padding: '2px 10px', fontSize: 12, color: 'var(--ink-3)', cursor: 'pointer',
-              }}>Clear</button>
-            : <span className="muted">{monthTxns.length} this month · click a slice or Income to filter</span>
-          }
+              ? <button onClick={() => setSelectedCat(null)} style={{
+                  background: 'none', border: '1px solid var(--line)', borderRadius: 6,
+                  padding: '2px 10px', fontSize: 12, color: 'var(--ink-3)', cursor: 'pointer',
+                }}>Clear</button>
+              : <span className="muted">{monthTxns.length} this month · click a slice or Income to filter</span>
+            }
+          </div>
+          <TxnList txns={catTxns} compact onRecategorize={recat} refreshFin={refreshFin} />
         </div>
-        <TxnList txns={catTxns} compact onRecategorize={recat} refreshFin={refreshFin} />
-      </div>
+      )}
     </div>
   );
 }
