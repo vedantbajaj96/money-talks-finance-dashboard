@@ -128,6 +128,7 @@ function SummaryCard({ label, value, n, nFmt = fmtMoney, sub, trend, accent, spa
 function MonthlyTab({ monthKey, txnOverrides, setTxnOverrides, refreshFin }) {
   const { useState, useEffect } = React;
   const [selectedCat, setSelectedCat] = useState(null);
+  const [sortBy, setSortBy] = useState('amount'); // 'amount' | 'date'
 
   const summary = monthSummary(monthKey);
   const rawMonthTxns = txnsForMonth(monthKey);
@@ -145,7 +146,8 @@ function MonthlyTab({ monthKey, txnOverrides, setTxnOverrides, refreshFin }) {
     ? { name: 'Income', color: 'var(--green)', cat: 'income' }
     : selectedCat ? breakdown.find(b => b.cat === selectedCat) : null;
   const catTxns = selectedCat
-    ? monthTxns.filter(t => t.category === selectedCat).sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
+    ? monthTxns.filter(t => t.category === selectedCat).sort((a, b) =>
+        sortBy === 'date' ? new Date(b.date) - new Date(a.date) : Math.abs(b.amount) - Math.abs(a.amount))
     : monthTxns.slice(0, 8);
 
   function handleSliceClick(s) {
@@ -280,10 +282,20 @@ function MonthlyTab({ monthKey, txnOverrides, setTxnOverrides, refreshFin }) {
                 : 'Recent transactions'}
             </h3>
             {catInfo
-              ? <button onClick={() => setSelectedCat(null)} style={{
-                  background: 'none', border: '1px solid var(--line)', borderRadius: 6,
-                  padding: '2px 10px', fontSize: 12, color: 'var(--ink-3)', cursor: 'pointer',
-                }}>Clear</button>
+              ? <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {['amount', 'date'].map(s => (
+                    <button key={s} onClick={() => setSortBy(s)} style={{
+                      background: sortBy === s ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'none',
+                      border: `1px solid ${sortBy === s ? 'var(--accent)' : 'var(--line)'}`,
+                      borderRadius: 6, padding: '2px 10px', fontSize: 12, cursor: 'pointer',
+                      color: sortBy === s ? 'var(--accent)' : 'var(--ink-3)', fontFamily: 'inherit',
+                    }}>{s === 'amount' ? '$ Amount' : '📅 Date'}</button>
+                  ))}
+                  <button onClick={() => setSelectedCat(null)} style={{
+                    background: 'none', border: '1px solid var(--line)', borderRadius: 6,
+                    padding: '2px 10px', fontSize: 12, color: 'var(--ink-3)', cursor: 'pointer',
+                  }}>Clear</button>
+                </div>
               : <span className="muted">{monthTxns.length} this month · click a slice or Income to filter</span>
             }
           </div>
