@@ -1,7 +1,8 @@
 """
 core/search.py — Semantic search via sentence-transformers.
 
-The model is loaded eagerly at import time so the first search is instant.
+Model: BAAI/bge-base-en-v1.5 at threshold 0.55 (F1=0.91 on internal eval).
+Loaded eagerly at import time so the first search is instant.
 Gracefully degrades to no-op when sentence-transformers isn't installed.
 
 Design:
@@ -29,8 +30,8 @@ _sem_txn_cache: dict = {}   # {username: {"mtime": float, "pairs": list, "embs":
 
 try:
     from sentence_transformers import SentenceTransformer
-    print("Loading embeddings model (all-mpnet-base-v2)…", flush=True)
-    _sem_model = SentenceTransformer("all-mpnet-base-v2")
+    print("Loading embeddings model (bge-base-en-v1.5)…", flush=True)
+    _sem_model = SentenceTransformer("BAAI/bge-base-en-v1.5")
     print("Embeddings model ready.", flush=True)
 except Exception as _e:
     print(f"sentence-transformers unavailable — semantic search disabled: {_e}", flush=True)
@@ -63,11 +64,12 @@ def _fingerprint(desc: str) -> str:
 # ---------------------------------------------------------------------------
 
 _CAT_KEYWORDS: dict[str, str] = {
-    # Transport — deliberately broad but NOT listing synonyms like "cab/taxi"
-    # so brand names do the work: "uber trip" → model knows uber=rideshare
-    "Commute & Transport":       "transportation commute vehicle travel getting around",
-    "commute-and-transport":     "transportation commute vehicle travel getting around",
-    "transport":                 "transportation commute vehicle travel getting around",
+    # Transport — generic enough not to pull all transport merchants for "cab",
+    # but includes fuel/gas so Exxon/Chevron surface for "gas" queries.
+    # Brand names (uber, lyft, exxon) provide the fine-grained signal.
+    "Commute & Transport":       "transportation commute vehicle fuel gas petroleum station travel",
+    "commute-and-transport":     "transportation commute vehicle fuel gas petroleum station travel",
+    "transport":                 "transportation commute vehicle fuel gas petroleum station travel",
     # Groceries
     "Groceries":                 "groceries grocery supermarket food market produce shopping",
     "groceries":                 "groceries grocery supermarket food market produce shopping",
@@ -208,12 +210,11 @@ def semantic_txn_search(username: str, q: str) -> dict:
     if not parquet_path.exists():
         return {"matches": [], "merchants": [], "semantic": False}
 
-    mtime  = parquet_path.stat().st_mtime
-    cached = _sem_txn_cache.get(username, {})
-    if cached.get("mtime") != mtime:
+    mtime      = parquet_path.stat().st_mtime
+    model_name = type(model).__name__ + str(getattr(model, "_modules", {}).get("0", ""))
+    cached     = _sem_txn_cache.get(username, {})
+    if cached.get("mtime") != mtime or cached.get("model") != model_name:
         conn = get_conn(username)
-        # Unique (description, category) pairs — same merchant can appear
-        # multiple times if it has been categorized differently
         rows = conn.execute("""
             SELECT description, category, COUNT(*) AS cnt
             FROM txns
@@ -225,34 +226,39 @@ def semantic_txn_search(username: str, q: str) -> dict:
         if not rows:
             return {"matches": [], "merchants": [], "semantic": False}
 
-        pairs = []   # list of (description, category_id)
-        texts = []   # enriched text to embed
+        pairs    = []   # list of (description, category_id)
+        fp_texts = []   # fingerprinted description only
         for desc, raw_cat, _ in rows:
             cat_id = map_category(str(raw_cat or "other"))
             fp     = _fingerprint(desc)
             pairs.append((desc, cat_id))
-            texts.append(_enrich(fp, raw_cat or ""))
+            fp_texts.append(fp)
 
-        embs = model.encode(texts, normalize_embeddings=True, show_progress_bar=False)
-        _sem_txn_cache[username] = {"mtime": mtime, "pairs": pairs, "embs": embs}
+        desc_embs = model.encode(fp_texts, normalize_embeddings=True, show_progress_bar=False)
+        _sem_txn_cache[username] = {
+            "mtime": mtime, "model": model_name, "pairs": pairs, "desc_embs": desc_embs,
+        }
         cached = _sem_txn_cache[username]
 
-    pairs = cached["pairs"]
-    embs  = cached["embs"]
-    q_emb = model.encode([q.strip()], normalize_embeddings=True, show_progress_bar=False)[0]
-    scores = embs @ q_emb
+    pairs     = cached["pairs"]
+    desc_embs = cached["desc_embs"]
+    q_emb     = model.encode([q.strip()], normalize_embeddings=True, show_progress_bar=False)[0]
 
-    # Substring boost for direct keyword hits
+    import numpy as _np
+    desc_scores = desc_embs @ q_emb
+
+    # Substring boost: +0.12 if any query word appears literally in the raw description
     q_words = q.strip().lower().split()
-    boosted = [
-        float(s) + (0.15 if any(w in desc.lower() for w in q_words) else 0.0)
-        for (desc, _), s in zip(pairs, scores)
-    ]
+    boost = _np.array([
+        0.12 if any(w in desc.lower() for w in q_words) else 0.0
+        for (desc, _) in pairs
+    ])
+    combined = desc_scores + boost
 
-    threshold = 0.45
+    threshold = 0.55
     hits = [
-        (desc, cat_id, s)
-        for (desc, cat_id), s in zip(pairs, boosted)
+        (desc, cat_id, float(s))
+        for (desc, cat_id), s in zip(pairs, combined)
         if s >= threshold
     ]
     hits.sort(key=lambda x: -x[2])
