@@ -173,14 +173,53 @@ function MonthlyTab({ monthKey, txnOverrides, setTxnOverrides, refreshFin }) {
             trend={prev ? trend(summary.income, prev.income) : null}
             spark={incomeSeries.map((p) => p.value)} />
         </div>
-        <SummaryCard label="Expenses" n={summary.expenses} accent="var(--terra)"
-          trend={prev ? trend(summary.expenses, prev.expenses) : null}
-          spark={expenseSeries.map((p) => p.value)} />
+        <div onClick={() => setSelectedCat(c => c === 'expenses' ? null : 'expenses')}
+          style={{ cursor: 'pointer', outline: selectedCat === 'expenses' ? '2px solid var(--terra)' : 'none', borderRadius: 16 }}>
+          <SummaryCard label="Expenses" n={summary.expenses} accent="var(--terra)"
+            trend={prev ? trend(summary.expenses, prev.expenses) : null}
+            spark={expenseSeries.map((p) => p.value)} />
+        </div>
         <SummaryCard label="Net" n={summary.net} accent={summary.net >= 0 ? 'var(--green)' : 'var(--terra)'}
           sub={`${summary.income > 0 ? ((summary.net / summary.income) * 100).toFixed(0) : 0}% savings rate`} />
         <SummaryCard label="Saved" n={summary.savings} accent="var(--accent2)"
           sub="auto-transfers + IRA" />
       </div>
+      {selectedCat === 'expenses' && (() => {
+        const expCats = breakdown.filter(b => b.cat !== 'income' && b.cat !== 'transfer' && b.cat !== 'refund');
+        const total = expCats.reduce((s, b) => s + b.amount, 0);
+        return (
+          <div className="card" style={{ borderColor: 'var(--terra)', borderWidth: 1.5 }}>
+            <div className="card-head">
+              <h3 style={{ color: 'var(--terra)' }}>↙ Spending breakdown</h3>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <span style={{ fontSize: 18, fontWeight: 700, color: 'var(--terra)' }}>{fmtMoney(total)}</span>
+                <button onClick={() => setSelectedCat(null)} style={{
+                  background: 'none', border: '1px solid var(--line)', borderRadius: 6,
+                  padding: '2px 10px', fontSize: 12, color: 'var(--ink-3)', cursor: 'pointer',
+                }}>Close</button>
+              </div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {expCats.map(b => (
+                <div key={b.cat} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0',
+                  borderBottom: '1px solid var(--line)', cursor: 'pointer' }}
+                  onClick={() => setSelectedCat(b.cat)}>
+                  <span className="cat-dot" style={{ background: b.color, flexShrink: 0 }} />
+                  <span style={{ flex: 1, fontSize: 14, color: 'var(--ink)' }}>{b.name}</span>
+                  <div style={{ width: 120, height: 6, background: 'var(--line)', borderRadius: 3, overflow: 'hidden' }}>
+                    <div style={{ height: '100%', borderRadius: 3, background: b.color,
+                      width: `${total > 0 ? (b.amount / total) * 100 : 0}%` }} />
+                  </div>
+                  <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', minWidth: 70, textAlign: 'right' }}>{fmtMoney(b.amount)}</span>
+                  <span style={{ fontSize: 12, color: 'var(--muted)', minWidth: 36, textAlign: 'right' }}>
+                    {total > 0 ? ((b.amount / total) * 100).toFixed(0) : 0}%
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
       {selectedCat === 'income' && (() => {
         const incomeTxns = monthTxns.filter(t => t.category === 'income').sort((a,b) => Math.abs(b.amount) - Math.abs(a.amount));
         const bySource = {};
@@ -232,7 +271,7 @@ function MonthlyTab({ monthKey, txnOverrides, setTxnOverrides, refreshFin }) {
           </div>
         </div>
       </div>
-      {selectedCat !== 'income' && (
+      {selectedCat !== 'income' && selectedCat !== 'expenses' && (
         <div className="card">
           <div className="card-head">
             <h3>
