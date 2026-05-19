@@ -63,10 +63,11 @@ def _fingerprint(desc: str) -> str:
 # ---------------------------------------------------------------------------
 
 _CAT_KEYWORDS: dict[str, str] = {
-    # Transport
-    "Commute & Transport":       "transport commute ride cab taxi rideshare bus subway train metro car fuel gas parking",
-    "commute-and-transport":     "transport commute ride cab taxi rideshare bus subway train metro car fuel gas parking",
-    "transport":                 "transport commute ride cab taxi rideshare bus subway train metro",
+    # Transport — deliberately broad but NOT listing synonyms like "cab/taxi"
+    # so brand names do the work: "uber trip" → model knows uber=rideshare
+    "Commute & Transport":       "transportation commute vehicle travel getting around",
+    "commute-and-transport":     "transportation commute vehicle travel getting around",
+    "transport":                 "transportation commute vehicle travel getting around",
     # Groceries
     "Groceries":                 "groceries grocery supermarket food market produce shopping",
     "groceries":                 "groceries grocery supermarket food market produce shopping",
@@ -97,9 +98,9 @@ _CAT_KEYWORDS: dict[str, str] = {
     "travel-and-getaways":       "travel flight airline hotel airbnb vacation trip getaway lodging booking",
     "travel":                    "travel flight airline hotel airbnb vacation trip",
     # Housing / utilities
-    "Housing & Utilities":       "rent housing apartment utilities electric gas water heat landlord",
-    "housing-and-utilities":     "rent housing apartment utilities electric gas water heat landlord",
-    "rent":                      "rent housing apartment utilities electric gas water",
+    "Housing & Utilities":       "rent housing apartment utilities electricity water heat landlord",
+    "housing-and-utilities":     "rent housing apartment utilities electricity water heat landlord",
+    "rent":                      "rent housing apartment utilities electricity water",
     # Entertainment
     "Entertainment":             "entertainment streaming movies music games software events concert cinema",
     "entertainment":             "entertainment streaming movies music games software events concert cinema",
