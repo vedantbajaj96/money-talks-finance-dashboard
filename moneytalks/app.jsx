@@ -248,7 +248,7 @@ function ProfilePanel({ me, onClose, onDisplayNameChange }) {
 const { MONTHS } = window.FIN;
 const {
   OverviewTab, TransactionsTab, SpendingTab, IncomeTab, CashFlowTab,
-  NetWorthTab, AccountsTab, RecurringTab, CategoriesTab, TrendsTab, ChatTab, SettingsTab,
+  NetWorthTab, AccountsTab, RecurringTab, CategoriesTab, TrendsTab, ChatTab, SettingsTab, AdminTab,
   ReviewTab, FeedbackTab, MonthlyTab,
   TweaksPanel, TweakSection, TweakRadio, TweakToggle,
   useTweaks,
@@ -562,6 +562,7 @@ class ErrorBoundary extends React.Component {
 function App() {
   const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
   const [tab, setTab]           = useState(null); // resolved after checking review status
+  const [isAdmin, setIsAdmin]   = useState(false);
   // Default to most recent month in real data
   const [monthKey, setMonthKey] = useState(MONTHS[MONTHS.length - 1]?.key || '');
   const [search, setSearch]     = useState('');
@@ -574,9 +575,16 @@ function App() {
   const [syncProgress, setSyncProgress] = useState(null);
 
   useEffect(() => {
-    fetch('/api/review').then(r => r.json()).then(d => {
-      setTab(d.remaining === 0 ? 'monthly' : 'review');
-    }).catch(() => setTab('review'));
+    fetch('/api/auth/me').then(r => r.json()).then(me => {
+      if (me?.is_admin) { setIsAdmin(true); setTab('admin'); return; }
+      fetch('/api/review').then(r => r.json()).then(d => {
+        setTab(d.remaining === 0 ? 'monthly' : 'review');
+      }).catch(() => setTab('monthly'));
+    }).catch(() => {
+      fetch('/api/review').then(r => r.json()).then(d => {
+        setTab(d.remaining === 0 ? 'monthly' : 'review');
+      }).catch(() => setTab('monthly'));
+    });
     // Auto-sync on load if stale
     fetch('/api/plaid/sync_status').then(r => r.json()).then(d => {
       setSyncState(d);
@@ -687,6 +695,7 @@ function App() {
       case 'chat':        return <ChatTab />;
       case 'settings':    return <SettingsTab refreshFin={refreshFin} />;
       case 'feedback':    return <FeedbackTab />;
+      case 'admin':       return <AdminTab />;
       default:            return <OverviewTab    {...props} />;
     }
   };
@@ -734,7 +743,7 @@ function App() {
           </div>
         </div>
       )}
-      <Sidebar active={tab} onChange={setTab} layout={t.sidebarLayout} />
+      {!isAdmin && <Sidebar active={tab} onChange={setTab} layout={t.sidebarLayout} />}
       <main className="main">
         <TopBar tab={tab} monthKey={monthKey} setMonthKey={setMonthKey}
                 search={search} setSearch={setSearch}
@@ -749,7 +758,7 @@ function App() {
       </main>
 
       {/* Bottom nav only visible on mobile via CSS */}
-      <BottomNav active={tab} onChange={setTab} />
+      {!isAdmin && <BottomNav active={tab} onChange={setTab} />}
 
       <TweaksPanel title="Tweaks">
         <TweakSection label="Theme">

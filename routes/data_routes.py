@@ -8,9 +8,9 @@ import re
 from typing import Any
 
 import pandas as pd
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
-from core.auth import get_current_user
+from core.auth import get_current_user, SESSION_COOKIE, _sessions
 
 logger = logging.getLogger("moneytalks")
 from core.categories import CAT_MAP, _resolve_category
@@ -61,8 +61,10 @@ def get_fin(current_user: str = Depends(get_current_user)) -> dict:
 
 
 @router.get("/api/config")
-def get_config(current_user: str = Depends(get_current_user)) -> dict:
-    cfg = load_config(current_user)
+def get_config(request: Request, current_user: str = Depends(get_current_user)) -> dict:
+    cfg     = load_config(current_user)
+    token   = request.cookies.get(SESSION_COOKIE)
+    session = _sessions.get(token, {})
     return {
         "has_anthropic":      bool(cfg.get("anthropic_api_key")),
         "has_gemini":         bool(cfg.get("gemini_api_key")),
@@ -70,6 +72,7 @@ def get_config(current_user: str = Depends(get_current_user)) -> dict:
         "has_plaid":          bool(cfg.get("plaid_client_id") and cfg.get("plaid_secret")),
         "plaid_environment":  cfg.get("plaid_environment", "sandbox"),
         "plaid_redirect_uri": cfg.get("plaid_redirect_uri", ""),
+        "is_admin":           bool(session.get("is_admin")),
     }
 
 

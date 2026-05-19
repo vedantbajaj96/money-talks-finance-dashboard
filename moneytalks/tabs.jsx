@@ -3492,52 +3492,6 @@ function SettingsTab({ refreshFin }) {
         )}
       </Card>
 
-      <Card title="AI Provider">
-        <div style={{ display: 'grid', gap: 16 }}>
-          <div>
-            <Label>Preferred provider</Label>
-            <div style={{ display: 'flex', gap: 10 }}>
-              {['claude', 'gemini'].map(p => (
-                <button key={p} onClick={() => setProvider(p)} style={{
-                  flex: 1, padding: '9px 0', borderRadius: 9, fontSize: 14,
-                  fontFamily: 'inherit', cursor: 'pointer', fontWeight: 500,
-                  border: provider === p ? '2px solid var(--accent)' : '1px solid var(--border)',
-                  background: provider === p ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : 'var(--bg)',
-                  color: provider === p ? 'var(--accent)' : 'var(--muted)',
-                }}>
-                  {p === 'claude' ? 'Claude (Anthropic)' : 'Gemini (Google)'}
-                </button>
-              ))}
-          </div>
-
-          <div>
-            <Label><StatusDot active={cfg?.has_anthropic} />Anthropic API key {cfg?.has_anthropic ? '(saved)' : '(not set)'}</Label>
-            <input type="password" value={claudeKey} onChange={e => setClaudeKey(e.target.value)}
-              placeholder="sk-ant-…"
-              style={{ width: '100%', padding: '10px 14px', borderRadius: 10, boxSizing: 'border-box',
-                border: '1px solid var(--border)', fontSize: 14, fontFamily: 'inherit',
-                background: 'var(--bg)', color: 'var(--text)', outline: 'none' }} />
-          </div>
-
-          <div>
-            <Label><StatusDot active={cfg?.has_gemini} />Gemini API key {cfg?.has_gemini ? '(saved)' : '(not set)'}</Label>
-            <input type="password" value={geminiKey} onChange={e => setGeminiKey(e.target.value)}
-              placeholder="AIza…"
-              style={{ width: '100%', padding: '10px 14px', borderRadius: 10, boxSizing: 'border-box',
-                border: '1px solid var(--border)', fontSize: 14, fontFamily: 'inherit',
-                background: 'var(--bg)', color: 'var(--text)', outline: 'none' }} />
-          </div>
-
-          <button onClick={saveConfig} disabled={saving} style={{
-            background: 'var(--accent)', color: '#052015', border: 'none',
-            borderRadius: 10, padding: '11px 0', fontWeight: 600, fontSize: 14,
-            fontFamily: 'inherit', cursor: 'pointer', opacity: saving ? 0.6 : 1, width: '100%',
-          }}>
-            {saving ? 'Saving…' : saved ? '✓ Saved' : 'Save settings'}
-          </button>
-        </div>
-      </Card>
-
       <Card title="Plaid — Linked Bank Accounts">
         <div style={{ display: 'grid', gap: 16 }}>
           <div>
@@ -3548,7 +3502,6 @@ function SettingsTab({ refreshFin }) {
                 border: '1px solid var(--border)', fontSize: 14, fontFamily: 'inherit',
                 background: 'var(--bg)', color: 'var(--text)', outline: 'none' }} />
           </div>
-
           <div>
             <Label>Secret</Label>
             <input type="password" value={plaidSecret} onChange={e => setPlaidSecret(e.target.value)}
@@ -3557,7 +3510,6 @@ function SettingsTab({ refreshFin }) {
                 border: '1px solid var(--border)', fontSize: 14, fontFamily: 'inherit',
                 background: 'var(--bg)', color: 'var(--text)', outline: 'none' }} />
           </div>
-
           <div>
             <Label>Environment</Label>
             <div style={{ display: 'flex', gap: 10 }}>
@@ -3574,7 +3526,6 @@ function SettingsTab({ refreshFin }) {
               ))}
             </div>
           </div>
-
           <div>
             <Label>OAuth Redirect URI <span style={{ fontWeight: 400, color: 'var(--muted)' }}>(required for AMEX, Chase, BofA, Capital One)</span></Label>
             <input type="text" value={plaidRedirect} onChange={e => setPlaidRedirect(e.target.value)}
@@ -3587,12 +3538,10 @@ function SettingsTab({ refreshFin }) {
               Use <code>ngrok http 8502</code> for a quick HTTPS URL, or Tailscale.
             </div>
           </div>
-
           <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.5 }}>
             Get your keys from <strong>dashboard.plaid.com</strong> → Team Settings → Keys.
             Use Sandbox for testing, Production for real bank connections.
           </div>
-
           <button onClick={saveConfig} disabled={saving} style={{
             background: 'var(--accent)', color: '#052015', border: 'none',
             borderRadius: 10, padding: '11px 0', fontWeight: 600, fontSize: 14,
@@ -3602,6 +3551,7 @@ function SettingsTab({ refreshFin }) {
           </button>
         </div>
       </Card>
+
       <PlaidSyncCard />
       <CategoriesManagerCard />
 
@@ -4123,9 +4073,246 @@ function FeedbackTab() {
   );
 }
 
+// ─── Admin Tab ────────────────────────────────────────────────────────────────
+function AdminTab() {
+  const { useState, useEffect } = React;
+  const inputStyle = {
+    width: '100%', padding: '10px 14px', borderRadius: 10, boxSizing: 'border-box',
+    border: '1px solid var(--border)', fontSize: 14, fontFamily: 'inherit',
+    background: 'var(--bg)', color: 'var(--text)', outline: 'none',
+  };
+  const btnStyle = {
+    background: 'var(--accent)', color: '#052015', border: 'none',
+    borderRadius: 10, padding: '11px 0', fontWeight: 600, fontSize: 14,
+    fontFamily: 'inherit', cursor: 'pointer', width: '100%',
+  };
+
+  const [cfg, setCfg]         = useState(null);
+  const [claudeKey, setClaudeKey] = useState('');
+  const [geminiKey, setGeminiKey] = useState('');
+  const [provider, setProvider]   = useState('gemini');
+  const [saving, setSaving]       = useState(false);
+  const [saved, setSaved]         = useState(false);
+  const [users, setUsers]         = useState([]);
+  const [newUser, setNewUser]     = useState('');
+  const [newPass, setNewPass]     = useState('');
+  const [newAdmin, setNewAdmin]   = useState(false);
+  const [userMsg, setUserMsg]     = useState('');
+
+  useEffect(() => {
+    fetch('/api/config').then(r => r.json()).then(d => {
+      setCfg(d);
+      setProvider(d.preferred_provider || 'gemini');
+    });
+    fetch('/api/auth/users').then(r => r.json()).then(d => setUsers(d.users || [])).catch(() => {});
+  }, []);
+
+  async function saveApiKeys() {
+    setSaving(true); setSaved(false);
+    const body = { preferred_provider: provider };
+    if (geminiKey) body.gemini_api_key    = geminiKey;
+    if (claudeKey) body.anthropic_api_key = claudeKey;
+    await fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const d = await fetch('/api/config').then(r => r.json());
+    setCfg(d); setGeminiKey(''); setClaudeKey('');
+    setSaving(false); setSaved(true); setTimeout(() => setSaved(false), 2500);
+  }
+
+  async function createUser() {
+    if (!newUser || !newPass) return;
+    const r = await fetch('/api/auth/register', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: newUser, password: newPass, is_admin: newAdmin }),
+    });
+    const d = await r.json();
+    if (d.ok) {
+      setUserMsg(`User "${newUser}" created.`);
+      setNewUser(''); setNewPass(''); setNewAdmin(false);
+      fetch('/api/auth/users').then(r => r.json()).then(d => setUsers(d.users || []));
+    } else {
+      setUserMsg(d.detail || 'Failed to create user.');
+    }
+    setTimeout(() => setUserMsg(''), 3000);
+  }
+
+  async function deleteUser(username) {
+    if (!confirm(`Delete user "${username}"?`)) return;
+    await fetch(`/api/auth/users/${username}`, { method: 'DELETE' });
+    setUsers(u => u.filter(x => x.username !== username));
+  }
+
+  const Dot = ({ ok }) => (
+    <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', marginRight: 8,
+      background: ok ? 'var(--accent)' : '#f87171' }} />
+  );
+
+  return (
+    <div style={{ maxWidth: 640, margin: '0 auto', padding: '24px 16px', display: 'grid', gap: 20 }}>
+
+      {/* Status */}
+      <SettingsCard title="System Status">
+        <div style={{ display: 'grid', gap: 10, fontSize: 14 }}>
+          {[
+            { label: 'Gemini API key',    ok: cfg?.has_gemini },
+            { label: 'Anthropic API key', ok: cfg?.has_anthropic },
+            { label: 'Plaid connected',   ok: cfg?.has_plaid },
+          ].map(({ label, ok }) => (
+            <div key={label} style={{ display: 'flex', alignItems: 'center' }}>
+              <Dot ok={ok} /><span style={{ color: ok ? 'var(--text)' : 'var(--muted)' }}>{label} — {ok ? 'configured' : 'not set'}</span>
+            </div>
+          ))}
+        </div>
+      </SettingsCard>
+
+      {/* AI keys */}
+      <SettingsCard title="AI Provider">
+        <div style={{ display: 'grid', gap: 14 }}>
+          <div>
+            <SettingsLabel>Preferred provider</SettingsLabel>
+            <div style={{ display: 'flex', gap: 10 }}>
+              {['claude', 'gemini'].map(p => (
+                <button key={p} onClick={() => setProvider(p)} style={{
+                  flex: 1, padding: '9px 0', borderRadius: 9, fontSize: 14, fontFamily: 'inherit',
+                  cursor: 'pointer', fontWeight: 500,
+                  border: provider === p ? '2px solid var(--accent)' : '1px solid var(--border)',
+                  background: provider === p ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : 'var(--bg)',
+                  color: provider === p ? 'var(--accent)' : 'var(--muted)',
+                }}>
+                  {p === 'claude' ? 'Claude (Anthropic)' : 'Gemini (Google)'}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <SettingsLabel><Dot ok={cfg?.has_gemini} />Gemini API key {cfg?.has_gemini ? '(saved)' : '(not set)'}</SettingsLabel>
+            <input type="password" value={geminiKey} onChange={e => setGeminiKey(e.target.value)} placeholder="AIza…" style={inputStyle} />
+          </div>
+          <div>
+            <SettingsLabel><Dot ok={cfg?.has_anthropic} />Anthropic API key {cfg?.has_anthropic ? '(saved)' : '(not set)'}</SettingsLabel>
+            <input type="password" value={claudeKey} onChange={e => setClaudeKey(e.target.value)} placeholder="sk-ant-…" style={inputStyle} />
+          </div>
+          <button onClick={saveConfig} disabled={saving} style={{ ...btnStyle, opacity: saving ? 0.6 : 1 }}>
+            {saving ? 'Saving…' : saved ? '✓ Saved' : 'Save'}
+          </button>
+        </div>
+      </SettingsCard>
+
+      {/* Plaid */}
+      <SettingsCard title="Plaid">
+        <div style={{ display: 'grid', gap: 14 }}>
+          <div>
+            <SettingsLabel><Dot ok={cfg?.has_plaid} />Client ID {cfg?.has_plaid ? '(saved)' : '(not set)'}</SettingsLabel>
+            <input type="password" value={plaidId} onChange={e => setPlaidId(e.target.value)} placeholder="Plaid client_id" style={inputStyle} />
+          </div>
+          <div>
+            <SettingsLabel>Secret</SettingsLabel>
+            <input type="password" value={plaidSecret} onChange={e => setPlaidSecret(e.target.value)} placeholder="Plaid secret" style={inputStyle} />
+          </div>
+          <div>
+            <SettingsLabel>Environment</SettingsLabel>
+            <div style={{ display: 'flex', gap: 10 }}>
+              {['sandbox', 'production'].map(env => (
+                <button key={env} onClick={() => setPlaidEnv(env)} style={{
+                  flex: 1, padding: '9px 0', borderRadius: 9, fontSize: 14, fontFamily: 'inherit',
+                  cursor: 'pointer', fontWeight: 500,
+                  border: plaidEnv === env ? '2px solid var(--accent)' : '1px solid var(--border)',
+                  background: plaidEnv === env ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : 'var(--bg)',
+                  color: plaidEnv === env ? 'var(--accent)' : 'var(--muted)',
+                }}>
+                  {env.charAt(0).toUpperCase() + env.slice(1)}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <SettingsLabel>OAuth Redirect URI</SettingsLabel>
+            <input type="text" value={plaidRedirect} onChange={e => setPlaidRedirect(e.target.value)}
+              placeholder="https://your-domain.com/oauth_callback" style={inputStyle} />
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 5, lineHeight: 1.5 }}>
+              Required for AMEX, Chase, BofA, Capital One. Must match Plaid Dashboard → Developers → API → Allowed Redirect URIs.
+            </div>
+          </div>
+          <button onClick={saveConfig} disabled={saving} style={{ ...btnStyle, opacity: saving ? 0.6 : 1 }}>
+            {saving ? 'Saving…' : saved ? '✓ Saved' : 'Save Plaid keys'}
+          </button>
+        </div>
+      </SettingsCard>
+
+      {/* AI Provider */}
+      <SettingsCard title="AI Provider">
+        <div style={{ display: 'grid', gap: 14 }}>
+          <div>
+            <SettingsLabel>Preferred provider</SettingsLabel>
+            <div style={{ display: 'flex', gap: 10 }}>
+              {['claude', 'gemini'].map(p => (
+                <button key={p} onClick={() => setProvider(p)} style={{
+                  flex: 1, padding: '9px 0', borderRadius: 9, fontSize: 14, fontFamily: 'inherit',
+                  cursor: 'pointer', fontWeight: 500,
+                  border: provider === p ? '2px solid var(--accent)' : '1px solid var(--border)',
+                  background: provider === p ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : 'var(--bg)',
+                  color: provider === p ? 'var(--accent)' : 'var(--muted)',
+                }}>
+                  {p === 'claude' ? 'Claude (Anthropic)' : 'Gemini (Google)'}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <SettingsLabel><Dot ok={cfg?.has_gemini} />Gemini API key {cfg?.has_gemini ? '(saved)' : '(not set)'}</SettingsLabel>
+            <input type="password" value={geminiKey} onChange={e => setGeminiKey(e.target.value)} placeholder="AIza…" style={inputStyle} />
+          </div>
+          <div>
+            <SettingsLabel><Dot ok={cfg?.has_anthropic} />Anthropic API key {cfg?.has_anthropic ? '(saved)' : '(not set)'}</SettingsLabel>
+            <input type="password" value={claudeKey} onChange={e => setClaudeKey(e.target.value)} placeholder="sk-ant-…" style={inputStyle} />
+          </div>
+          <button onClick={saveApiKeys} disabled={saving} style={{ ...btnStyle, opacity: saving ? 0.6 : 1 }}>
+            {saving ? 'Saving…' : saved ? '✓ Saved' : 'Save'}
+          </button>
+        </div>
+      </SettingsCard>
+
+      {/* User management */}
+      <SettingsCard title="User Accounts">
+        <div style={{ display: 'grid', gap: 14 }}>
+          {users.map(u => (
+            <div key={u.username} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '10px 14px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 14 }}>
+              <span>
+                <strong>{u.username}</strong>
+                {u.is_admin && <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--accent)',
+                  border: '1px solid var(--accent)', borderRadius: 4, padding: '1px 6px' }}>admin</span>}
+              </span>
+              {!u.is_admin && (
+                <button onClick={() => deleteUser(u.username)} style={{
+                  background: 'none', border: '1px solid #f87171', color: '#f87171',
+                  borderRadius: 7, padding: '4px 12px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit',
+                }}>Delete</button>
+              )}
+            </div>
+          ))}
+
+          <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14, display: 'grid', gap: 10 }}>
+            <SettingsLabel>Add user</SettingsLabel>
+            <input type="text" value={newUser} onChange={e => setNewUser(e.target.value)}
+              placeholder="Username" style={inputStyle} />
+            <input type="password" value={newPass} onChange={e => setNewPass(e.target.value)}
+              placeholder="Password" style={inputStyle} />
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--muted)', cursor: 'pointer' }}>
+              <input type="checkbox" checked={newAdmin} onChange={e => setNewAdmin(e.target.checked)} />
+              Make admin
+            </label>
+            <button onClick={createUser} style={btnStyle}>Create user</button>
+            {userMsg && <div style={{ fontSize: 13, color: 'var(--accent)' }}>{userMsg}</div>}
+          </div>
+        </div>
+      </SettingsCard>
+    </div>
+  );
+}
+
 Object.assign(window, {
   OverviewTab, MonthlyTab, TransactionsTab, SpendingTab, IncomeTab, CashFlowTab,
   NetWorthTab, AccountsTab, RecurringTab, CategoriesTab, TrendsTab,
-  ChatTab, SettingsTab, TxnList, AccountList, ReviewTab, FeedbackTab,
+  ChatTab, SettingsTab, AdminTab, TxnList, AccountList, ReviewTab, FeedbackTab,
 });
 })();
