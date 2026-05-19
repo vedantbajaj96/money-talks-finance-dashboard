@@ -14,7 +14,7 @@ const babel = require('@babel/core'), fs = require('fs'); \
 "
 
 # ── Stage 2: Python runtime ────────────────────────────────────────
-FROM python:3.14-slim
+FROM python:3.12-slim
 WORKDIR /app
 
 # Create non-root user for runtime security
