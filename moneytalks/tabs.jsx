@@ -167,12 +167,6 @@ function MonthlyTab({ monthKey, txnOverrides, setTxnOverrides, refreshFin }) {
   return (
     <div className="tab-body">
       <div className="grid-4">
-        <div onClick={() => setSelectedCat(c => c === 'income' ? null : 'income')}
-          style={{ cursor: 'pointer', outline: selectedCat === 'income' ? '2px solid var(--green)' : 'none', borderRadius: 16 }}>
-          <SummaryCard label="Income" n={summary.income} accent="var(--green)"
-            trend={prev ? trend(summary.income, prev.income) : null}
-            spark={incomeSeries.map((p) => p.value)} />
-        </div>
         <SummaryCard label="Expenses" n={summary.expenses} accent="var(--terra)"
           trend={prev ? trend(summary.expenses, prev.expenses) : null}
           spark={expenseSeries.map((p) => p.value)} />
@@ -180,7 +174,36 @@ function MonthlyTab({ monthKey, txnOverrides, setTxnOverrides, refreshFin }) {
           sub={`${summary.income > 0 ? ((summary.net / summary.income) * 100).toFixed(0) : 0}% savings rate`} />
         <SummaryCard label="Saved" n={summary.savings} accent="var(--accent2)"
           sub="auto-transfers + IRA" />
+        <div onClick={() => setSelectedCat(c => c === 'income' ? null : 'income')}
+          style={{ cursor: 'pointer', outline: selectedCat === 'income' ? '2px solid var(--green)' : 'none', borderRadius: 16 }}>
+          <SummaryCard label="Income" n={summary.income} accent="var(--green)"
+            trend={prev ? trend(summary.income, prev.income) : null}
+            spark={incomeSeries.map((p) => p.value)} />
+        </div>
       </div>
+      {selectedCat === 'income' && (() => {
+        const incomeTxns = monthTxns.filter(t => t.category === 'income').sort((a,b) => Math.abs(b.amount) - Math.abs(a.amount));
+        const bySource = {};
+        incomeTxns.forEach(t => {
+          const src = t.account || 'Other';
+          bySource[src] = (bySource[src] || 0) + Math.abs(t.amount);
+        });
+        return (
+          <div className="card" style={{ borderColor: 'var(--green)', borderWidth: 1.5 }}>
+            <div className="card-head">
+              <h3 style={{ color: 'var(--green)' }}>↗ Income this month</h3>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <span style={{ fontSize: 18, fontWeight: 700, color: 'var(--green)' }}>{fmtMoney(summary.income)}</span>
+                <button onClick={() => setSelectedCat(null)} style={{
+                  background: 'none', border: '1px solid var(--line)', borderRadius: 6,
+                  padding: '2px 10px', fontSize: 12, color: 'var(--ink-3)', cursor: 'pointer',
+                }}>Close</button>
+              </div>
+            </div>
+            <TxnList txns={incomeTxns} compact onRecategorize={recat} refreshFin={refreshFin} />
+          </div>
+        );
+      })()}
       <MonthVibeBanner summary={summary} prev={prev} />
       <div className="grid-2">
         <div className="card">
