@@ -1207,8 +1207,12 @@ function DateEditor({ currentDate, onSave, onCancel }) {
 
 
 function MerchantDrawer({ merchant, onClose }) {
+  const { useState: useStateD } = React;
+  const [drawerSort, setDrawerSort] = useStateD('date');
   const allTxns = TRANSACTIONS.filter(t => t.merchant === merchant)
-    .sort((a, b) => b.date.localeCompare(a.date));
+    .sort((a, b) => drawerSort === 'date'
+      ? b.date.localeCompare(a.date)
+      : Math.abs(b.amount) - Math.abs(a.amount));
 
   const allTimeTotal = allTxns.filter(t => t.amount < 0).reduce((s, t) => s + Math.abs(t.amount), 0);
   const thisYear     = new Date().getFullYear().toString();
@@ -1300,7 +1304,17 @@ function MerchantDrawer({ merchant, onClose }) {
         </div>
 
         {/* Transaction list */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '12px 0' }}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '0' }}>
+          <div style={{ display: 'flex', gap: 6, padding: '10px 24px', borderBottom: '1px solid var(--line)' }}>
+            {['date', 'amount'].map(s => (
+              <button key={s} onClick={() => setDrawerSort(s)} style={{
+                background: drawerSort === s ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'none',
+                border: `1px solid ${drawerSort === s ? 'var(--accent)' : 'var(--line)'}`,
+                borderRadius: 6, padding: '3px 10px', fontSize: 12, cursor: 'pointer',
+                color: drawerSort === s ? 'var(--accent)' : 'var(--ink-3)', fontFamily: 'inherit',
+              }}>{s === 'date' ? '📅 Date' : '$ Amount'}</button>
+            ))}
+          </div>
           {allTxns.map(t => {
             const cat = catById(t.category);
             return (
