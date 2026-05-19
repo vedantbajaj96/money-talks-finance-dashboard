@@ -4076,29 +4076,40 @@ function FeedbackTab() {
 // ─── Admin Tab ────────────────────────────────────────────────────────────────
 function AdminTab() {
   const { useState, useEffect, useRef } = React;
-  const inputStyle = {
+
+  // ── Shared styles aligned with app design system ───────────────────────────
+  const input = {
     width: '100%', padding: '10px 14px', borderRadius: 10, boxSizing: 'border-box',
-    border: '1px solid var(--border)', fontSize: 14, fontFamily: 'inherit',
-    background: 'var(--bg)', color: 'var(--text)', outline: 'none',
+    border: '1px solid var(--line-2)', fontSize: 14, fontFamily: 'inherit',
+    background: 'var(--surface)', color: 'var(--ink)', outline: 'none',
+    transition: 'border-color 0.15s',
   };
-  const btnStyle = {
+  // Primary — green accent fill
+  const btnPrimary = {
     background: 'var(--accent)', color: '#052015', border: 'none',
-    borderRadius: 10, padding: '11px 0', fontWeight: 600, fontSize: 14,
-    fontFamily: 'inherit', cursor: 'pointer', width: '100%',
+    borderRadius: 10, padding: '11px 20px', fontWeight: 600, fontSize: 14,
+    fontFamily: 'inherit', cursor: 'pointer', width: '100%', transition: 'opacity 0.15s',
   };
-  const ghostBtnStyle = {
-    background: 'none', border: '1px solid var(--border)', color: 'var(--text)',
-    borderRadius: 10, padding: '10px 0', fontWeight: 500, fontSize: 14,
-    fontFamily: 'inherit', cursor: 'pointer', width: '100%',
+  // Secondary — subtle surface fill with border
+  const btnSecondary = {
+    background: 'var(--surface-3)', color: 'var(--ink)', border: '1px solid var(--line-2)',
+    borderRadius: 10, padding: '10px 20px', fontWeight: 500, fontSize: 14,
+    fontFamily: 'inherit', cursor: 'pointer', width: '100%', transition: 'background 0.15s',
+  };
+  // Danger — terra tint
+  const btnDanger = {
+    background: 'none', border: '1px solid var(--terra)', color: 'var(--terra)',
+    borderRadius: 8, padding: '5px 14px', fontSize: 12, fontWeight: 500,
+    fontFamily: 'inherit', cursor: 'pointer', transition: 'background 0.15s',
   };
 
   const NAV = [
-    { key: 'status',   label: 'System Status' },
-    { key: 'deploy',   label: 'Deploy' },
-    { key: 'tests',    label: 'Tests' },
-    { key: 'ai',       label: 'AI Provider' },
-    { key: 'users',    label: 'User Accounts' },
-    { key: 'feedback', label: 'Feedback' },
+    { key: 'status',   label: 'System Status', icon: '◉' },
+    { key: 'deploy',   label: 'Deploy',         icon: '↑' },
+    { key: 'tests',    label: 'Tests',           icon: '✓' },
+    { key: 'ai',       label: 'AI Provider',    icon: '◆' },
+    { key: 'users',    label: 'User Accounts',  icon: '⊕' },
+    { key: 'feedback', label: 'Feedback',        icon: '◎' },
   ];
   const [page, setPage] = useState('status');
 
@@ -4114,12 +4125,10 @@ function AdminTab() {
   const [newAdmin, setNewAdmin]   = useState(false);
   const [userMsg, setUserMsg]     = useState('');
 
-  // Health
   const [healthChecks, setHealthChecks]   = useState([]);
   const [endpointPings, setEndpointPings] = useState([]);
   const [healthLoading, setHealthLoading] = useState(false);
 
-  // Deploy
   const [deployJobId, setDeployJobId]     = useState(null);
   const [deployOutput, setDeployOutput]   = useState('');
   const [deployDone, setDeployDone]       = useState(false);
@@ -4127,9 +4136,8 @@ function AdminTab() {
   const [deployRunning, setDeployRunning] = useState(false);
   const deployPollRef                     = useRef(null);
 
-  // Tests
   const SUITES = [
-    { key: 'unit',        label: 'Unit Tests',        desc: 'Categorization + session store — fast, no I/O' },
+    { key: 'unit',        label: 'Unit Tests',        desc: 'Categorization + session store — fast' },
     { key: 'integration', label: 'Integration Tests',  desc: 'Fin data + Plaid client — disk I/O' },
     { key: 'all',         label: 'Run All',            desc: 'All pytest suites' },
     { key: 'search',      label: 'Search Eval',        desc: 'ML model eval — slow (~30s+)' },
@@ -4137,7 +4145,6 @@ function AdminTab() {
   const [testJobs, setTestJobs] = useState({});
   const testPollRefs            = useRef({});
 
-  // Feedback
   const [feedback, setFeedback] = useState([]);
 
   useEffect(() => {
@@ -4252,120 +4259,163 @@ function AdminTab() {
     setUsers(u => u.filter(x => x.username !== username));
   }
 
-  const Dot = ({ ok }) => (
+  // ── Shared UI primitives ───────────────────────────────────────────────────
+
+  const StatusDot = ({ ok }) => (
     <span style={{
-      display: 'inline-block', width: 8, height: 8, borderRadius: '50%', marginRight: 8, flexShrink: 0,
-      background: ok == null ? 'var(--muted)' : ok ? 'var(--accent)' : '#f87171',
+      display: 'inline-block', width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
+      marginRight: 9,
+      background: ok == null ? 'var(--line-2)' : ok ? 'var(--accent)' : 'var(--terra)',
     }} />
   );
 
-  const Badge = ({ ok, text }) => (
+  const Pill = ({ ok, text }) => (
     <span style={{
-      fontSize: 11, padding: '2px 8px', borderRadius: 5, fontWeight: 600,
-      background: ok ? 'color-mix(in srgb, var(--accent) 15%, transparent)' : 'color-mix(in srgb, #f87171 15%, transparent)',
-      color: ok ? 'var(--accent)' : '#f87171',
-      border: `1px solid ${ok ? 'color-mix(in srgb, var(--accent) 40%, transparent)' : 'color-mix(in srgb, #f87171 40%, transparent)'}`,
+      fontSize: 11, padding: '3px 9px', borderRadius: 999, fontWeight: 600, letterSpacing: '0.04em',
+      background: ok
+        ? 'color-mix(in srgb, var(--accent) 14%, transparent)'
+        : 'color-mix(in srgb, var(--terra) 14%, transparent)',
+      color: ok ? 'var(--accent)' : 'var(--terra)',
     }}>{text || (ok ? 'OK' : 'FAIL')}</span>
   );
 
-  const LogOutput = ({ output, done, ok }) => (
+  const Terminal = ({ output, done, ok }) => (
     <div style={{
-      marginTop: 10, background: '#0a0a0a', border: '1px solid var(--border)',
-      borderRadius: 10, padding: '12px 14px', fontFamily: 'monospace', fontSize: 12,
-      color: '#d4d4d4', whiteSpace: 'pre-wrap', maxHeight: 260, overflowY: 'auto', lineHeight: 1.6,
+      marginTop: 12, borderRadius: 12, overflow: 'hidden',
+      border: '1px solid var(--line-2)',
     }}>
-      {output || 'Starting…'}
-      {done && <div style={{ marginTop: 8, color: ok ? '#4ade80' : '#f87171', fontWeight: 700 }}>
-        {ok ? '✓ Done' : '✗ Failed'}
-      </div>}
+      <div style={{
+        background: '#1a1a1a', padding: '10px 14px 0',
+        display: 'flex', gap: 6, alignItems: 'center',
+      }}>
+        {['#ff5f57','#febc2e','#28c840'].map(c => (
+          <span key={c} style={{ width: 10, height: 10, borderRadius: '50%', background: c, flexShrink: 0 }} />
+        ))}
+      </div>
+      <div style={{
+        background: '#1a1a1a', padding: '10px 16px 14px', fontFamily: 'var(--font-mono)', fontSize: 12,
+        color: '#d4d4d4', whiteSpace: 'pre-wrap', maxHeight: 280, overflowY: 'auto', lineHeight: 1.65,
+      }}>
+        {output || '$ …'}
+        {done && <div style={{ marginTop: 8, fontWeight: 700, color: ok ? '#4ade80' : '#f87171' }}>
+          {ok ? '✓ exited 0' : '✗ exited non-zero'}
+        </div>}
+      </div>
     </div>
   );
 
-  const SectionLabel = ({ children }) => (
-    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase',
-      letterSpacing: '0.07em', marginBottom: 10 }}>{children}</div>
+  const Divider = () => (
+    <div style={{ borderTop: '1px solid var(--line)', margin: '4px 0' }} />
+  );
+
+  const FieldLabel = ({ children }) => (
+    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-3)', marginBottom: 6,
+      letterSpacing: '0.05em', textTransform: 'uppercase' }}>{children}</div>
+  );
+
+  const SectionHeading = ({ children }) => (
+    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase',
+      letterSpacing: '0.08em', marginBottom: 12 }}>{children}</div>
   );
 
   // ── Pages ──────────────────────────────────────────────────────────────────
 
   const pages = {
     status: (
-      <div style={{ display: 'grid', gap: 20 }}>
+      <div style={{ display: 'grid', gap: 28 }}>
         <div>
-          <SectionLabel>API Endpoints</SectionLabel>
-          <div style={{ display: 'grid', gap: 9 }}>
-            {endpointPings.length === 0 && healthLoading && (
-              <div style={{ fontSize: 13, color: 'var(--muted)' }}>Pinging endpoints…</div>
-            )}
-            {endpointPings.map(({ name, ok, latency }) => (
-              <div key={name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 13 }}>
-                <span style={{ display: 'flex', alignItems: 'center' }}>
-                  <Dot ok={ok} /><span style={{ color: 'var(--text)' }}>{name}</span>
+          <SectionHeading>API Endpoints</SectionHeading>
+          <div style={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 12, overflow: 'hidden' }}>
+            {endpointPings.length === 0 && healthLoading
+              ? <div style={{ padding: '16px 20px', fontSize: 13, color: 'var(--ink-3)' }}>Checking…</div>
+              : endpointPings.map(({ name, ok, latency }, i) => (
+                <div key={name} style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '12px 20px', fontSize: 13,
+                  borderTop: i > 0 ? '1px solid var(--line)' : 'none',
+                }}>
+                  <span style={{ display: 'flex', alignItems: 'center', color: 'var(--ink)' }}>
+                    <StatusDot ok={ok} />{name}
+                  </span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    {latency != null && <span style={{ color: 'var(--ink-4)', fontSize: 12, fontFamily: 'var(--font-mono)' }}>{latency}ms</span>}
+                    <Pill ok={ok} text={ok ? 'UP' : 'DOWN'} />
+                  </span>
+                </div>
+              ))
+            }
+          </div>
+        </div>
+
+        <div>
+          <SectionHeading>Subsystems</SectionHeading>
+          <div style={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 12, overflow: 'hidden' }}>
+            {healthChecks.map(({ name, ok, detail }, i) => (
+              <div key={name} style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '12px 20px', fontSize: 13,
+                borderTop: i > 0 ? '1px solid var(--line)' : 'none',
+              }}>
+                <span style={{ display: 'flex', alignItems: 'center', color: 'var(--ink)' }}>
+                  <StatusDot ok={ok} />{name}
                 </span>
-                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  {latency != null && <span style={{ color: 'var(--muted)', fontSize: 12 }}>{latency}ms</span>}
-                  <Badge ok={ok} text={ok ? 'UP' : 'DOWN'} />
+                <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  {detail && <span style={{ color: 'var(--ink-4)', fontSize: 12 }}>{detail}</span>}
+                  <Pill ok={ok} />
                 </span>
               </div>
             ))}
           </div>
         </div>
-        <div>
-          <SectionLabel>Subsystems</SectionLabel>
-          <div style={{ display: 'grid', gap: 9 }}>
-            {healthChecks.map(({ name, ok, detail }) => (
-              <div key={name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 13 }}>
-                <span style={{ display: 'flex', alignItems: 'center' }}>
-                  <Dot ok={ok} /><span style={{ color: 'var(--text)' }}>{name}</span>
-                </span>
-                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  {detail && <span style={{ color: 'var(--muted)', fontSize: 12 }}>{detail}</span>}
-                  <Badge ok={ok} />
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
+
         <button onClick={runHealthChecks} disabled={healthLoading}
-          style={{ ...ghostBtnStyle, opacity: healthLoading ? 0.5 : 1 }}>
-          {healthLoading ? 'Checking…' : 'Refresh status'}
+          style={{ ...btnSecondary, opacity: healthLoading ? 0.5 : 1 }}>
+          {healthLoading ? 'Checking…' : 'Refresh'}
         </button>
       </div>
     ),
 
     deploy: (
-      <div style={{ display: 'grid', gap: 14 }}>
-        <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.5 }}>
-          Pulls latest code from GitHub and rebuilds the Docker container.{' '}
-          <strong style={{ color: 'var(--text)' }}>Note:</strong> the app will restart (~10s downtime).
+      <div style={{ display: 'grid', gap: 16 }}>
+        <div style={{
+          background: 'color-mix(in srgb, var(--terra) 8%, var(--surface))',
+          border: '1px solid color-mix(in srgb, var(--terra) 25%, transparent)',
+          borderRadius: 10, padding: '12px 16px', fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.6,
+        }}>
+          <strong style={{ color: 'var(--terra)' }}>Heads up:</strong> This restarts the container (~10s downtime).
+          Runs <code style={{ fontFamily: 'var(--font-mono)', fontSize: 12, background: 'var(--surface-3)', padding: '1px 5px', borderRadius: 4 }}>git pull && docker compose up -d --build</code>.
         </div>
         <button onClick={triggerDeploy} disabled={deployRunning}
-          style={{ ...btnStyle, opacity: deployRunning ? 0.6 : 1 }}>
-          {deployRunning ? 'Deploying…' : deployDone ? (deployOk ? '✓ Deployed — Deploy again' : '✗ Failed — Retry') : 'Deploy latest from GitHub'}
+          style={{ ...btnPrimary, opacity: deployRunning ? 0.6 : 1 }}>
+          {deployRunning ? 'Deploying…' : deployDone ? (deployOk ? '✓ Deployed — run again' : '✗ Failed — retry') : 'Deploy latest from GitHub'}
         </button>
-        {(deployRunning || deployOutput) && <LogOutput output={deployOutput} done={deployDone} ok={deployOk} />}
+        {(deployRunning || deployOutput) && <Terminal output={deployOutput} done={deployDone} ok={deployOk} />}
       </div>
     ),
 
     tests: (
-      <div style={{ display: 'grid', gap: 24 }}>
+      <div style={{ display: 'grid', gap: 20 }}>
         {SUITES.map(({ key, label, desc }) => {
           const job = testJobs[key] || {};
           const { running, done, ok, output } = job;
+          const isPrimary = key === 'all';
           return (
-            <div key={key} style={{ display: 'grid', gap: 8 }}>
+            <div key={key} style={{
+              background: 'var(--surface)', border: '1px solid var(--line)',
+              borderRadius: 12, padding: '16px 20px', display: 'grid', gap: 12,
+            }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>{label}</div>
-                  <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>{desc}</div>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>{label}</div>
+                  <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 3 }}>{desc}</div>
                 </div>
-                {done && <Badge ok={ok} text={ok ? 'PASSED' : 'FAILED'} />}
+                {done && <Pill ok={ok} text={ok ? 'PASSED' : 'FAILED'} />}
               </div>
               <button onClick={() => triggerTest(key)} disabled={running}
-                style={{ ...(key === 'all' ? btnStyle : ghostBtnStyle), opacity: running ? 0.6 : 1 }}>
+                style={{ ...(isPrimary ? btnPrimary : btnSecondary), opacity: running ? 0.6 : 1 }}>
                 {running ? 'Running…' : done ? 'Run again' : `Run ${label}`}
               </button>
-              {(running || output) && <LogOutput output={output || ''} done={done} ok={ok} />}
+              {(running || output) && <Terminal output={output || ''} done={done} ok={ok} />}
             </div>
           );
         })}
@@ -4373,32 +4423,44 @@ function AdminTab() {
     ),
 
     ai: (
-      <div style={{ display: 'grid', gap: 14 }}>
+      <div style={{ display: 'grid', gap: 18 }}>
         <div>
-          <SettingsLabel>Preferred provider</SettingsLabel>
+          <FieldLabel>Preferred provider</FieldLabel>
           <div style={{ display: 'flex', gap: 10 }}>
             {['claude', 'gemini'].map(p => (
               <button key={p} onClick={() => setProvider(p)} style={{
-                flex: 1, padding: '9px 0', borderRadius: 9, fontSize: 14, fontFamily: 'inherit',
-                cursor: 'pointer', fontWeight: 500,
-                border: provider === p ? '2px solid var(--accent)' : '1px solid var(--border)',
-                background: provider === p ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : 'var(--bg)',
-                color: provider === p ? 'var(--accent)' : 'var(--muted)',
+                flex: 1, padding: '10px 0', borderRadius: 10, fontSize: 14, fontFamily: 'inherit',
+                cursor: 'pointer', fontWeight: 500, transition: 'all 0.15s',
+                border: provider === p ? '2px solid var(--accent)' : '1px solid var(--line-2)',
+                background: provider === p ? 'color-mix(in srgb, var(--accent) 10%, var(--surface))' : 'var(--surface)',
+                color: provider === p ? 'var(--accent)' : 'var(--ink-2)',
               }}>
                 {p === 'claude' ? 'Claude (Anthropic)' : 'Gemini (Google)'}
               </button>
             ))}
           </div>
         </div>
+
         <div>
-          <SettingsLabel><Dot ok={cfg?.has_gemini} />Gemini API key {cfg?.has_gemini ? '(saved)' : '(not set)'}</SettingsLabel>
-          <input type="password" value={geminiKey} onChange={e => setGeminiKey(e.target.value)} placeholder="AIza…" style={inputStyle} />
+          <FieldLabel>
+            <StatusDot ok={cfg?.has_gemini} />
+            Gemini API key {cfg?.has_gemini ? '(saved)' : '(not set)'}
+          </FieldLabel>
+          <input type="password" value={geminiKey} onChange={e => setGeminiKey(e.target.value)}
+            placeholder="AIza…" style={input} />
         </div>
+
         <div>
-          <SettingsLabel><Dot ok={cfg?.has_anthropic} />Anthropic API key {cfg?.has_anthropic ? '(saved)' : '(not set)'}</SettingsLabel>
-          <input type="password" value={claudeKey} onChange={e => setClaudeKey(e.target.value)} placeholder="sk-ant-…" style={inputStyle} />
+          <FieldLabel>
+            <StatusDot ok={cfg?.has_anthropic} />
+            Anthropic API key {cfg?.has_anthropic ? '(saved)' : '(not set)'}
+          </FieldLabel>
+          <input type="password" value={claudeKey} onChange={e => setClaudeKey(e.target.value)}
+            placeholder="sk-ant-…" style={input} />
         </div>
-        <button onClick={saveApiKeys} disabled={saving} style={{ ...btnStyle, opacity: saving ? 0.6 : 1 }}>
+
+        <button onClick={saveApiKeys} disabled={saving}
+          style={{ ...btnPrimary, opacity: saving ? 0.6 : 1 }}>
           {saving ? 'Saving…' : saved ? '✓ Saved' : 'Save'}
         </button>
       </div>
@@ -4406,69 +4468,82 @@ function AdminTab() {
 
     users: (
       <div style={{ display: 'grid', gap: 14 }}>
-        {users.map(u => (
-          <div key={u.username} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            padding: '10px 14px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 14 }}>
-            <span>
-              <strong>{u.username}</strong>
-              {u.is_admin && <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--accent)',
-                border: '1px solid var(--accent)', borderRadius: 4, padding: '1px 6px' }}>admin</span>}
-            </span>
-            {!u.is_admin && (
-              <button onClick={() => deleteUser(u.username)} style={{
-                background: 'none', border: '1px solid #f87171', color: '#f87171',
-                borderRadius: 7, padding: '4px 12px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit',
-              }}>Delete</button>
-            )}
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 12, overflow: 'hidden' }}>
+          {users.map((u, i) => (
+            <div key={u.username} style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '13px 20px', fontSize: 14,
+              borderTop: i > 0 ? '1px solid var(--line)' : 'none',
+            }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontWeight: 500, color: 'var(--ink)' }}>{u.username}</span>
+                {u.is_admin && (
+                  <span style={{
+                    fontSize: 10, fontWeight: 700, color: 'var(--accent)', letterSpacing: '0.06em',
+                    background: 'color-mix(in srgb, var(--accent) 12%, transparent)',
+                    border: '1px solid color-mix(in srgb, var(--accent) 30%, transparent)',
+                    borderRadius: 999, padding: '2px 8px', textTransform: 'uppercase',
+                  }}>Admin</span>
+                )}
+              </span>
+              {!u.is_admin && (
+                <button onClick={() => deleteUser(u.username)} style={btnDanger}>Delete</button>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div style={{
+          background: 'var(--surface)', border: '1px solid var(--line)',
+          borderRadius: 12, padding: '20px', display: 'grid', gap: 14,
+        }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>Add user</div>
+          <div style={{ display: 'grid', gap: 10 }}>
+            <input type="text" value={newUser} onChange={e => setNewUser(e.target.value)}
+              placeholder="Username" style={input} />
+            <input type="password" value={newPass} onChange={e => setNewPass(e.target.value)}
+              placeholder="Password" style={input} />
           </div>
-        ))}
-        <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14, display: 'grid', gap: 10 }}>
-          <SettingsLabel>Add user</SettingsLabel>
-          <input type="text" value={newUser} onChange={e => setNewUser(e.target.value)}
-            placeholder="Username" style={inputStyle} />
-          <input type="password" value={newPass} onChange={e => setNewPass(e.target.value)}
-            placeholder="Password" style={inputStyle} />
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--muted)', cursor: 'pointer' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 13, color: 'var(--ink-2)', cursor: 'pointer' }}>
             <input type="checkbox" checked={newAdmin} onChange={e => setNewAdmin(e.target.checked)} />
             Make admin
           </label>
-          <button onClick={createUser} style={btnStyle}>Create user</button>
-          {userMsg && <div style={{ fontSize: 13, color: 'var(--accent)' }}>{userMsg}</div>}
+          <button onClick={createUser} style={btnPrimary}>Create user</button>
+          {userMsg && <div style={{ fontSize: 13, color: 'var(--accent)', fontWeight: 500 }}>{userMsg}</div>}
         </div>
       </div>
     ),
 
     feedback: (
-      <div style={{ display: 'grid', gap: 14 }}>
-        {feedback.length === 0 && (
-          <div style={{ fontSize: 14, color: 'var(--muted)' }}>No feedback submitted yet.</div>
-        )}
-        {[...feedback].reverse().map(entry => (
-          <div key={entry.id} style={{
-            padding: '14px 16px', borderRadius: 12, border: '1px solid var(--border)',
-            display: 'grid', gap: 6,
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
-                {entry.display_name || entry.username}
-              </span>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                {entry.category && entry.category !== 'general' && (
-                  <span style={{
-                    fontSize: 11, padding: '2px 8px', borderRadius: 5,
-                    background: 'color-mix(in srgb, var(--accent) 12%, transparent)',
-                    color: 'var(--accent)', border: '1px solid color-mix(in srgb, var(--accent) 30%, transparent)',
-                    fontWeight: 600,
-                  }}>{entry.category}</span>
-                )}
-                <span style={{ fontSize: 12, color: 'var(--muted)' }}>
-                  {new Date(entry.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+      <div style={{ display: 'grid', gap: 12 }}>
+        {feedback.length === 0
+          ? <div style={{ fontSize: 14, color: 'var(--ink-3)', padding: '20px 0' }}>No feedback yet.</div>
+          : [...feedback].reverse().map(entry => (
+            <div key={entry.id} style={{
+              background: 'var(--surface)', border: '1px solid var(--line)',
+              borderRadius: 12, padding: '16px 20px', display: 'grid', gap: 8,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>
+                  {entry.display_name || entry.username}
                 </span>
-              </span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {entry.category && entry.category !== 'general' && (
+                    <span style={{
+                      fontSize: 11, padding: '2px 9px', borderRadius: 999, fontWeight: 600,
+                      background: 'color-mix(in srgb, var(--accent) 12%, transparent)',
+                      color: 'var(--accent)',
+                    }}>{entry.category}</span>
+                  )}
+                  <span style={{ fontSize: 12, color: 'var(--ink-4)', fontFamily: 'var(--font-mono)' }}>
+                    {new Date(entry.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                  </span>
+                </span>
+              </div>
+              <div style={{ fontSize: 14, color: 'var(--ink-2)', lineHeight: 1.6 }}>{entry.message}</div>
             </div>
-            <div style={{ fontSize: 14, color: 'var(--text)', lineHeight: 1.5 }}>{entry.message}</div>
-          </div>
-        ))}
+          ))
+        }
       </div>
     ),
   };
@@ -4476,32 +4551,43 @@ function AdminTab() {
   const currentNav = NAV.find(n => n.key === page);
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr', gap: 0, minHeight: '100vh' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: '210px 1fr', minHeight: '100vh' }}>
 
       {/* Sidebar */}
       <div style={{
-        borderRight: '1px solid var(--border)', padding: '24px 12px',
-        background: 'var(--bg)', display: 'flex', flexDirection: 'column', gap: 4,
+        borderRight: '1px solid var(--line)', padding: '28px 12px',
+        background: 'var(--surface)', display: 'flex', flexDirection: 'column', gap: 2,
       }}>
-        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase',
-          letterSpacing: '0.07em', padding: '0 10px', marginBottom: 8 }}>Admin</div>
-        {NAV.map(({ key, label }) => (
-          <button key={key} onClick={() => setPage(key)} style={{
-            display: 'block', width: '100%', textAlign: 'left', padding: '9px 12px',
-            borderRadius: 8, border: 'none', fontFamily: 'inherit', fontSize: 14, cursor: 'pointer',
-            fontWeight: page === key ? 600 : 400,
-            background: page === key ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'transparent',
-            color: page === key ? 'var(--accent)' : 'var(--text)',
-          }}>{label}</button>
-        ))}
+        <div style={{
+          fontSize: 11, fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase',
+          letterSpacing: '0.08em', padding: '0 12px', marginBottom: 12,
+        }}>Admin</div>
+        {NAV.map(({ key, label, icon }) => {
+          const active = page === key;
+          return (
+            <button key={key} onClick={() => setPage(key)} style={{
+              display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left',
+              padding: '9px 12px', borderRadius: 9, border: 'none', fontFamily: 'inherit',
+              fontSize: 13.5, cursor: 'pointer', transition: 'background 0.12s',
+              fontWeight: active ? 600 : 400,
+              background: active ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'transparent',
+              color: active ? 'var(--accent)' : 'var(--ink-2)',
+            }}>
+              <span style={{ fontSize: 11, opacity: active ? 1 : 0.5, width: 14, textAlign: 'center' }}>{icon}</span>
+              {label}
+            </button>
+          );
+        })}
       </div>
 
       {/* Main content */}
-      <div style={{ padding: '32px 40px', overflowY: 'auto', maxWidth: 700 }}>
-        <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--text)', marginBottom: 24 }}>
-          {currentNav?.label}
+      <div style={{ padding: '36px 44px', overflowY: 'auto', background: 'var(--bg)' }}>
+        <div style={{ maxWidth: 580 }}>
+          <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--ink)', marginBottom: 28, letterSpacing: '-0.01em' }}>
+            {currentNav?.label}
+          </div>
+          {pages[page]}
         </div>
-        {pages[page]}
       </div>
     </div>
   );
