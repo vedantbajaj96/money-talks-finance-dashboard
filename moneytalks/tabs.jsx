@@ -299,7 +299,8 @@ function MonthlyTab({ monthKey, txnOverrides, setTxnOverrides, refreshFin }) {
               : <span className="muted">{monthTxns.length} this month · click a slice or Income to filter</span>
             }
           </div>
-          <TxnList txns={catTxns} compact onRecategorize={recat} refreshFin={refreshFin} />
+          <TxnList txns={catTxns} compact onRecategorize={recat} refreshFin={refreshFin}
+            sortCol={sortBy === 'date' ? 'date' : 'amount'} sortDir="desc" />
         </div>
       )}
     </div>
@@ -1204,13 +1205,141 @@ function DateEditor({ currentDate, onSave, onCancel }) {
   );
 }
 
-function TxnList({ txns, compact = false, onRecategorize, refreshFin }) {
+
+function MerchantDrawer({ merchant, onClose }) {
+  const allTxns = TRANSACTIONS.filter(t => t.merchant === merchant)
+    .sort((a, b) => b.date.localeCompare(a.date));
+
+  const allTimeTotal = allTxns.filter(t => t.amount < 0).reduce((s, t) => s + Math.abs(t.amount), 0);
+  const thisYear     = new Date().getFullYear().toString();
+  const yearTotal    = allTxns.filter(t => t.amount < 0 && t.date.startsWith(thisYear))
+                              .reduce((s, t) => s + Math.abs(t.amount), 0);
+  const avgTxn       = allTxns.length > 0 ? allTimeTotal / allTxns.filter(t => t.amount < 0).length : 0;
+
+  // Monthly spend for bar chart — last 12 months
+  const now = new Date();
+  const months = Array.from({ length: 12 }, (_, i) => {
+    const d = new Date(now.getFullYear(), now.getMonth() - (11 - i), 1);
+    return d.toISOString().slice(0, 7);
+  });
+  const byMonth = {};
+  allTxns.filter(t => t.amount < 0).forEach(t => {
+    const m = t.date.slice(0, 7);
+    byMonth[m] = (byMonth[m] || 0) + Math.abs(t.amount);
+  });
+  const chartData = months.map(m => ({ label: m.slice(5), value: byMonth[m] || 0 }));
+  const maxVal = Math.max(...chartData.map(d => d.value), 1);
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div onClick={onClose} style={{
+        position: 'fixed', inset: 0, zIndex: 400,
+        background: 'rgba(0,0,0,0.35)', backdropFilter: 'blur(2px)',
+      }} />
+
+      {/* Drawer */}
+      <div style={{
+        position: 'fixed', top: 0, right: 0, bottom: 0, zIndex: 401,
+        width: 420, background: 'var(--surface)', borderLeft: '1px solid var(--line)',
+        display: 'flex', flexDirection: 'column', boxShadow: '-8px 0 32px rgba(0,0,0,0.12)',
+      }}>
+        {/* Header */}
+        <div style={{ padding: '20px 24px 16px', borderBottom: '1px solid var(--line)', flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+            <div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.01em' }}>
+                {merchant}
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 3 }}>
+                {allTxns.length} transaction{allTxns.length !== 1 ? 's' : ''}
+              </div>
+            </div>
+            <button onClick={onClose} style={{
+              background: 'none', border: '1px solid var(--line)', borderRadius: 8,
+              padding: '5px 10px', cursor: 'pointer', fontSize: 16, color: 'var(--ink-3)',
+              lineHeight: 1, flexShrink: 0,
+            }}>✕</button>
+          </div>
+
+          {/* Stats row */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginTop: 16 }}>
+            {[
+              { label: 'All time',    value: fmtMoney(allTimeTotal) },
+              { label: thisYear,      value: fmtMoney(yearTotal) },
+              { label: 'Avg / txn',  value: fmtMoney(avgTxn) },
+            ].map(({ label, value }) => (
+              <div key={label} style={{
+                background: 'var(--surface-3)', borderRadius: 10, padding: '10px 12px',
+              }}>
+                <div style={{ fontSize: 11, color: 'var(--ink-4)', fontWeight: 600,
+                  textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{label}</div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Monthly bar chart */}
+        <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--line)', flexShrink: 0 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase',
+            letterSpacing: '0.07em', marginBottom: 10 }}>Monthly spend — last 12 months</div>
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 56 }}>
+            {chartData.map(({ label, value }) => (
+              <div key={label} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                <div style={{
+                  width: '100%', borderRadius: 3,
+                  background: value > 0 ? 'var(--accent)' : 'var(--line)',
+                  height: value > 0 ? `${Math.max(4, (value / maxVal) * 44)}px` : '3px',
+                  transition: 'height 0.2s',
+                }} title={value > 0 ? fmtMoney(value) : ''} />
+                <div style={{ fontSize: 9, color: 'var(--ink-4)', fontVariantNumeric: 'tabular-nums' }}>{label}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Transaction list */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '12px 0' }}>
+          {allTxns.map(t => {
+            const cat = catById(t.category);
+            return (
+              <div key={t.id} style={{
+                display: 'flex', alignItems: 'center', gap: 12,
+                padding: '10px 24px', borderBottom: '1px solid var(--line)',
+              }}>
+                <div style={{
+                  width: 32, height: 32, borderRadius: 9, flexShrink: 0,
+                  background: cat.color + '24', color: cat.color,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15,
+                }}>{cat.icon}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, color: 'var(--ink-3)' }}>{t.date.slice(5).replace('-', '/')}</div>
+                  <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 1 }}>
+                    <span className="cat-pill" style={{ color: cat.color }}>{cat.name}</span>
+                  </div>
+                </div>
+                <div style={{
+                  fontSize: 14, fontWeight: 600, fontVariantNumeric: 'tabular-nums',
+                  color: t.amount >= 0 ? 'var(--green)' : 'var(--ink)',
+                }}>{fmt(t.amount, { sign: true })}</div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </>
+  );
+}
+
+function TxnList({ txns, compact = false, onRecategorize, refreshFin, sortCol: initSortCol, sortDir: initSortDir }) {
   const [splitTxn, setSplitTxn]     = useState(null);
   const [editDateId, setEditDateId] = useState(null);
   const [editTxn, setEditTxn]       = useState(null);
   const [menuId, setMenuId]         = useState(null);
-  const [sortCol, setSortCol]       = useState('date');
-  const [sortDir, setSortDir]       = useState('desc');
+  const [activeMerchant, setActiveMerchant] = useState(null);
+  const [sortCol, setSortCol]       = useState(initSortCol || 'date');
+  const [sortDir, setSortDir]       = useState(initSortDir || 'desc');
   const [dateOverrides, setDateOverrides] = useState({});
 
   function toggleSort(col) {
@@ -1251,6 +1380,7 @@ function TxnList({ txns, compact = false, onRecategorize, refreshFin }) {
 
   return (
     <>
+      {activeMerchant && <MerchantDrawer merchant={activeMerchant} onClose={() => setActiveMerchant(null)} />}
       {!compact && (
         <div style={{
           display: 'grid', gridTemplateColumns: '36px 1fr 56px 96px 20px',
@@ -1286,7 +1416,12 @@ function TxnList({ txns, compact = false, onRecategorize, refreshFin }) {
               </div>
               <div className="txn-main">
                 <div className="txn-merchant">
-                  {t.merchant}
+                  <span onClick={() => !isSplit && setActiveMerchant(t.merchant)} style={{
+                    cursor: isSplit ? 'default' : 'pointer',
+                    textDecoration: isSplit ? 'none' : 'underline dotted',
+                    textUnderlineOffset: 2,
+                    textDecorationColor: 'var(--line-2)',
+                  }}>{t.merchant}</span>
                   {t.pending && <span className="pending-pill">pending</span>}
                   {isSplit && <span className="pending-pill" style={{ background: cat.color + '20', color: cat.color }}>split</span>}
                   {t.notes && !isSplit && <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 6 }}>{t.notes}</span>}
