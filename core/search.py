@@ -4,11 +4,13 @@ core/search.py — Semantic search via sentence-transformers.
 The model is loaded eagerly at import time so the first search is instant.
 Gracefully degrades to no-op when sentence-transformers isn't installed.
 
-Merchant embeddings are enriched with category keywords at build time so that
-queries like "cab" or "taxi" naturally match "UBER *TRIP" (categorized as
-transport) without needing a manual synonym list.
+Merchant descriptions are fingerprinted (numbers/punctuation stripped) before
+embedding so "UBER *TRIP 1234" becomes "uber trip" — a clean word the model
+understands as rideshare — letting queries like "cab" or "taxi" match naturally.
 """
 from __future__ import annotations
+
+import re
 
 from core.store import get_conn, data_file
 
@@ -34,81 +36,23 @@ def _get_sem_model():
 
 
 # ---------------------------------------------------------------------------
-# Category → descriptive keywords (used to enrich merchant embeddings)
+# Description normalisation
 # ---------------------------------------------------------------------------
-# Each entry expands a category name/slug into natural-language words that
-# a user might type when looking for transactions in that category.
-# This is the only place category knowledge needs to live — no per-merchant
-# synonym tables required.
 
-_CAT_KEYWORDS: dict[str, str] = {
-    # Transport
-    "commute-and-transport": "transport commute ride cab taxi rideshare bus subway train metro ferry car",
-    "Commute & Transport":   "transport commute ride cab taxi rideshare bus subway train metro ferry car",
-    "transport":             "transport commute ride cab taxi rideshare bus subway train metro ferry car",
-    # Dining
-    "dining-and-drinks":     "dining restaurant food bar drinks coffee cafe lunch dinner brunch",
-    "Dining & Drinks":       "dining restaurant food bar drinks coffee cafe lunch dinner brunch",
-    "dining":                "dining restaurant food bar drinks coffee cafe lunch dinner brunch",
-    # Food delivery
-    "food-delivery":         "food delivery doordash grubhub ubereats instacart takeout order",
-    "Food Delivery":         "food delivery doordash grubhub ubereats instacart takeout order",
-    # Groceries
-    "groceries":             "grocery groceries supermarket food market produce",
-    "Groceries":             "grocery groceries supermarket food market produce",
-    # Shopping
-    "shopping-and-retail":   "shopping retail store purchase buy amazon online",
-    "Shopping & Retail":     "shopping retail store purchase buy amazon online",
-    "shopping":              "shopping retail store purchase buy amazon online",
-    # Health / fitness
-    "fitness-and-active":    "fitness gym workout exercise yoga crossfit pilates sports active",
-    "Fitness & Active":      "fitness gym workout exercise yoga crossfit pilates sports active",
-    "health-and-medical":    "health medical doctor pharmacy prescription hospital clinic",
-    "Health & Medical":      "health medical doctor pharmacy prescription hospital clinic",
-    "health":                "health fitness gym medical doctor pharmacy",
-    # Subscriptions
-    "connectivity":          "subscription streaming internet phone mobile wireless broadband",
-    "Connectivity":          "subscription streaming internet phone mobile wireless broadband",
-    "subs":                  "subscription streaming internet phone mobile wireless",
-    # Travel
-    "travel-and-getaways":   "travel flight airline hotel airbnb vacation trip getaway lodging",
-    "Travel & Getaways":     "travel flight airline hotel airbnb vacation trip getaway lodging",
-    "travel":                "travel flight airline hotel airbnb vacation trip getaway",
-    # Housing / utilities
-    "housing-and-utilities": "rent housing apartment utilities electric gas water landlord",
-    "Housing & Utilities":   "rent housing apartment utilities electric gas water landlord",
-    "rent":                  "rent housing apartment utilities electric gas water landlord",
-    # Education
-    "education":             "education school tuition course class learning books",
-    "Education":             "education school tuition course class learning books",
-    # Self development
-    "professional-development": "professional development course training certification conference",
-    "self-development":      "self development personal growth course coaching",
-    "self_dev":              "self development professional course coaching",
-    # Personal care
-    "personal-care":         "personal care haircut grooming salon spa beauty",
-    "Personal Care":         "personal care haircut grooming salon spa beauty",
-    "grooming-and-beauty":   "grooming beauty haircut salon spa barber",
-    # Entertainment
-    "entertainment":         "entertainment movies concert event tickets fun",
-    "Entertainment":         "entertainment movies concert event tickets fun",
-    # Transfers / financial
-    "financial-and-transfers": "transfer payment bank wire zelle venmo",
-    "Financial & Transfers": "transfer payment bank wire zelle venmo",
-    "transfer":              "transfer payment bank wire zelle venmo",
-    # Income
-    "paycheck-and-salary":   "salary paycheck income employer direct deposit",
-    "Paycheck & Salary":     "salary paycheck income employer direct deposit",
-    "income":                "income salary paycheck wages",
-}
+def _fingerprint(desc: str) -> str:
+    """Strip numbers, punctuation and payment suffixes from a raw description.
 
+    "UBER *TRIP 9487"      → "uber trip"
+    "EXXONMOBIL GAS #4312" → "exxonmobil gas"
+    "WHOLEFDS MKT 00345"   → "wholefds mkt"
 
-def _enrich(description: str, category: str) -> str:
-    """Append category keywords to a merchant description before embedding."""
-    keywords = _CAT_KEYWORDS.get(category, "")
-    if keywords:
-        return f"{description} {keywords}"
-    return description
+    Giving the embedding model clean brand/merchant words means it can apply
+    its real-world knowledge (Uber = rideshare, Exxon = gas) without noise.
+    """
+    s = str(desc).lower()
+    s = re.sub(r"\b\d[\d/\-]*\d\b", " ", s)   # remove numeric tokens
+    s = re.sub(r"[^a-z ]+", " ", s)            # strip punctuation / special chars
+    return " ".join(s.split()[:6])             # keep up to 6 meaningful words
 
 
 # ---------------------------------------------------------------------------
@@ -186,25 +130,16 @@ def semantic_txn_search(username: str, q: str) -> dict:
     cached = _sem_txn_cache.get(username, {})
     if cached.get("mtime") != mtime:
         conn = get_conn(username)
-        # Fetch each unique description together with its most common category
-        rows = conn.execute("""
-            SELECT description, category
-            FROM (
-                SELECT description, category,
-                       ROW_NUMBER() OVER (PARTITION BY description ORDER BY COUNT(*) DESC) AS rn
-                FROM txns
-                WHERE description IS NOT NULL
-                GROUP BY description, category
-            )
-            WHERE rn = 1
-            ORDER BY description
-        """).fetchall()
-        merchants = [r[0] for r in rows if r[0]]
+        rows = conn.execute(
+            "SELECT DISTINCT description FROM txns WHERE description IS NOT NULL ORDER BY description"
+        ).fetchall()
+        merchants = [r[0] for r in rows]
         if not merchants:
             return {"merchants": [], "semantic": False}
-        # Enrich each description with category keywords before embedding
-        enriched = [_enrich(r[0], r[1] or "") for r in rows if r[0]]
-        embs = model.encode(enriched, normalize_embeddings=True, show_progress_bar=False)
+        # Fingerprint before embedding: strips noise so the model sees clean
+        # brand words ("uber", "exxonmobil") rather than "UBER *TRIP 9487"
+        fingerprinted = [_fingerprint(m) for m in merchants]
+        embs = model.encode(fingerprinted, normalize_embeddings=True, show_progress_bar=False)
         _sem_txn_cache[username] = {"mtime": mtime, "merchants": merchants, "embs": embs}
         cached = _sem_txn_cache[username]
 
@@ -220,7 +155,7 @@ def semantic_txn_search(username: str, q: str) -> dict:
         for m, s in zip(merchants, scores)
     ]
 
-    threshold = 0.40
+    threshold = 0.50
     hits = [(m, s) for m, s in zip(merchants, boosted_scores) if s > threshold]
     hits.sort(key=lambda x: -x[1])
     top = hits[:20]
