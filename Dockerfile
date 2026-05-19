@@ -33,7 +33,7 @@ COPY --chown=appuser:appuser . .
 COPY --chown=appuser:appuser --from=jsx-builder /build/*.js.compiled ./moneytalks/
 
 # Pre-download the embeddings model so first startup is instant
-RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')" || true && \
+RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('BAAI/bge-base-en-v1.5')" || true && \
     chown -R appuser:appuser /app
 
 # Switch to non-root user
