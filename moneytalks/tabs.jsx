@@ -129,9 +129,6 @@ function MonthlyTab({ monthKey, txnOverrides, setTxnOverrides, refreshFin }) {
   const { useState, useEffect } = React;
   const [selectedCat, setSelectedCat] = useState(null);
 
-  // Reset selected category when the month changes
-  useEffect(() => { setSelectedCat(null); }, [monthKey]);
-
   const summary = monthSummary(monthKey);
   const rawMonthTxns = txnsForMonth(monthKey);
   const monthTxns = rawMonthTxns.map(t =>
