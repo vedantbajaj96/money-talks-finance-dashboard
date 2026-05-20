@@ -1210,12 +1210,14 @@ function BarCol({ label, value, maxVal }) {
   const [hovered, setHovered] = React.useState(false);
   const amt = value >= 1000 ? `$${(value / 1000).toFixed(1)}k` : value > 0 ? `$${Math.round(value)}` : '';
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}
+    <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, position: 'relative' }}
       onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
-      <div style={{ fontSize: 20, color: 'var(--accent)', fontWeight: 700, height: 24, lineHeight: '24px',
-        opacity: hovered && value > 0 ? 1 : 0, transition: 'opacity 0.15s', whiteSpace: 'nowrap' }}>
-        {amt}
-      </div>
+      <div style={{ height: 24, flexShrink: 0 }} />
+      <div style={{
+        position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)',
+        fontSize: 20, color: 'var(--accent)', fontWeight: 700, lineHeight: '24px',
+        opacity: hovered && value > 0 ? 1 : 0, transition: 'opacity 0.15s', whiteSpace: 'nowrap', zIndex: 2,
+      }}>{amt}</div>
       <div style={{
         width: '100%', borderRadius: 3,
         background: value > 0 ? (hovered ? 'var(--accent)' : 'color-mix(in srgb, var(--accent) 70%, transparent)') : 'var(--line)',
@@ -1309,7 +1311,7 @@ function MerchantDrawer({ merchant, category, onClose }) {
         <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--line)', flexShrink: 0 }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase',
             letterSpacing: '0.07em', marginBottom: 10 }}>Monthly spend — last 12 months</div>
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 72 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 96 }}>
             {chartData.map(({ label, value }) => (
               <BarCol key={label} label={label} value={value} maxVal={maxVal} />
             ))}
@@ -4296,6 +4298,7 @@ function AdminTab() {
     { key: 'ai',       label: 'AI Provider',    icon: '◆' },
     { key: 'users',    label: 'User Accounts',  icon: '⊕' },
     { key: 'feedback', label: 'Feedback',        icon: '◎' },
+    { key: 'logs',     label: 'Server Logs',     icon: '≡' },
   ];
   const [page, setPage] = useState('status');
 
@@ -4332,6 +4335,8 @@ function AdminTab() {
   const testPollRefs            = useRef({});
 
   const [feedback, setFeedback] = useState([]);
+  const [logs, setLogs]         = useState([]);
+  const [logsLoading, setLogsLoading] = useState(false);
 
   useEffect(() => {
     fetch('/api/config').then(r => r.json()).then(d => {
@@ -4345,6 +4350,13 @@ function AdminTab() {
   useEffect(() => {
     if (page === 'feedback') {
       fetch('/api/feedback').then(r => r.json()).then(d => setFeedback(d.entries || [])).catch(() => {});
+    }
+    if (page === 'logs') {
+      setLogsLoading(true);
+      fetch('/api/admin/logs?lines=300').then(r => r.json()).then(d => {
+        setLogs(d.lines || []);
+        setLogsLoading(false);
+      }).catch(() => setLogsLoading(false));
     }
   }, [page]);
 
@@ -4729,6 +4741,41 @@ function AdminTab() {
               <div style={{ fontSize: 14, color: 'var(--ink-2)', lineHeight: 1.6 }}>{entry.message}</div>
             </div>
           ))
+        }
+      </div>
+    ),
+    logs: (
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+          <button onClick={() => {
+            setLogsLoading(true);
+            fetch('/api/admin/logs?lines=300').then(r => r.json()).then(d => {
+              setLogs(d.lines || []); setLogsLoading(false);
+            }).catch(() => setLogsLoading(false));
+          }} style={{
+            padding: '6px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+            background: 'var(--surface-3)', border: '1px solid var(--line)', color: 'var(--ink)',
+          }}>↻ Refresh</button>
+          <span style={{ fontSize: 12, color: 'var(--ink-4)' }}>Last 300 lines of server.log</span>
+        </div>
+        {logsLoading
+          ? <div style={{ fontSize: 14, color: 'var(--ink-3)' }}>Loading…</div>
+          : <div style={{
+              background: '#0d0d0d', borderRadius: 10, padding: '14px 16px',
+              fontFamily: 'var(--font-mono)', fontSize: 12, lineHeight: 1.7,
+              overflowX: 'auto', maxHeight: '65vh', overflowY: 'auto',
+            }}>
+              {logs.length === 0
+                ? <span style={{ color: '#666' }}>No log entries.</span>
+                : logs.map((line, i) => {
+                    const color = line.includes('ERROR') || line.includes('CRITICAL') ? '#ff6b6b'
+                                : line.includes('WARNING') ? '#ffd93d'
+                                : line.includes('SLOW') ? '#ff9f43'
+                                : '#a8d8a8';
+                    return <div key={i} style={{ color, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{line}</div>;
+                  })
+              }
+            </div>
         }
       </div>
     ),

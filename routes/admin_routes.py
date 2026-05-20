@@ -162,3 +162,17 @@ def get_job(job_id: str, current_user: str = Depends(get_admin_user)):
     if not job:
         return {"error": "job not found"}
     return {"output": job["output"], "done": job["done"], "ok": job["ok"], "type": job.get("type")}
+
+
+@router.get("/api/admin/logs")
+def get_logs(lines: int = 200, current_user: str = Depends(get_admin_user)):
+    """Return the last N lines of server.log."""
+    log_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "server.log"))
+    if not os.path.isfile(log_path):
+        return {"lines": [], "error": "server.log not found"}
+    try:
+        with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+            all_lines = f.readlines()
+        return {"lines": [l.rstrip("\n") for l in all_lines[-lines:]]}
+    except Exception as e:
+        return {"lines": [], "error": str(e)}
