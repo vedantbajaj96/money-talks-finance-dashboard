@@ -6,7 +6,7 @@ duckdb
 anthropic
 google-genai
 plaid-python
-sentence-transformers
+fastembed
 python-multipart
 slowapi
 pytest

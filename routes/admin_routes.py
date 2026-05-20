@@ -94,7 +94,7 @@ def trigger_deploy(current_user: str = Depends(get_admin_user)):
     # Detect project root (where docker-compose.yml lives)
     cwd = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
-    cmd = ["bash", "-c", "git pull && docker compose up -d --build"]
+    cmd = ["bash", "-c", "docker compose pull && docker compose up -d"]
     t = threading.Thread(target=_run_job, args=(job_id, cmd, cwd), daemon=True)
     t.start()
     return {"job_id": job_id}

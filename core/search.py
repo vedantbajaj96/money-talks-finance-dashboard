@@ -29,12 +29,15 @@ _sem_cat_cache: dict = {}   # {cache_key: (cat_list, embeddings_array)}
 _sem_txn_cache: dict = {}   # {username: {"mtime": float, "pairs": list, "embs": ndarray}}
 
 try:
-    from sentence_transformers import SentenceTransformer
+    from fastembed import TextEmbedding
+    import numpy as _np_init
     print("Loading embeddings model (bge-base-en-v1.5)…", flush=True)
-    _sem_model = SentenceTransformer("BAAI/bge-base-en-v1.5")
+    _sem_model = TextEmbedding("BAAI/bge-base-en-v1.5")
+    # Warm up — first call downloads the model if not cached
+    list(_sem_model.embed(["warmup"]))
     print("Embeddings model ready.", flush=True)
 except Exception as _e:
-    print(f"sentence-transformers unavailable — semantic search disabled: {_e}", flush=True)
+    print(f"fastembed unavailable — semantic search disabled: {_e}", flush=True)
 
 
 def _get_sem_model():
@@ -158,10 +161,10 @@ def semantic_rank(query: str, cats: list) -> list:
         cache_key = ",".join(c["id"] for c in cats)
         if cache_key not in _sem_cat_cache:
             texts = [c["name"] for c in cats]
-            embs  = model.encode(texts, normalize_embeddings=True, show_progress_bar=False)
+            embs  = np.array(list(model.embed(texts)))
             _sem_cat_cache[cache_key] = (cats, embs)
         _, cat_embs = _sem_cat_cache[cache_key]
-        q_emb       = model.encode([q], normalize_embeddings=True, show_progress_bar=False)[0]
+        q_emb       = np.array(list(model.embed([q])))[0]
         sem_scores  = (cat_embs @ q_emb).tolist()
     else:
         sem_scores = [0.0] * len(cats)
@@ -211,7 +214,7 @@ def semantic_txn_search(username: str, q: str) -> dict:
         return {"matches": [], "merchants": [], "semantic": False}
 
     mtime      = parquet_path.stat().st_mtime
-    model_name = type(model).__name__ + str(getattr(model, "_modules", {}).get("0", ""))
+    model_name = type(model).__name__
     cached     = _sem_txn_cache.get(username, {})
     if cached.get("mtime") != mtime or cached.get("model") != model_name:
         conn = get_conn(username)
@@ -234,7 +237,7 @@ def semantic_txn_search(username: str, q: str) -> dict:
             pairs.append((desc, cat_id))
             fp_texts.append(fp)
 
-        desc_embs = model.encode(fp_texts, normalize_embeddings=True, show_progress_bar=False)
+        desc_embs = np.array(list(model.embed(fp_texts)))
         _sem_txn_cache[username] = {
             "mtime": mtime, "model": model_name, "pairs": pairs, "desc_embs": desc_embs,
         }
@@ -242,7 +245,7 @@ def semantic_txn_search(username: str, q: str) -> dict:
 
     pairs     = cached["pairs"]
     desc_embs = cached["desc_embs"]
-    q_emb     = model.encode([q.strip()], normalize_embeddings=True, show_progress_bar=False)[0]
+    q_emb     = np.array(list(model.embed([q.strip()])))[0]
 
     import numpy as _np
     desc_scores = desc_embs @ q_emb

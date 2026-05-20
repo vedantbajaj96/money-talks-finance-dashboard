@@ -1,6 +1,6 @@
 services:
   moneytalks:
-    build: .
+    image: vedantbajaj96/moneytalks:latest
     ports:
       - "8502:8502"
     volumes:
