@@ -1206,10 +1206,31 @@ function DateEditor({ currentDate, onSave, onCancel }) {
 }
 
 
-function MerchantDrawer({ merchant, onClose }) {
+function BarCol({ label, value, maxVal }) {
+  const [hovered, setHovered] = React.useState(false);
+  const amt = value >= 1000 ? `$${(value / 1000).toFixed(1)}k` : value > 0 ? `$${Math.round(value)}` : '';
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}
+      onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
+      <div style={{ fontSize: 20, color: 'var(--accent)', fontWeight: 700, height: 24, lineHeight: '24px',
+        opacity: hovered && value > 0 ? 1 : 0, transition: 'opacity 0.15s', whiteSpace: 'nowrap' }}>
+        {amt}
+      </div>
+      <div style={{
+        width: '100%', borderRadius: 3,
+        background: value > 0 ? (hovered ? 'var(--accent)' : 'color-mix(in srgb, var(--accent) 70%, transparent)') : 'var(--line)',
+        height: value > 0 ? `${Math.max(4, (value / maxVal) * 44)}px` : '3px',
+        transition: 'height 0.2s, background 0.15s',
+      }} />
+      <div style={{ fontSize: 9, color: 'var(--ink-4)', fontVariantNumeric: 'tabular-nums' }}>{label}</div>
+    </div>
+  );
+}
+
+function MerchantDrawer({ merchant, category, onClose }) {
   const { useState: useStateD } = React;
   const [drawerSort, setDrawerSort] = useStateD('date');
-  const allTxns = TRANSACTIONS.filter(t => t.merchant === merchant)
+  const allTxns = TRANSACTIONS.filter(t => t.merchant === merchant && t.category === category)
     .sort((a, b) => drawerSort === 'date'
       ? b.date.localeCompare(a.date)
       : Math.abs(b.amount) - Math.abs(a.amount));
@@ -1256,7 +1277,7 @@ function MerchantDrawer({ merchant, onClose }) {
                 {merchant}
               </div>
               <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 3 }}>
-                {allTxns.length} transaction{allTxns.length !== 1 ? 's' : ''}
+                {category} · {allTxns.length} transaction{allTxns.length !== 1 ? 's' : ''}
               </div>
             </div>
             <button onClick={onClose} style={{
@@ -1288,17 +1309,9 @@ function MerchantDrawer({ merchant, onClose }) {
         <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--line)', flexShrink: 0 }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase',
             letterSpacing: '0.07em', marginBottom: 10 }}>Monthly spend — last 12 months</div>
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 56 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 72 }}>
             {chartData.map(({ label, value }) => (
-              <div key={label} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                <div style={{
-                  width: '100%', borderRadius: 3,
-                  background: value > 0 ? 'var(--accent)' : 'var(--line)',
-                  height: value > 0 ? `${Math.max(4, (value / maxVal) * 44)}px` : '3px',
-                  transition: 'height 0.2s',
-                }} title={value > 0 ? fmtMoney(value) : ''} />
-                <div style={{ fontSize: 9, color: 'var(--ink-4)', fontVariantNumeric: 'tabular-nums' }}>{label}</div>
-              </div>
+              <BarCol key={label} label={label} value={value} maxVal={maxVal} />
             ))}
           </div>
         </div>
@@ -1394,7 +1407,7 @@ function TxnList({ txns, compact = false, onRecategorize, refreshFin, sortCol: i
 
   return (
     <>
-      {activeMerchant && <MerchantDrawer merchant={activeMerchant} onClose={() => setActiveMerchant(null)} />}
+      {activeMerchant && <MerchantDrawer merchant={activeMerchant.merchant} category={activeMerchant.category} onClose={() => setActiveMerchant(null)} />}
       {!compact && (
         <div style={{
           display: 'grid', gridTemplateColumns: '36px 1fr 56px 96px 20px',
@@ -1430,7 +1443,7 @@ function TxnList({ txns, compact = false, onRecategorize, refreshFin, sortCol: i
               </div>
               <div className="txn-main">
                 <div className="txn-merchant">
-                  <span onClick={() => !isSplit && setActiveMerchant(t.merchant)} style={{
+                  <span onClick={() => !isSplit && setActiveMerchant({ merchant: t.merchant, category: t.category })} style={{
                     cursor: isSplit ? 'default' : 'pointer',
                     textDecoration: isSplit ? 'none' : 'underline dotted',
                     textUnderlineOffset: 2,
