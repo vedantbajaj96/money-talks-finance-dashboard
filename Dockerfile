@@ -20,11 +20,13 @@ WORKDIR /app
 # Create non-root user for runtime security
 RUN groupadd -g 1000 appuser && useradd -d /app -u 1000 -g appuser -s /sbin/nologin appuser
 
+# Install system deps: git for deploy pull, docker-cli to control host Docker
+RUN apt-get update && apt-get install -y --no-install-recommends git docker.io && \
+    rm -rf /var/lib/apt/lists/*
+
 # Install Python dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt && \
-    find /usr/local/lib/python3.14 -type f -name '*.pyc' -delete && \
-    find /usr/local/lib/python3.14 -type d -name '__pycache__' -delete
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY --chown=appuser:appuser . .

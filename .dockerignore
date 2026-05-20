@@ -1,5 +1,8 @@
+data/
 node_modules
 npm-debug.log
+server.log
+*.parquet
 .git
 .gitignore
 .dockerignore
