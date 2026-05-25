@@ -357,6 +357,7 @@ def sync_all_transactions(
     df     = existing_df.copy() if existing_df is not None and not existing_df.empty else pd.DataFrame()
     errors = []
     total_added = total_modified = total_removed = total_skipped = 0
+    full_resynced_sources: list[str] = []  # institutions that had cursor=None (full resync)
 
     for idx, item in enumerate(items):
         access_token = item["access_token"]
@@ -372,6 +373,8 @@ def sync_all_transactions(
 
         # First sync: save user annotations before dropping old rows so we can restore them
         saved_annotations: dict[str, dict] = {}
+        if cursor is None:
+            full_resynced_sources.append(inst_source)
         if cursor is None and not df.empty and "source" in df.columns:
             old_rows = df[df["source"] == inst_source]
             if "plaid_txn_id" in old_rows.columns:
@@ -415,16 +418,39 @@ def sync_all_transactions(
         #    add the transaction but flag it as a possible duplicate for the user to review.
         def _desc_fp(desc: str) -> str:
             import re
-            words = re.sub(r"[^a-z ]+", " ", str(desc).lower()).split()
-            return " ".join(w for w in words if len(w) > 2)[:60]
+            s = str(desc).lower().strip()
+            # Keep alphanumeric, collapse to lowercase words
+            words = re.sub(r"[^a-z0-9]+", " ", s).split()
+            filtered = " ".join(w for w in words if len(w) > 1)[:60]
+            return filtered if filtered else s[:60]  # fallback to raw if everything stripped
 
-        # Build fingerprint set from existing rows for cross-batch detection
-        existing_fps: dict = {}  # fp -> plaid_txn_id
+        # Build fingerprint set from existing rows for cross-batch detection.
+        # Key: (amount, desc_fp) -> list of (date_str, plaid_txn_id)
+        # Plaid pending→posted transitions shift the date by 1-3 days and assign a new ID,
+        # so we use a ±3-day window rather than exact date matching.
+        import datetime as _dt
+        existing_fps: dict = {}  # (amount, desc_fp) -> [(date_str, txn_id)]
         if not df.empty and "plaid_txn_id" in df.columns:
             inst_rows = df[df["source"] == inst_source]
             for _, r in inst_rows.iterrows():
-                fp = (str(r.get("date", ""))[:10], round(float(r.get("expense_amount", 0)), 2), _desc_fp(r.get("description", "")))
-                existing_fps[fp] = str(r.get("plaid_txn_id", ""))
+                key = (round(float(r.get("expense_amount", 0)), 2), _desc_fp(r.get("description", "")))
+                existing_fps.setdefault(key, []).append(
+                    (str(r.get("date", ""))[:10], str(r.get("plaid_txn_id", "")))
+                )
+
+        def _within_window(new_date_str: str, existing: list, days: int = 3) -> bool:
+            """Return True if any existing date is within `days` of new_date_str."""
+            try:
+                new_d = _dt.date.fromisoformat(new_date_str)
+            except ValueError:
+                return False
+            for date_str, _ in existing:
+                try:
+                    if abs((_dt.date.fromisoformat(date_str) - new_d).days) <= days:
+                        return True
+                except ValueError:
+                    pass
+            return False
 
         if added:
             deduped = []
@@ -441,12 +467,16 @@ def sync_all_transactions(
                     continue
                 seen_ids.add(txn_id)
 
-                # Cross-batch: same date+amount+description fingerprint as existing row → flag for review
-                fp = (str(row["date"])[:10], round(float(row["expense_amount"]), 2), _desc_fp(row["description"]))
-                if fp in existing_fps and existing_fps[fp] != txn_id:
-                    logger.info("[sync:%s] flagging possible duplicate: %s %.2f", inst_name, row["date"], row["expense_amount"])
-                    row["notes"] = f"⚠ Possible duplicate — review and delete if needed"
-                    row["category"] = "Pending Review"
+                # Cross-batch: same amount+description AND date within ±3 days of an existing row
+                # (covers Plaid pending→posted date shifts of 1-3 days)
+                key = (round(float(row["expense_amount"]), 2), _desc_fp(row["description"]))
+                existing_entries = existing_fps.get(key, [])
+                if existing_entries and _within_window(str(row["date"])[:10], existing_entries):
+                    # Only flag if the IDs are all different (not just same txn seen again)
+                    if all(eid != txn_id for _, eid in existing_entries):
+                        logger.info("[sync:%s] flagging possible duplicate (date-window): %s %.2f", inst_name, row["date"], row["expense_amount"])
+                        row["notes"] = "⚠ Possible duplicate — review and delete if needed"
+                        row["category"] = "Pending Review"
 
                 deduped.append(row)
             total_added += len(deduped)
@@ -483,7 +513,7 @@ def sync_all_transactions(
         items[idx]["cursor"] = next_cursor
         _save_items(items, data_dir)
 
-    stats = {"added": total_added, "modified": total_modified, "removed": total_removed, "duplicates_skipped": total_skipped}
+    stats = {"added": total_added, "modified": total_modified, "removed": total_removed, "duplicates_skipped": total_skipped, "full_resynced_sources": full_resynced_sources}
     return df, errors, stats
 
 
@@ -515,8 +545,8 @@ def get_investment_data(cfg: dict | None = None, data_dir: str | None = None) ->
     transactions = []
     errors       = []
 
-    start_date = (datetime.date.today() - datetime.timedelta(days=730)).isoformat()
-    end_date   = datetime.date.today().isoformat()
+    start_date = datetime.date.today() - datetime.timedelta(days=730)
+    end_date   = datetime.date.today()
 
     for item in _load_items(data_dir):
         inst_name = item.get("institution_name", "Unknown")
@@ -546,7 +576,7 @@ def get_investment_data(cfg: dict | None = None, data_dir: str | None = None) ->
                 })
         except Exception as exc:
             s = str(exc)
-            if "PRODUCTS_NOT_SUPPORTED" not in s and "ITEM_LOGIN_REQUIRED" not in s:
+            if "PRODUCTS_NOT_SUPPORTED" not in s and "ITEM_LOGIN_REQUIRED" not in s and "ADDITIONAL_CONSENT_REQUIRED" not in s:
                 errors.append(f"{inst_name} holdings: {exc}")
 
         # --- Investment transactions ---
@@ -577,7 +607,7 @@ def get_investment_data(cfg: dict | None = None, data_dir: str | None = None) ->
                 })
         except Exception as exc:
             s = str(exc)
-            if "PRODUCTS_NOT_SUPPORTED" not in s and "ITEM_LOGIN_REQUIRED" not in s:
+            if "PRODUCTS_NOT_SUPPORTED" not in s and "ITEM_LOGIN_REQUIRED" not in s and "ADDITIONAL_CONSENT_REQUIRED" not in s:
                 errors.append(f"{inst_name} transactions: {exc}")
 
     # Sort transactions newest-first
