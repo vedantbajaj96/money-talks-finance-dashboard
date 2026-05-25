@@ -485,3 +485,101 @@ def sync_all_transactions(
 
     stats = {"added": total_added, "modified": total_modified, "removed": total_removed, "duplicates_skipped": total_skipped}
     return df, errors, stats
+
+
+def _plaid_type_to_asset_class(sec_type: str) -> str:
+    return {
+        "equity":       "Equities",
+        "etf":          "ETF",
+        "mutual fund":  "Mutual Fund",
+        "fixed income": "Bonds",
+        "cash":         "Cash",
+        "cryptocurrency": "Crypto",
+        "derivative":   "Derivatives",
+        "loan":         "Loans",
+    }.get(str(sec_type).lower(), "Other")
+
+
+def get_investment_data(cfg: dict | None = None, data_dir: str | None = None) -> dict:
+    """
+    Fetch holdings and investment transactions for all connected items.
+    Items that don't support investments are silently skipped.
+    Returns {"holdings": [...], "transactions": [...], "errors": [...]}.
+    """
+    import datetime
+    from plaid.model.investments_holdings_get_request import InvestmentsHoldingsGetRequest
+    from plaid.model.investments_transactions_get_request import InvestmentsTransactionsGetRequest
+
+    client   = _get_api_client(cfg)
+    holdings     = []
+    transactions = []
+    errors       = []
+
+    start_date = (datetime.date.today() - datetime.timedelta(days=730)).isoformat()
+    end_date   = datetime.date.today().isoformat()
+
+    for item in _load_items(data_dir):
+        inst_name = item.get("institution_name", "Unknown")
+
+        # --- Holdings ---
+        try:
+            h_resp     = client.investments_holdings_get(
+                InvestmentsHoldingsGetRequest(access_token=item["access_token"])
+            )
+            sec_by_id  = {s.security_id: s for s in (h_resp.securities or [])}
+            acct_by_id = {a.account_id: a for a in (h_resp.accounts  or [])}
+
+            for h in (h_resp.holdings or []):
+                sec   = sec_by_id.get(h.security_id)
+                acct  = acct_by_id.get(h.account_id)
+                ticker = (sec.ticker_symbol if sec else None) or None
+                holdings.append({
+                    "ticker":      ticker or "—",
+                    "name":        (sec.name if sec else None) or ticker or "Unknown",
+                    "value":       float(h.institution_value or 0),
+                    "cost_basis":  float(h.cost_basis) if h.cost_basis is not None else None,
+                    "shares":      float(h.quantity or 0),
+                    "price":       float(h.institution_price or 0),
+                    "asset_class": _plaid_type_to_asset_class(str(sec.type) if sec else "other"),
+                    "account":     (acct.name if acct else None) or inst_name,
+                    "institution": inst_name,
+                })
+        except Exception as exc:
+            s = str(exc)
+            if "PRODUCTS_NOT_SUPPORTED" not in s and "ITEM_LOGIN_REQUIRED" not in s:
+                errors.append(f"{inst_name} holdings: {exc}")
+
+        # --- Investment transactions ---
+        try:
+            t_resp    = client.investments_transactions_get(
+                InvestmentsTransactionsGetRequest(
+                    access_token=item["access_token"],
+                    start_date=start_date,
+                    end_date=end_date,
+                )
+            )
+            sec_by_id = {s.security_id: s for s in (t_resp.securities or [])}
+
+            for t in (t_resp.investment_transactions or []):
+                sec    = sec_by_id.get(t.security_id) if t.security_id else None
+                ticker = (sec.ticker_symbol if sec else None) or None
+                transactions.append({
+                    "id":          t.investment_transaction_id,
+                    "date":        str(t.date),
+                    "type":        str(t.type),
+                    "subtype":     str(t.subtype) if t.subtype else None,
+                    "name":        t.name or (sec.name if sec else None) or ticker or "Unknown",
+                    "ticker":      ticker,
+                    "amount":      float(t.amount or 0),
+                    "shares":      float(t.quantity) if t.quantity else None,
+                    "price":       float(t.price)    if t.price    else None,
+                    "institution": inst_name,
+                })
+        except Exception as exc:
+            s = str(exc)
+            if "PRODUCTS_NOT_SUPPORTED" not in s and "ITEM_LOGIN_REQUIRED" not in s:
+                errors.append(f"{inst_name} transactions: {exc}")
+
+    # Sort transactions newest-first
+    transactions.sort(key=lambda t: t["date"], reverse=True)
+    return {"holdings": holdings, "transactions": transactions, "errors": errors}

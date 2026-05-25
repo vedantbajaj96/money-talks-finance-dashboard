@@ -181,6 +181,41 @@ def plaid_sync_status(current_user: str = Depends(get_current_user)) -> dict:
     return {"last_sync": last_sync, "needs_sync": needs_sync}
 
 
+@router.get("/api/investments")
+def get_investments(current_user: str = Depends(get_current_user)) -> dict:
+    import datetime, json
+    try:
+        from core.plaid_client import get_investment_data, is_configured
+        cfg = load_config(current_user)
+        if not is_configured(cfg):
+            return {"holdings": [], "transactions": [], "snapshots": [], "errors": [], "configured": False}
+
+        data = get_investment_data(cfg=cfg, data_dir=str(user_dir(current_user)))
+        data["configured"] = True
+
+        # Record daily portfolio value snapshot for historical chart
+        snap_path = user_dir(current_user) / "investment_snapshots.json"
+        snapshots = json.loads(snap_path.read_text()) if snap_path.exists() else []
+
+        total = sum(h["value"] for h in data["holdings"])
+        today = datetime.date.today().isoformat()
+
+        # Replace today's entry if present, otherwise append
+        snapshots = [s for s in snapshots if s["date"] != today]
+        if total > 0:
+            snapshots.append({"date": today, "value": total})
+
+        # Keep last 2 years, sorted
+        cutoff = (datetime.date.today() - datetime.timedelta(days=730)).isoformat()
+        snapshots = sorted([s for s in snapshots if s["date"] >= cutoff], key=lambda s: s["date"])
+        snap_path.write_text(json.dumps(snapshots))
+
+        data["snapshots"] = snapshots
+        return data
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
 @router.delete("/api/plaid/accounts/{item_id}")
 async def plaid_remove_account(item_id: str, current_user: str = Depends(get_current_user)) -> dict:
     try:

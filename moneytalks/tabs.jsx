@@ -4873,44 +4873,17 @@ function AdminTab() {
 // InvestmentsTab — portfolio overview (mock data, real API coming soon)
 // ═══════════════════════════════════════════════════════════════════
 
-const MOCK_HOLDINGS = [
-  { ticker: 'VTI',  name: 'US Stocks',        value: 42300, costBasis: 35000, shares: 168.2, price: 251.5, assetClass: 'US Stocks' },
-  { ticker: 'VXUS', name: 'Intl Stocks',       value: 18900, costBasis: 17000, shares: 298.1, price: 63.4,  assetClass: 'International' },
-  { ticker: 'BND',  name: 'US Bonds',          value: 12400, costBasis: 13000, shares: 165.3, price: 75.0,  assetClass: 'Bonds' },
-  { ticker: 'BNDX', name: 'Intl Bonds',        value: 6200,  costBasis: 6500,  shares: 114.8, price: 54.0,  assetClass: 'Bonds' },
-  { ticker: 'VNQ',  name: 'Real Estate',       value: 4800,  costBasis: 4200,  shares: 50.5,  price: 95.0,  assetClass: 'Real Estate' },
-  { ticker: 'PDBC', name: 'Natural Resources', value: 3200,  costBasis: 3500,  shares: 187.2, price: 17.1,  assetClass: 'Commodities' },
-  { ticker: 'CASH', name: 'Cash',              value: 2100,  costBasis: 2100,  shares: null,  price: null,  assetClass: 'Cash' },
-];
-
-const MOCK_INV_TRANSACTIONS = [
-  { date: '2026-05-01', type: 'contribution', security: 'Portfolio', amount: 1000, shares: null, price: null },
-  { date: '2026-04-15', type: 'buy',          security: 'VTI',       amount: 502,  shares: 2.0,  price: 251.0 },
-  { date: '2026-04-15', type: 'buy',          security: 'VXUS',      amount: 253,  shares: 4.0,  price: 63.2 },
-  { date: '2026-04-01', type: 'contribution', security: 'Portfolio', amount: 1000, shares: null, price: null },
-  { date: '2026-03-20', type: 'dividend',     security: 'BND',       amount: 42,   shares: null, price: null },
-  { date: '2026-03-15', type: 'buy',          security: 'BND',       amount: 375,  shares: 5.0,  price: 75.0 },
-  { date: '2026-03-01', type: 'contribution', security: 'Portfolio', amount: 1000, shares: null, price: null },
-  { date: '2026-02-20', type: 'dividend',     security: 'VTI',       amount: 85,   shares: null, price: null },
-  { date: '2026-02-01', type: 'contribution', security: 'Portfolio', amount: 1000, shares: null, price: null },
-  { date: '2026-01-15', type: 'buy',          security: 'VNQ',       amount: 285,  shares: 3.0,  price: 95.0 },
-  { date: '2026-01-01', type: 'contribution', security: 'Portfolio', amount: 1000, shares: null, price: null },
-];
-
-const MOCK_MONTHLY_VALUES = [
-  { month: '06', value: 72400 }, { month: '07', value: 74100 }, { month: '08', value: 71800 },
-  { month: '09', value: 75300 }, { month: '10', value: 78200 }, { month: '11', value: 77600 },
-  { month: '12', value: 80100 }, { month: '01', value: 82400 }, { month: '02', value: 83900 },
-  { month: '03', value: 85100 }, { month: '04', value: 87500 }, { month: '05', value: 89900 },
-];
 
 const ASSET_COLORS = {
-  'US Stocks':    '#5ec98a',
-  'International':'#67e8f9',
-  'Bonds':        '#a78bfa',
-  'Real Estate':  '#fbbf24',
-  'Commodities':  '#f97316',
-  'Cash':         '#94a3b8',
+  'Equities':    '#5ec98a',
+  'ETF':         '#67e8f9',
+  'Mutual Fund': '#38bdf8',
+  'Bonds':       '#a78bfa',
+  'Cash':        '#94a3b8',
+  'Crypto':      '#fbbf24',
+  'Real Estate': '#f97316',
+  'Derivatives': '#f43f5e',
+  'Other':       '#6b7280',
 };
 
 function AllocationDonut({ slices, total }) {
@@ -4944,79 +4917,122 @@ function AllocationDonut({ slices, total }) {
 }
 
 function InvestmentsTab() {
-  const holdings = MOCK_HOLDINGS;
-  const transactions = MOCK_INV_TRANSACTIONS;
-  const monthlyValues = MOCK_MONTHLY_VALUES;
+  const [invData, setInvData]   = useState(null);
+  const [loading, setLoading]   = useState(true);
+  const [error,   setError]     = useState(null);
 
-  const totalValue     = holdings.reduce((s, h) => s + h.value, 0);
-  const totalCost      = holdings.reduce((s, h) => s + h.costBasis, 0);
-  const totalGain      = totalValue - totalCost;
-  const totalGainPct   = totalCost > 0 ? (totalGain / totalCost) * 100 : 0;
-  const ytdContribs    = transactions.filter(t => t.type === 'contribution' && t.date.startsWith('2026')).reduce((s, t) => s + t.amount, 0);
-  const ytdDividends   = transactions.filter(t => t.type === 'dividend'     && t.date.startsWith('2026')).reduce((s, t) => s + t.amount, 0);
-
-  // Asset allocation
-  const byClass = {};
-  holdings.forEach(h => { byClass[h.assetClass] = (byClass[h.assetClass] || 0) + h.value; });
-  const allocSlices = Object.entries(byClass).map(([label, value]) => ({
-    label, value, color: ASSET_COLORS[label] || '#94a3b8',
-  })).sort((a, b) => b.value - a.value);
-
-  // Monthly chart
-  const maxMonthly = Math.max(...monthlyValues.map(m => m.value), 1);
+  useEffect(() => {
+    fetch('/api/investments')
+      .then(r => r.json())
+      .then(d => { setInvData(d); setLoading(false); })
+      .catch(e => { setError(String(e)); setLoading(false); });
+  }, []);
 
   const [holdingSort, setHoldingSort] = useState({ col: 'value', dir: 'desc' });
-  const sortedHoldings = [...holdings].sort((a, b) => {
-    const v = holdingSort.col === 'value' ? b.value - a.value
-            : holdingSort.col === 'gain'  ? (b.value - b.costBasis) - (a.value - a.costBasis)
-            : holdingSort.col === 'gainPct' ? ((b.value - b.costBasis) / b.costBasis) - ((a.value - a.costBasis) / a.costBasis)
-            : 0;
-    return holdingSort.dir === 'desc' ? v : -v;
-  });
-
   function toggleHoldingSort(col) {
     setHoldingSort(prev => prev.col === col
       ? { col, dir: prev.dir === 'desc' ? 'asc' : 'desc' }
       : { col, dir: 'desc' });
   }
-
   const SortIcon = ({ col }) => (
     holdingSort.col === col
       ? <span style={{ fontSize: 10, color: 'var(--accent)' }}>{holdingSort.dir === 'desc' ? '↓' : '↑'}</span>
       : <span style={{ fontSize: 10, opacity: 0.3 }}>↕</span>
   );
 
+  const txnTypeLabel = (type, subtype) => {
+    if (type === 'cash') return subtype || 'cash';
+    return type;
+  };
   const txnTypeStyle = (type) => {
     const map = {
-      contribution: { bg: 'color-mix(in srgb, var(--accent) 12%, transparent)', color: 'var(--accent)' },
-      buy:          { bg: 'color-mix(in srgb, #67e8f9 15%, transparent)',        color: '#22d3ee' },
-      sell:         { bg: 'color-mix(in srgb, var(--terra) 12%, transparent)',   color: 'var(--terra)' },
-      dividend:     { bg: 'color-mix(in srgb, #fbbf24 15%, transparent)',        color: '#d97706' },
-      transfer:     { bg: 'color-mix(in srgb, var(--ink-4) 15%, transparent)',   color: 'var(--ink-3)' },
+      cash:     { bg: 'color-mix(in srgb, var(--accent) 12%, transparent)', color: 'var(--accent)' },
+      buy:      { bg: 'color-mix(in srgb, #67e8f9 15%, transparent)',        color: '#22d3ee' },
+      sell:     { bg: 'color-mix(in srgb, var(--terra) 12%, transparent)',   color: 'var(--terra)' },
+      dividend: { bg: 'color-mix(in srgb, #fbbf24 15%, transparent)',        color: '#d97706' },
+      fee:      { bg: 'color-mix(in srgb, var(--terra) 10%, transparent)',   color: 'var(--terra)' },
+      transfer: { bg: 'color-mix(in srgb, var(--ink-4) 15%, transparent)',   color: 'var(--ink-3)' },
     };
     return map[type] || map.transfer;
   };
 
+  if (loading) return (
+    <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-4)', fontSize: 14 }}>
+      Loading investments…
+    </div>
+  );
+  if (error) return (
+    <div style={{ padding: 48, textAlign: 'center', color: 'var(--terra)', fontSize: 14 }}>
+      Failed to load: {error}
+    </div>
+  );
+  if (!invData?.configured) return (
+    <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-4)', fontSize: 14 }}>
+      Connect a Plaid account in Settings to see investments.
+    </div>
+  );
+
+  const holdings     = invData.holdings     || [];
+  const transactions = invData.transactions || [];
+  const snapshots    = invData.snapshots    || [];
+
+  const thisYear   = new Date().getFullYear().toString();
+  const totalValue = holdings.reduce((s, h) => s + h.value, 0);
+  const totalCost  = holdings.reduce((s, h) => s + (h.cost_basis ?? 0), 0);
+  const knownCost  = holdings.some(h => h.cost_basis != null);
+  const totalGain  = knownCost ? totalValue - totalCost : null;
+  const totalGainPct = (totalGain != null && totalCost > 0) ? (totalGain / totalCost) * 100 : null;
+  const ytdContribs  = transactions.filter(t => t.type === 'cash'     && t.date.startsWith(thisYear)).reduce((s, t) => s + Math.abs(t.amount), 0);
+  const ytdDividends = transactions.filter(t => t.type === 'dividend' && t.date.startsWith(thisYear)).reduce((s, t) => s + Math.abs(t.amount), 0);
+
+  // Asset allocation
+  const byClass = {};
+  holdings.forEach(h => { byClass[h.asset_class] = (byClass[h.asset_class] || 0) + h.value; });
+  const allocSlices = Object.entries(byClass).map(([label, value]) => ({
+    label, value, color: ASSET_COLORS[label] || '#94a3b8',
+  })).sort((a, b) => b.value - a.value);
+
+  // Monthly portfolio value chart — one point per month (latest snapshot in each month)
+  const monthlyMap = {};
+  snapshots.forEach(s => {
+    const m = s.date.slice(0, 7); // "2026-05"
+    monthlyMap[m] = s.value;       // last entry per month wins (sorted asc)
+  });
+  const monthlyValues = Object.entries(monthlyMap).sort(([a], [b]) => a.localeCompare(b));
+  const maxMonthly    = Math.max(...monthlyValues.map(([, v]) => v), 1);
+
+  const sortedHoldings = [...holdings].sort((a, b) => {
+    const gainA = a.cost_basis != null ? a.value - a.cost_basis : 0;
+    const gainB = b.cost_basis != null ? b.value - b.cost_basis : 0;
+    const v = holdingSort.col === 'value'   ? b.value - a.value
+            : holdingSort.col === 'gain'    ? gainB - gainA
+            : holdingSort.col === 'gainPct' ? (b.cost_basis > 0 ? gainB / b.cost_basis : 0) - (a.cost_basis > 0 ? gainA / a.cost_basis : 0)
+            : 0;
+    return holdingSort.dir === 'desc' ? v : -v;
+  });
+
   return (
     <div style={{ padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: 24 }}>
 
-      {/* Mock data banner */}
-      <div style={{
-        background: 'color-mix(in srgb, #fbbf24 15%, transparent)',
-        border: '1px solid color-mix(in srgb, #fbbf24 40%, transparent)',
-        borderRadius: 10, padding: '10px 16px',
-        fontSize: 13, color: '#92400e', display: 'flex', alignItems: 'center', gap: 8,
-      }}>
-        <span style={{ fontWeight: 700 }}>Demo data</span> — Wealthfront connection coming soon. Numbers shown are placeholders.
-      </div>
+      {invData.errors?.length > 0 && (
+        <div style={{
+          background: 'color-mix(in srgb, var(--terra) 10%, transparent)',
+          border: '1px solid color-mix(in srgb, var(--terra) 30%, transparent)',
+          borderRadius: 10, padding: '10px 16px', fontSize: 13, color: 'var(--terra)',
+        }}>
+          {invData.errors.join(' · ')}
+        </div>
+      )}
 
       {/* Summary cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
         {[
-          { label: 'Portfolio Value',    value: fmtMoney(totalValue),             sub: null },
-          { label: 'Unrealized Gain',    value: fmtMoney(Math.abs(totalGain)),    sub: `${totalGain >= 0 ? '+' : '−'}${Math.abs(totalGainPct).toFixed(1)}% all time`, positive: totalGain >= 0, negative: totalGain < 0 },
-          { label: 'YTD Contributions',  value: fmtMoney(ytdContribs),            sub: '2026' },
-          { label: 'YTD Dividends',      value: fmtMoney(ytdDividends),           sub: '2026' },
+          { label: 'Portfolio Value',   value: fmtMoney(totalValue),                               sub: null },
+          { label: 'Unrealized Gain',   value: totalGain != null ? fmtMoney(Math.abs(totalGain)) : '—',
+            sub: totalGainPct != null ? `${totalGain >= 0 ? '+' : '−'}${Math.abs(totalGainPct).toFixed(1)}% all time` : 'Cost basis unavailable',
+            positive: totalGain > 0, negative: totalGain < 0 },
+          { label: 'YTD Contributions', value: fmtMoney(ytdContribs),  sub: thisYear },
+          { label: 'YTD Dividends',     value: fmtMoney(ytdDividends), sub: thisYear },
         ].map(({ label, value, sub, positive, negative }) => (
           <div key={label} style={{
             background: 'var(--surface)', border: '1px solid var(--line)',
@@ -5032,155 +5048,181 @@ function InvestmentsTab() {
         ))}
       </div>
 
-      {/* Allocation + Monthly chart */}
+      {/* Allocation + Portfolio value chart */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
 
         {/* Asset Allocation */}
         <div style={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 14, padding: '20px 24px' }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', marginBottom: 16 }}>Asset Allocation</div>
-          <div style={{ display: 'flex', gap: 24, alignItems: 'center' }}>
-            <AllocationDonut slices={allocSlices} total={totalValue} />
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flex: 1 }}>
-              {allocSlices.map(({ label, value, color }) => (
-                <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <div style={{ width: 10, height: 10, borderRadius: 3, background: color, flexShrink: 0 }} />
-                  <div style={{ fontSize: 12, color: 'var(--ink-2)', flex: 1 }}>{label}</div>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>
-                    {((value / totalValue) * 100).toFixed(0)}%
+          {allocSlices.length > 0 ? (
+            <div style={{ display: 'flex', gap: 24, alignItems: 'center' }}>
+              <AllocationDonut slices={allocSlices} total={totalValue} />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flex: 1 }}>
+                {allocSlices.map(({ label, value, color }) => (
+                  <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ width: 10, height: 10, borderRadius: 3, background: color, flexShrink: 0 }} />
+                    <div style={{ fontSize: 12, color: 'var(--ink-2)', flex: 1 }}>{label}</div>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>
+                      {((value / totalValue) * 100).toFixed(0)}%
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
+          ) : <div style={{ color: 'var(--ink-4)', fontSize: 13 }}>No holdings data</div>}
         </div>
 
         {/* Portfolio value over time */}
         <div style={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 14, padding: '20px 24px' }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', marginBottom: 16 }}>Portfolio Value — Last 12 Months</div>
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: 100 }}>
-            {monthlyValues.map(({ month, value }) => (
-              <div key={month} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                <div style={{
-                  width: '100%', borderRadius: 4,
-                  background: 'color-mix(in srgb, var(--accent) 70%, transparent)',
-                  height: `${Math.max(4, (value / maxMonthly) * 80)}px`,
-                  transition: 'height 0.2s',
-                }} title={fmtMoney(value)} />
-                <div style={{ fontSize: 9, color: 'var(--ink-4)' }}>{month}</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', marginBottom: 4 }}>Portfolio Value Over Time</div>
+          {monthlyValues.length < 2 ? (
+            <div style={{ color: 'var(--ink-4)', fontSize: 12, marginTop: 12 }}>
+              History builds as you visit this tab over time. Check back next month.
+            </div>
+          ) : (
+            <>
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: 100, marginTop: 16 }}>
+                {monthlyValues.map(([month, value]) => (
+                  <div key={month} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                    <div style={{
+                      width: '100%', borderRadius: 4,
+                      background: 'color-mix(in srgb, var(--accent) 70%, transparent)',
+                      height: `${Math.max(4, (value / maxMonthly) * 80)}px`,
+                      transition: 'height 0.2s',
+                    }} title={fmtMoney(value)} />
+                    <div style={{ fontSize: 9, color: 'var(--ink-4)' }}>{month.slice(5)}</div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10, fontSize: 11, color: 'var(--ink-4)' }}>
-            <span>{fmtMoney(monthlyValues[0].value)}</span>
-            <span style={{ color: 'var(--accent)', fontWeight: 600 }}>+{fmtMoney(monthlyValues[monthlyValues.length - 1].value - monthlyValues[0].value)} ({(((monthlyValues[monthlyValues.length - 1].value / monthlyValues[0].value) - 1) * 100).toFixed(1)}%)</span>
-          </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10, fontSize: 11, color: 'var(--ink-4)' }}>
+                <span>{fmtMoney(monthlyValues[0][1])}</span>
+                {monthlyValues.length >= 2 && (() => {
+                  const delta = monthlyValues[monthlyValues.length - 1][1] - monthlyValues[0][1];
+                  const pct   = (delta / monthlyValues[0][1]) * 100;
+                  return <span style={{ color: delta >= 0 ? 'var(--accent)' : 'var(--terra)', fontWeight: 600 }}>
+                    {delta >= 0 ? '+' : '−'}{fmtMoney(Math.abs(delta))} ({pct >= 0 ? '+' : ''}{pct.toFixed(1)}%)
+                  </span>;
+                })()}
+              </div>
+            </>
+          )}
         </div>
       </div>
 
       {/* Holdings table */}
-      <div style={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 14, overflow: 'hidden' }}>
-        <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Holdings</div>
-          <div style={{ fontSize: 12, color: 'var(--ink-4)' }}>{holdings.length} positions</div>
+      {holdings.length > 0 && (
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 14, overflow: 'hidden' }}>
+          <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Holdings</div>
+            <div style={{ fontSize: 12, color: 'var(--ink-4)' }}>{holdings.length} positions</div>
+          </div>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: 'var(--surface-3)' }}>
+                  {[
+                    { label: 'Ticker',      col: null,       align: 'left'  },
+                    { label: 'Asset Class', col: null,       align: 'left'  },
+                    { label: 'Account',     col: null,       align: 'left'  },
+                    { label: 'Shares',      col: null,       align: 'right' },
+                    { label: 'Price',       col: null,       align: 'right' },
+                    { label: 'Value',       col: 'value',    align: 'right' },
+                    { label: 'Gain/Loss',   col: 'gain',     align: 'right' },
+                    { label: '% Return',    col: 'gainPct',  align: 'right' },
+                  ].map(({ label, col, align }) => (
+                    <th key={label} onClick={() => col && toggleHoldingSort(col)} style={{
+                      padding: '10px 16px', textAlign: align, fontWeight: 600,
+                      fontSize: 11, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.05em',
+                      cursor: col ? 'pointer' : 'default', whiteSpace: 'nowrap',
+                    }}>
+                      {label} {col && <SortIcon col={col} />}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {sortedHoldings.map((h, i) => {
+                  const hasCost  = h.cost_basis != null;
+                  const gain     = hasCost ? h.value - h.cost_basis : null;
+                  const gainPct  = (hasCost && h.cost_basis > 0) ? (gain / h.cost_basis) * 100 : null;
+                  const isPos    = gain >= 0;
+                  const color    = ASSET_COLORS[h.asset_class] || '#94a3b8';
+                  return (
+                    <tr key={i} style={{ borderTop: i > 0 ? '1px solid var(--line)' : 'none' }}>
+                      <td style={{ padding: '12px 16px' }}>
+                        <div style={{ fontWeight: 700, color: 'var(--ink)' }}>{h.ticker}</div>
+                        <div style={{ fontSize: 11, color: 'var(--ink-4)' }}>{h.name}</div>
+                      </td>
+                      <td style={{ padding: '12px 16px' }}>
+                        <span style={{
+                          fontSize: 11, padding: '2px 8px', borderRadius: 99, fontWeight: 600,
+                          background: `${color}22`, color,
+                        }}>{h.asset_class}</span>
+                      </td>
+                      <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--ink-3)' }}>{h.account}</td>
+                      <td style={{ padding: '12px 16px', textAlign: 'right', color: 'var(--ink-2)', fontVariantNumeric: 'tabular-nums' }}>
+                        {h.shares ? h.shares.toFixed(3) : '—'}
+                      </td>
+                      <td style={{ padding: '12px 16px', textAlign: 'right', color: 'var(--ink-2)', fontVariantNumeric: 'tabular-nums' }}>
+                        {h.price ? `$${h.price.toFixed(2)}` : '—'}
+                      </td>
+                      <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 600, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>
+                        {fmtMoney(h.value)}
+                      </td>
+                      <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: gain == null ? 'var(--ink-4)' : isPos ? 'var(--accent)' : 'var(--terra)' }}>
+                        {gain == null ? '—' : `${isPos ? '+' : '−'}${fmtMoney(Math.abs(gain))}`}
+                      </td>
+                      <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: gainPct == null ? 'var(--ink-4)' : isPos ? 'var(--accent)' : 'var(--terra)' }}>
+                        {gainPct == null ? '—' : `${isPos ? '+' : ''}${gainPct.toFixed(1)}%`}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-            <thead>
-              <tr style={{ background: 'var(--surface-3)' }}>
-                {[
-                  { label: 'Ticker',       col: null,       align: 'left'  },
-                  { label: 'Asset Class',  col: null,       align: 'left'  },
-                  { label: 'Shares',       col: null,       align: 'right' },
-                  { label: 'Price',        col: null,       align: 'right' },
-                  { label: 'Value',        col: 'value',    align: 'right' },
-                  { label: 'Gain / Loss',  col: 'gain',     align: 'right' },
-                  { label: '% Return',     col: 'gainPct',  align: 'right' },
-                ].map(({ label, col, align }) => (
-                  <th key={label} onClick={() => col && toggleHoldingSort(col)} style={{
-                    padding: '10px 16px', textAlign: align, fontWeight: 600,
-                    fontSize: 11, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.05em',
-                    cursor: col ? 'pointer' : 'default', whiteSpace: 'nowrap',
-                  }}>
-                    {label} {col && <SortIcon col={col} />}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {sortedHoldings.map((h, i) => {
-                const gain    = h.value - h.costBasis;
-                const gainPct = h.costBasis > 0 ? (gain / h.costBasis) * 100 : 0;
-                const isPos   = gain >= 0;
-                return (
-                  <tr key={h.ticker} style={{ borderTop: i > 0 ? '1px solid var(--line)' : 'none' }}>
-                    <td style={{ padding: '12px 16px' }}>
-                      <div style={{ fontWeight: 700, color: 'var(--ink)' }}>{h.ticker}</div>
-                      <div style={{ fontSize: 11, color: 'var(--ink-4)' }}>{h.name}</div>
-                    </td>
-                    <td style={{ padding: '12px 16px' }}>
-                      <span style={{
-                        fontSize: 11, padding: '2px 8px', borderRadius: 99, fontWeight: 600,
-                        background: `${ASSET_COLORS[h.assetClass]}22`,
-                        color: ASSET_COLORS[h.assetClass],
-                      }}>{h.assetClass}</span>
-                    </td>
-                    <td style={{ padding: '12px 16px', textAlign: 'right', color: 'var(--ink-2)', fontVariantNumeric: 'tabular-nums' }}>
-                      {h.shares != null ? h.shares.toFixed(2) : '—'}
-                    </td>
-                    <td style={{ padding: '12px 16px', textAlign: 'right', color: 'var(--ink-2)', fontVariantNumeric: 'tabular-nums' }}>
-                      {h.price != null ? `$${h.price.toFixed(2)}` : '—'}
-                    </td>
-                    <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 600, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>
-                      {fmtMoney(h.value)}
-                    </td>
-                    <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: isPos ? 'var(--accent)' : 'var(--terra)' }}>
-                      {isPos ? '+' : '−'}{fmtMoney(Math.abs(gain))}
-                    </td>
-                    <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: isPos ? 'var(--accent)' : 'var(--terra)' }}>
-                      {isPos ? '+' : ''}{gainPct.toFixed(1)}%
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      )}
 
       {/* Investment transactions */}
-      <div style={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 14, overflow: 'hidden' }}>
-        <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--line)' }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Activity</div>
-        </div>
-        <div>
-          {transactions.map((t, i) => {
-            const style = txnTypeStyle(t.type);
-            return (
-              <div key={i} style={{
-                display: 'flex', alignItems: 'center', gap: 16,
-                padding: '12px 24px', borderTop: i > 0 ? '1px solid var(--line)' : 'none',
-              }}>
-                <div style={{ fontSize: 12, color: 'var(--ink-4)', fontVariantNumeric: 'tabular-nums', width: 80, flexShrink: 0 }}>
-                  {t.date.slice(5)}
-                </div>
-                <span style={{
-                  fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 99,
-                  background: style.bg, color: style.color, textTransform: 'capitalize', flexShrink: 0, width: 90, textAlign: 'center',
-                }}>{t.type}</span>
-                <div style={{ flex: 1, fontSize: 13, color: 'var(--ink-2)' }}>{t.security}</div>
-                {t.shares != null && (
-                  <div style={{ fontSize: 12, color: 'var(--ink-4)', fontVariantNumeric: 'tabular-nums' }}>
-                    {t.shares} sh @ ${t.price}
+      {transactions.length > 0 && (
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 14, overflow: 'hidden' }}>
+          <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--line)' }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Activity</div>
+          </div>
+          <div>
+            {transactions.map((t, i) => {
+              const style = txnTypeStyle(t.type);
+              const label = txnTypeLabel(t.type, t.subtype);
+              const isSell = t.type === 'sell' || (t.type === 'cash' && t.amount > 0);
+              return (
+                <div key={t.id || i} style={{
+                  display: 'flex', alignItems: 'center', gap: 16,
+                  padding: '12px 24px', borderTop: i > 0 ? '1px solid var(--line)' : 'none',
+                }}>
+                  <div style={{ fontSize: 12, color: 'var(--ink-4)', fontVariantNumeric: 'tabular-nums', width: 80, flexShrink: 0 }}>
+                    {t.date.slice(5)}
                   </div>
-                )}
-                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums', textAlign: 'right', minWidth: 70 }}>
-                  {t.type === 'sell' ? '−' : '+'}{fmtMoney(t.amount)}
+                  <span style={{
+                    fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 99,
+                    background: style.bg, color: style.color, textTransform: 'capitalize',
+                    flexShrink: 0, width: 100, textAlign: 'center',
+                  }}>{label}</span>
+                  <div style={{ flex: 1, fontSize: 13, color: 'var(--ink-2)' }}>{t.name}</div>
+                  {t.shares != null && t.price != null && (
+                    <div style={{ fontSize: 12, color: 'var(--ink-4)', fontVariantNumeric: 'tabular-nums' }}>
+                      {Math.abs(t.shares).toFixed(3)} sh @ ${t.price.toFixed(2)}
+                    </div>
+                  )}
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums', textAlign: 'right', minWidth: 80 }}>
+                    {isSell ? '−' : '+'}{fmtMoney(Math.abs(t.amount))}
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
-      </div>
+      )}
 
     </div>
   );
