@@ -159,6 +159,9 @@ async def log_requests(request: Request, call_next):
         raise
 
 
+from core.scheduler import start as _start_scheduler
+_start_scheduler()
+
 app.include_router(auth_router)
 app.include_router(admin_router)
 app.include_router(data_router)

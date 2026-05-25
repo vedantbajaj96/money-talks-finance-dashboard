@@ -3564,6 +3564,7 @@ function SettingsTab({ refreshFin }) {
   const [saved, setSaved]                 = useState(false);
   const [repairing, setRepairing]         = useState(false);
   const [repairResult, setRepairResult]   = useState(null);
+  const [syncInterval, setSyncInterval]   = useState(0);
 
   useEffect(() => {
     fetch('/api/config').then(r => r.json()).then(d => {
@@ -3571,6 +3572,7 @@ function SettingsTab({ refreshFin }) {
       setProvider(d.preferred_provider || 'claude');
       if (d.plaid_environment) setPlaidEnv(d.plaid_environment);
       if (d.plaid_redirect_uri) setPlaidRedirect(d.plaid_redirect_uri);
+      setSyncInterval(d.auto_sync_interval || 0);
     });
   }, []);
 
@@ -3597,7 +3599,7 @@ function SettingsTab({ refreshFin }) {
 
   async function saveConfig() {
     setSaving(true);
-    const body = { preferred_provider: provider, plaid_environment: plaidEnv };
+    const body = { preferred_provider: provider, plaid_environment: plaidEnv, auto_sync_interval: syncInterval };
     if (claudeKey)    body.anthropic_api_key  = claudeKey;
     if (geminiKey)    body.gemini_api_key     = geminiKey;
     if (plaidId)      body.plaid_client_id    = plaidId;
@@ -3741,6 +3743,47 @@ function SettingsTab({ refreshFin }) {
       </Card>
 
       <PlaidSyncCard />
+
+      <Card title="Auto-Sync Schedule">
+        <div style={{ display: 'grid', gap: 14 }}>
+          <div style={{ fontSize: 13, color: 'var(--ink-3)', lineHeight: 1.6 }}>
+            Automatically sync your accounts in the background. New transactions will appear in the Review tab when you next open the app.
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {[
+              { value: 0,  label: 'Off' },
+              { value: 6,  label: 'Every 6h' },
+              { value: 12, label: 'Every 12h' },
+              { value: 24, label: 'Every 24h' },
+            ].map(({ value, label }) => (
+              <button key={value} onClick={() => setSyncInterval(value)} style={{
+                padding: '8px 18px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+                cursor: 'pointer', border: '1px solid',
+                borderColor: syncInterval === value ? 'var(--accent)' : 'var(--line)',
+                background: syncInterval === value ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'var(--surface-3)',
+                color: syncInterval === value ? 'var(--accent)' : 'var(--ink-3)',
+              }}>{label}</button>
+            ))}
+          </div>
+          <button onClick={async () => {
+            setSaving(true);
+            await fetch('/api/config', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ auto_sync_interval: syncInterval }),
+            });
+            setSaving(false); setSaved(true);
+            setTimeout(() => setSaved(false), 2500);
+          }} disabled={saving} style={{
+            background: 'var(--accent)', color: '#052015', border: 'none',
+            borderRadius: 10, padding: '11px 0', fontWeight: 600, fontSize: 14,
+            fontFamily: 'inherit', cursor: 'pointer', opacity: saving ? 0.6 : 1, width: '100%',
+          }}>
+            {saving ? 'Saving…' : saved ? '✓ Saved' : 'Save'}
+          </button>
+        </div>
+      </Card>
+
       <CategoriesManagerCard />
 
       <Card title="Data Quality">
@@ -4826,9 +4869,327 @@ function AdminTab() {
   );
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// InvestmentsTab — portfolio overview (mock data, real API coming soon)
+// ═══════════════════════════════════════════════════════════════════
+
+const MOCK_HOLDINGS = [
+  { ticker: 'VTI',  name: 'US Stocks',        value: 42300, costBasis: 35000, shares: 168.2, price: 251.5, assetClass: 'US Stocks' },
+  { ticker: 'VXUS', name: 'Intl Stocks',       value: 18900, costBasis: 17000, shares: 298.1, price: 63.4,  assetClass: 'International' },
+  { ticker: 'BND',  name: 'US Bonds',          value: 12400, costBasis: 13000, shares: 165.3, price: 75.0,  assetClass: 'Bonds' },
+  { ticker: 'BNDX', name: 'Intl Bonds',        value: 6200,  costBasis: 6500,  shares: 114.8, price: 54.0,  assetClass: 'Bonds' },
+  { ticker: 'VNQ',  name: 'Real Estate',       value: 4800,  costBasis: 4200,  shares: 50.5,  price: 95.0,  assetClass: 'Real Estate' },
+  { ticker: 'PDBC', name: 'Natural Resources', value: 3200,  costBasis: 3500,  shares: 187.2, price: 17.1,  assetClass: 'Commodities' },
+  { ticker: 'CASH', name: 'Cash',              value: 2100,  costBasis: 2100,  shares: null,  price: null,  assetClass: 'Cash' },
+];
+
+const MOCK_INV_TRANSACTIONS = [
+  { date: '2026-05-01', type: 'contribution', security: 'Portfolio', amount: 1000, shares: null, price: null },
+  { date: '2026-04-15', type: 'buy',          security: 'VTI',       amount: 502,  shares: 2.0,  price: 251.0 },
+  { date: '2026-04-15', type: 'buy',          security: 'VXUS',      amount: 253,  shares: 4.0,  price: 63.2 },
+  { date: '2026-04-01', type: 'contribution', security: 'Portfolio', amount: 1000, shares: null, price: null },
+  { date: '2026-03-20', type: 'dividend',     security: 'BND',       amount: 42,   shares: null, price: null },
+  { date: '2026-03-15', type: 'buy',          security: 'BND',       amount: 375,  shares: 5.0,  price: 75.0 },
+  { date: '2026-03-01', type: 'contribution', security: 'Portfolio', amount: 1000, shares: null, price: null },
+  { date: '2026-02-20', type: 'dividend',     security: 'VTI',       amount: 85,   shares: null, price: null },
+  { date: '2026-02-01', type: 'contribution', security: 'Portfolio', amount: 1000, shares: null, price: null },
+  { date: '2026-01-15', type: 'buy',          security: 'VNQ',       amount: 285,  shares: 3.0,  price: 95.0 },
+  { date: '2026-01-01', type: 'contribution', security: 'Portfolio', amount: 1000, shares: null, price: null },
+];
+
+const MOCK_MONTHLY_VALUES = [
+  { month: '06', value: 72400 }, { month: '07', value: 74100 }, { month: '08', value: 71800 },
+  { month: '09', value: 75300 }, { month: '10', value: 78200 }, { month: '11', value: 77600 },
+  { month: '12', value: 80100 }, { month: '01', value: 82400 }, { month: '02', value: 83900 },
+  { month: '03', value: 85100 }, { month: '04', value: 87500 }, { month: '05', value: 89900 },
+];
+
+const ASSET_COLORS = {
+  'US Stocks':    '#5ec98a',
+  'International':'#67e8f9',
+  'Bonds':        '#a78bfa',
+  'Real Estate':  '#fbbf24',
+  'Commodities':  '#f97316',
+  'Cash':         '#94a3b8',
+};
+
+function AllocationDonut({ slices, total }) {
+  // slices = [{label, value, color}]
+  let cumPct = 0;
+  const parts = slices.map(s => {
+    const pct = (s.value / total) * 100;
+    const start = cumPct;
+    cumPct += pct;
+    return `${s.color} ${start.toFixed(1)}% ${cumPct.toFixed(1)}%`;
+  });
+  return (
+    <div style={{ position: 'relative', width: 160, height: 160, flexShrink: 0 }}>
+      <div style={{
+        width: 160, height: 160, borderRadius: '50%',
+        background: `conic-gradient(${parts.join(', ')})`,
+      }} />
+      <div style={{
+        position: 'absolute', top: '50%', left: '50%',
+        transform: 'translate(-50%, -50%)',
+        width: 88, height: 88, borderRadius: '50%',
+        background: 'var(--surface)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column',
+        textAlign: 'center',
+      }}>
+        <div style={{ fontSize: 10, color: 'var(--ink-4)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total</div>
+        <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(total)}</div>
+      </div>
+    </div>
+  );
+}
+
+function InvestmentsTab() {
+  const holdings = MOCK_HOLDINGS;
+  const transactions = MOCK_INV_TRANSACTIONS;
+  const monthlyValues = MOCK_MONTHLY_VALUES;
+
+  const totalValue     = holdings.reduce((s, h) => s + h.value, 0);
+  const totalCost      = holdings.reduce((s, h) => s + h.costBasis, 0);
+  const totalGain      = totalValue - totalCost;
+  const totalGainPct   = totalCost > 0 ? (totalGain / totalCost) * 100 : 0;
+  const ytdContribs    = transactions.filter(t => t.type === 'contribution' && t.date.startsWith('2026')).reduce((s, t) => s + t.amount, 0);
+  const ytdDividends   = transactions.filter(t => t.type === 'dividend'     && t.date.startsWith('2026')).reduce((s, t) => s + t.amount, 0);
+
+  // Asset allocation
+  const byClass = {};
+  holdings.forEach(h => { byClass[h.assetClass] = (byClass[h.assetClass] || 0) + h.value; });
+  const allocSlices = Object.entries(byClass).map(([label, value]) => ({
+    label, value, color: ASSET_COLORS[label] || '#94a3b8',
+  })).sort((a, b) => b.value - a.value);
+
+  // Monthly chart
+  const maxMonthly = Math.max(...monthlyValues.map(m => m.value), 1);
+
+  const [holdingSort, setHoldingSort] = useState({ col: 'value', dir: 'desc' });
+  const sortedHoldings = [...holdings].sort((a, b) => {
+    const v = holdingSort.col === 'value' ? b.value - a.value
+            : holdingSort.col === 'gain'  ? (b.value - b.costBasis) - (a.value - a.costBasis)
+            : holdingSort.col === 'gainPct' ? ((b.value - b.costBasis) / b.costBasis) - ((a.value - a.costBasis) / a.costBasis)
+            : 0;
+    return holdingSort.dir === 'desc' ? v : -v;
+  });
+
+  function toggleHoldingSort(col) {
+    setHoldingSort(prev => prev.col === col
+      ? { col, dir: prev.dir === 'desc' ? 'asc' : 'desc' }
+      : { col, dir: 'desc' });
+  }
+
+  const SortIcon = ({ col }) => (
+    holdingSort.col === col
+      ? <span style={{ fontSize: 10, color: 'var(--accent)' }}>{holdingSort.dir === 'desc' ? '↓' : '↑'}</span>
+      : <span style={{ fontSize: 10, opacity: 0.3 }}>↕</span>
+  );
+
+  const txnTypeStyle = (type) => {
+    const map = {
+      contribution: { bg: 'color-mix(in srgb, var(--accent) 12%, transparent)', color: 'var(--accent)' },
+      buy:          { bg: 'color-mix(in srgb, #67e8f9 15%, transparent)',        color: '#22d3ee' },
+      sell:         { bg: 'color-mix(in srgb, var(--terra) 12%, transparent)',   color: 'var(--terra)' },
+      dividend:     { bg: 'color-mix(in srgb, #fbbf24 15%, transparent)',        color: '#d97706' },
+      transfer:     { bg: 'color-mix(in srgb, var(--ink-4) 15%, transparent)',   color: 'var(--ink-3)' },
+    };
+    return map[type] || map.transfer;
+  };
+
+  return (
+    <div style={{ padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: 24 }}>
+
+      {/* Mock data banner */}
+      <div style={{
+        background: 'color-mix(in srgb, #fbbf24 15%, transparent)',
+        border: '1px solid color-mix(in srgb, #fbbf24 40%, transparent)',
+        borderRadius: 10, padding: '10px 16px',
+        fontSize: 13, color: '#92400e', display: 'flex', alignItems: 'center', gap: 8,
+      }}>
+        <span style={{ fontWeight: 700 }}>Demo data</span> — Wealthfront connection coming soon. Numbers shown are placeholders.
+      </div>
+
+      {/* Summary cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
+        {[
+          { label: 'Portfolio Value',    value: fmtMoney(totalValue),             sub: null },
+          { label: 'Unrealized Gain',    value: fmtMoney(Math.abs(totalGain)),    sub: `${totalGain >= 0 ? '+' : '−'}${Math.abs(totalGainPct).toFixed(1)}% all time`, positive: totalGain >= 0, negative: totalGain < 0 },
+          { label: 'YTD Contributions',  value: fmtMoney(ytdContribs),            sub: '2026' },
+          { label: 'YTD Dividends',      value: fmtMoney(ytdDividends),           sub: '2026' },
+        ].map(({ label, value, sub, positive, negative }) => (
+          <div key={label} style={{
+            background: 'var(--surface)', border: '1px solid var(--line)',
+            borderRadius: 14, padding: '18px 20px',
+          }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>{label}</div>
+            <div style={{
+              fontSize: 24, fontWeight: 700, fontVariantNumeric: 'tabular-nums',
+              color: positive ? 'var(--accent)' : negative ? 'var(--terra)' : 'var(--ink)',
+            }}>{value}</div>
+            {sub && <div style={{ fontSize: 12, color: 'var(--ink-4)', marginTop: 4 }}>{sub}</div>}
+          </div>
+        ))}
+      </div>
+
+      {/* Allocation + Monthly chart */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+
+        {/* Asset Allocation */}
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 14, padding: '20px 24px' }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', marginBottom: 16 }}>Asset Allocation</div>
+          <div style={{ display: 'flex', gap: 24, alignItems: 'center' }}>
+            <AllocationDonut slices={allocSlices} total={totalValue} />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flex: 1 }}>
+              {allocSlices.map(({ label, value, color }) => (
+                <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ width: 10, height: 10, borderRadius: 3, background: color, flexShrink: 0 }} />
+                  <div style={{ fontSize: 12, color: 'var(--ink-2)', flex: 1 }}>{label}</div>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>
+                    {((value / totalValue) * 100).toFixed(0)}%
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Portfolio value over time */}
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 14, padding: '20px 24px' }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', marginBottom: 16 }}>Portfolio Value — Last 12 Months</div>
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: 100 }}>
+            {monthlyValues.map(({ month, value }) => (
+              <div key={month} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                <div style={{
+                  width: '100%', borderRadius: 4,
+                  background: 'color-mix(in srgb, var(--accent) 70%, transparent)',
+                  height: `${Math.max(4, (value / maxMonthly) * 80)}px`,
+                  transition: 'height 0.2s',
+                }} title={fmtMoney(value)} />
+                <div style={{ fontSize: 9, color: 'var(--ink-4)' }}>{month}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10, fontSize: 11, color: 'var(--ink-4)' }}>
+            <span>{fmtMoney(monthlyValues[0].value)}</span>
+            <span style={{ color: 'var(--accent)', fontWeight: 600 }}>+{fmtMoney(monthlyValues[monthlyValues.length - 1].value - monthlyValues[0].value)} ({(((monthlyValues[monthlyValues.length - 1].value / monthlyValues[0].value) - 1) * 100).toFixed(1)}%)</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Holdings table */}
+      <div style={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 14, overflow: 'hidden' }}>
+        <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Holdings</div>
+          <div style={{ fontSize: 12, color: 'var(--ink-4)' }}>{holdings.length} positions</div>
+        </div>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr style={{ background: 'var(--surface-3)' }}>
+                {[
+                  { label: 'Ticker',       col: null,       align: 'left'  },
+                  { label: 'Asset Class',  col: null,       align: 'left'  },
+                  { label: 'Shares',       col: null,       align: 'right' },
+                  { label: 'Price',        col: null,       align: 'right' },
+                  { label: 'Value',        col: 'value',    align: 'right' },
+                  { label: 'Gain / Loss',  col: 'gain',     align: 'right' },
+                  { label: '% Return',     col: 'gainPct',  align: 'right' },
+                ].map(({ label, col, align }) => (
+                  <th key={label} onClick={() => col && toggleHoldingSort(col)} style={{
+                    padding: '10px 16px', textAlign: align, fontWeight: 600,
+                    fontSize: 11, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.05em',
+                    cursor: col ? 'pointer' : 'default', whiteSpace: 'nowrap',
+                  }}>
+                    {label} {col && <SortIcon col={col} />}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {sortedHoldings.map((h, i) => {
+                const gain    = h.value - h.costBasis;
+                const gainPct = h.costBasis > 0 ? (gain / h.costBasis) * 100 : 0;
+                const isPos   = gain >= 0;
+                return (
+                  <tr key={h.ticker} style={{ borderTop: i > 0 ? '1px solid var(--line)' : 'none' }}>
+                    <td style={{ padding: '12px 16px' }}>
+                      <div style={{ fontWeight: 700, color: 'var(--ink)' }}>{h.ticker}</div>
+                      <div style={{ fontSize: 11, color: 'var(--ink-4)' }}>{h.name}</div>
+                    </td>
+                    <td style={{ padding: '12px 16px' }}>
+                      <span style={{
+                        fontSize: 11, padding: '2px 8px', borderRadius: 99, fontWeight: 600,
+                        background: `${ASSET_COLORS[h.assetClass]}22`,
+                        color: ASSET_COLORS[h.assetClass],
+                      }}>{h.assetClass}</span>
+                    </td>
+                    <td style={{ padding: '12px 16px', textAlign: 'right', color: 'var(--ink-2)', fontVariantNumeric: 'tabular-nums' }}>
+                      {h.shares != null ? h.shares.toFixed(2) : '—'}
+                    </td>
+                    <td style={{ padding: '12px 16px', textAlign: 'right', color: 'var(--ink-2)', fontVariantNumeric: 'tabular-nums' }}>
+                      {h.price != null ? `$${h.price.toFixed(2)}` : '—'}
+                    </td>
+                    <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 600, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>
+                      {fmtMoney(h.value)}
+                    </td>
+                    <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: isPos ? 'var(--accent)' : 'var(--terra)' }}>
+                      {isPos ? '+' : '−'}{fmtMoney(Math.abs(gain))}
+                    </td>
+                    <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: isPos ? 'var(--accent)' : 'var(--terra)' }}>
+                      {isPos ? '+' : ''}{gainPct.toFixed(1)}%
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Investment transactions */}
+      <div style={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 14, overflow: 'hidden' }}>
+        <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--line)' }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Activity</div>
+        </div>
+        <div>
+          {transactions.map((t, i) => {
+            const style = txnTypeStyle(t.type);
+            return (
+              <div key={i} style={{
+                display: 'flex', alignItems: 'center', gap: 16,
+                padding: '12px 24px', borderTop: i > 0 ? '1px solid var(--line)' : 'none',
+              }}>
+                <div style={{ fontSize: 12, color: 'var(--ink-4)', fontVariantNumeric: 'tabular-nums', width: 80, flexShrink: 0 }}>
+                  {t.date.slice(5)}
+                </div>
+                <span style={{
+                  fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 99,
+                  background: style.bg, color: style.color, textTransform: 'capitalize', flexShrink: 0, width: 90, textAlign: 'center',
+                }}>{t.type}</span>
+                <div style={{ flex: 1, fontSize: 13, color: 'var(--ink-2)' }}>{t.security}</div>
+                {t.shares != null && (
+                  <div style={{ fontSize: 12, color: 'var(--ink-4)', fontVariantNumeric: 'tabular-nums' }}>
+                    {t.shares} sh @ ${t.price}
+                  </div>
+                )}
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums', textAlign: 'right', minWidth: 70 }}>
+                  {t.type === 'sell' ? '−' : '+'}{fmtMoney(t.amount)}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+    </div>
+  );
+}
+
 Object.assign(window, {
   OverviewTab, MonthlyTab, TransactionsTab, SpendingTab, IncomeTab, CashFlowTab,
   NetWorthTab, AccountsTab, RecurringTab, CategoriesTab, TrendsTab,
   ChatTab, SettingsTab, AdminTab, TxnList, AccountList, ReviewTab, FeedbackTab,
+  InvestmentsTab,
 });
 })();

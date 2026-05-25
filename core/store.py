@@ -22,6 +22,13 @@ DATA_DIR = BASE_DIR / "data"
 # Per-user path helpers
 # ---------------------------------------------------------------------------
 
+def list_users() -> list[str]:
+    """Return all usernames that have a data directory with a config file."""
+    if not DATA_DIR.exists():
+        return []
+    return [d.name for d in DATA_DIR.iterdir() if d.is_dir() and (d / "config.json").exists()]
+
+
 def user_dir(username: str) -> Path:
     return DATA_DIR / username
 

@@ -249,7 +249,7 @@ const { MONTHS } = window.FIN;
 const {
   OverviewTab, TransactionsTab, SpendingTab, IncomeTab, CashFlowTab,
   NetWorthTab, AccountsTab, RecurringTab, CategoriesTab, TrendsTab, ChatTab, SettingsTab, AdminTab,
-  ReviewTab, FeedbackTab, MonthlyTab,
+  ReviewTab, FeedbackTab, MonthlyTab, InvestmentsTab,
   TweaksPanel, TweakSection, TweakRadio, TweakToggle,
   useTweaks,
 } = window;
@@ -290,6 +290,7 @@ const Icon = ({ name, size = 18 }) => {
     upload:      'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12',
     feedback:    'M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z',
     monthly:     'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2z',
+    investments: 'M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83',
     review:      'M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11',
   };
   return (
@@ -310,6 +311,7 @@ const TABS = [
   { id: 'spending',    name: 'Spending',      icon: 'spending',   group: 'analysis' },
   { id: 'categories',  name: 'Categories',    icon: 'categories', group: 'analysis' },
   { id: 'trends',      name: 'Trends',        icon: 'trends',     group: 'analysis' },
+  { id: 'investments', name: 'Investments',   icon: 'investments',group: 'wealth' },
   { id: 'networth',    name: 'Net Worth',     icon: 'networth',   group: 'wealth' },
   { id: 'accounts',    name: 'Accounts',      icon: 'accounts',   group: 'wealth' },
   { id: 'recurring',   name: 'Recurring',     icon: 'recurring',  group: 'wealth' },
@@ -624,7 +626,11 @@ function App() {
       setSyncProgress({ step: 'Saving…', pct: 90, error: null });
       if (res.last_sync) setSyncState({ last_sync: res.last_sync, needs_sync: false });
       const added = (res.stats?.added || 0) + (res.stats?.modified || 0);
-      setSyncProgress({ step: added > 0 ? `Done — ${added} new transactions` : 'Already up to date', pct: 100, error: null });
+      const skipped = res.stats?.duplicates_skipped || 0;
+      const doneMsg = added > 0
+        ? `Done — ${added} new transaction${added !== 1 ? 's' : ''}${skipped > 0 ? ` (${skipped} duplicate${skipped !== 1 ? 's' : ''} skipped)` : ''}`
+        : 'Already up to date';
+      setSyncProgress({ step: doneMsg, pct: 100, error: null });
       setTimeout(() => {
         setSyncing(false);
         setSyncProgress(null);
@@ -691,6 +697,7 @@ function App() {
       case 'spending':    return <SpendingTab    {...props} />;
       case 'categories':  return <CategoriesTab  {...props} />;
       case 'trends':      return <TrendsTab />;
+      case 'investments': return <InvestmentsTab />;
       case 'networth':    return <NetWorthTab />;
       case 'accounts':    return <AccountsTab onSync={manualSync} syncing={syncing} />;
       case 'recurring':   return <RecurringTab />;

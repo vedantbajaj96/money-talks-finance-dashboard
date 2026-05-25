@@ -356,7 +356,7 @@ def sync_all_transactions(
     client = _get_api_client(cfg)
     df     = existing_df.copy() if existing_df is not None and not existing_df.empty else pd.DataFrame()
     errors = []
-    total_added = total_modified = total_removed = 0
+    total_added = total_modified = total_removed = total_skipped = 0
 
     for idx, item in enumerate(items):
         access_token = item["access_token"]
@@ -409,12 +409,51 @@ def sync_all_transactions(
                     df.loc[update_mask, "description"] = merchant
         total_modified += len(modified)
 
-        # Apply additions
+        # Apply additions — two-level duplicate detection:
+        # 1. Intra-batch: skip if this sync response contains the same plaid_txn_id twice (Plaid bug)
+        # 2. Cross-batch: if (date, amount, source, desc_fingerprint) matches an existing row,
+        #    add the transaction but flag it as a possible duplicate for the user to review.
+        def _desc_fp(desc: str) -> str:
+            import re
+            words = re.sub(r"[^a-z ]+", " ", str(desc).lower()).split()
+            return " ".join(w for w in words if len(w) > 2)[:60]
+
+        # Build fingerprint set from existing rows for cross-batch detection
+        existing_fps: dict = {}  # fp -> plaid_txn_id
+        if not df.empty and "plaid_txn_id" in df.columns:
+            inst_rows = df[df["source"] == inst_source]
+            for _, r in inst_rows.iterrows():
+                fp = (str(r.get("date", ""))[:10], round(float(r.get("expense_amount", 0)), 2), _desc_fp(r.get("description", "")))
+                existing_fps[fp] = str(r.get("plaid_txn_id", ""))
+
         if added:
-            new_rows = [_row_from_txn(t, inst_name, item["item_id"]) for t in added]
-            new_df   = pd.DataFrame(new_rows)
+            deduped = []
+            skipped = 0
+            seen_ids: set = set()  # intra-batch dedup
+            for t in added:
+                row = _row_from_txn(t, inst_name, item["item_id"])
+                txn_id = str(row.get("plaid_txn_id", ""))
+
+                # Intra-batch: exact ID seen twice in same sync response → skip silently
+                if txn_id in seen_ids:
+                    logger.info("[sync:%s] skipped intra-batch duplicate id: %s", inst_name, txn_id)
+                    skipped += 1
+                    continue
+                seen_ids.add(txn_id)
+
+                # Cross-batch: same date+amount+description fingerprint as existing row → flag for review
+                fp = (str(row["date"])[:10], round(float(row["expense_amount"]), 2), _desc_fp(row["description"]))
+                if fp in existing_fps and existing_fps[fp] != txn_id:
+                    logger.info("[sync:%s] flagging possible duplicate: %s %.2f", inst_name, row["date"], row["expense_amount"])
+                    row["notes"] = f"⚠ Possible duplicate — review and delete if needed"
+                    row["category"] = "Pending Review"
+
+                deduped.append(row)
+            total_added += len(deduped)
+            total_skipped += skipped
+            new_df = pd.DataFrame(deduped) if deduped else pd.DataFrame()
             # Restore annotations from before the full resync
-            if saved_annotations:
+            if saved_annotations and not new_df.empty:
                 for col in ["notes", "tags", "user_edited"]:
                     if col not in new_df.columns:
                         new_df[col] = False if col == "user_edited" else None
@@ -437,12 +476,12 @@ def sync_all_transactions(
                             new_df.at[i, "date"] = pd.to_datetime(ann["date"])
                         except Exception:
                             pass
-            df = pd.concat([df, new_df], ignore_index=True) if not df.empty else new_df
-        total_added += len(added)
+            if not new_df.empty:
+                df = pd.concat([df, new_df], ignore_index=True) if not df.empty else new_df
 
         # Persist cursor immediately so a crash mid-loop doesn't lose progress
         items[idx]["cursor"] = next_cursor
         _save_items(items, data_dir)
 
-    stats = {"added": total_added, "modified": total_modified, "removed": total_removed}
+    stats = {"added": total_added, "modified": total_modified, "removed": total_removed, "duplicates_skipped": total_skipped}
     return df, errors, stats

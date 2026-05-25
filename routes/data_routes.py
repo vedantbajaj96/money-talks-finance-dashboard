@@ -73,6 +73,7 @@ def get_config(request: Request, current_user: str = Depends(get_current_user)) 
         "plaid_environment":  cfg.get("plaid_environment", "sandbox"),
         "plaid_redirect_uri": cfg.get("plaid_redirect_uri", ""),
         "is_admin":           bool(session.get("is_admin")),
+        "auto_sync_interval": cfg.get("auto_sync_interval", 0),
     }
 
 
@@ -81,7 +82,7 @@ async def update_config(body: dict[str, Any], current_user: str = Depends(get_cu
     cfg = load_config(current_user)
     allowed = {"anthropic_api_key", "gemini_api_key", "preferred_provider",
                "plaid_client_id", "plaid_secret", "plaid_environment",
-               "plaid_redirect_uri"}
+               "plaid_redirect_uri", "auto_sync_interval"}
     for k, v in body.items():
         if k in allowed:
             if v is None:
