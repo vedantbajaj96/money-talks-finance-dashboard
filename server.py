@@ -88,6 +88,7 @@ from routes.admin_routes import router as admin_router
 from routes.feedback_routes import router as feedback_router
 from routes.plaid_routes import router as plaid_router
 from routes.upload_routes import router as upload_router
+from routes.portfolio_routes import router as portfolio_router
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -148,6 +149,9 @@ async def log_requests(request: Request, call_next):
         _ms = (_time.monotonic() - _t0) * 1000
         if _ms > 200:  # only log slow requests (>200ms) to avoid noise
             logger.info("SLOW %s %s → %s in %.0fms", request.method, request.url.path, response.status_code, _ms)
+        # Never cache API responses
+        if request.url.path.startswith("/api/"):
+            response.headers["Cache-Control"] = "no-store"
         return response
     except Exception as exc:
         _ms = (_time.monotonic() - _t0) * 1000
@@ -170,6 +174,7 @@ app.include_router(upload_router)
 app.include_router(plaid_router)
 app.include_router(chat_router)
 app.include_router(feedback_router)
+app.include_router(portfolio_router)
 
 # ---------------------------------------------------------------------------
 # Serve the React frontend — must be last so /api/* routes take priority.
@@ -182,6 +187,11 @@ def serve_login() -> FileResponse:
 
 @app.get("/{filename:path}")
 def serve_frontend(filename: str = "", request: Request = None) -> Response:
+    # API paths should never fall through to the SPA — means the route wasn't matched
+    if filename.startswith("api/"):
+        from fastapi.responses import JSONResponse
+        return JSONResponse({"detail": "Not found"}, status_code=404)
+
     path = LL_DIR / filename if filename else LL_DIR / "index.html"
 
     is_asset = path.suffix in (".js", ".jsx", ".css", ".png", ".ico", ".svg", ".woff", ".woff2")
@@ -204,7 +214,7 @@ def serve_frontend(filename: str = "", request: Request = None) -> Response:
         path = LL_DIR / "index.html"
 
     resp = FileResponse(path)
-    if path.suffix in (".js", ".jsx", ".css"):
+    if path.suffix in (".js", ".jsx", ".css") or not path.suffix:
         resp.headers["Cache-Control"] = "no-store"
     return resp
 

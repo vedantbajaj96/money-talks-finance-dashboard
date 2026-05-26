@@ -10,3 +10,6 @@ fastembed
 python-multipart
 slowapi
 pytest
+pdfplumber
+yfinance
+scipy

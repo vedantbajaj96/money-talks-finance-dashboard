@@ -196,6 +196,15 @@ def get_investments(current_user: str = Depends(get_current_user)) -> dict:
         from core.plaid_client import get_investment_data, is_configured
         cfg = load_config(current_user)
         if not is_configured(cfg):
+            # Serve static demo data if present (for demo account / showcasing)
+            demo_path = user_dir(current_user) / "investment_data.json"
+            snap_path = user_dir(current_user) / "investment_snapshots.json"
+            if demo_path.exists():
+                import json as _json
+                demo = _json.loads(demo_path.read_text())
+                demo["configured"] = True
+                demo["snapshots"] = _json.loads(snap_path.read_text()) if snap_path.exists() else []
+                return demo
             return {"holdings": [], "transactions": [], "snapshots": [], "errors": [], "configured": False}
 
         data = get_investment_data(cfg=cfg, data_dir=str(user_dir(current_user)))

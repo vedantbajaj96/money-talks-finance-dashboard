@@ -73,6 +73,15 @@ function acctById(id) {
   return (window.FIN.ACCOUNTS || []).find((a) => a.id === id) || { id, name: id, color: '#94a3b8' };
 }
 
+// ── Authenticated API fetch — redirects to /login on 401 ───────────────────
+window.apiFetch = async function apiFetch(url, options) {
+  const r = await fetch(url, options);
+  if (r.status === 401) { window.location.href = '/login'; return null; }
+  // Handle session-expired redirects: server sends 307 → browser follows → HTML page with 200
+  if (r.redirected && r.url.includes('/login')) { window.location.href = '/login'; return null; }
+  return r;
+};
+
 // ── Dynamic script loader ─────────────────────────────────────────────────
 
 // Injects a <script src> tag instead of eval()ing fetched text.

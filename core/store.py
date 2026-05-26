@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import datetime
 import json
+import os
 import shutil
+import threading
 from pathlib import Path
 
 import duckdb
@@ -16,6 +18,16 @@ import pandas as pd
 
 BASE_DIR = Path(__file__).parent.parent   # finance_dashboard/
 DATA_DIR = BASE_DIR / "data"
+
+# Per-user write lock — prevents concurrent sync races on the same parquet file
+_user_locks: dict[str, threading.Lock] = {}
+_locks_mu = threading.Lock()
+
+def _user_lock(username: str) -> threading.Lock:
+    with _locks_mu:
+        if username not in _user_locks:
+            _user_locks[username] = threading.Lock()
+        return _user_locks[username]
 
 
 # ---------------------------------------------------------------------------
@@ -82,7 +94,8 @@ def load_config(username: str) -> dict:
                 admin_cfg = json.loads(af.read_text())
             except Exception:
                 pass
-        for key in ("anthropic_api_key", "gemini_api_key", "preferred_provider"):
+        for key in ("anthropic_api_key", "gemini_api_key", "preferred_provider",
+                    "alert_from_email", "alert_smtp_password"):
             if not cfg.get(key) and admin_cfg.get(key):
                 cfg[key] = admin_cfg[key]
 
@@ -186,7 +199,10 @@ def load_df(username: str) -> pd.DataFrame | None:
 def save_df(username: str, df: pd.DataFrame) -> None:
     f = data_file(username)
     f.parent.mkdir(parents=True, exist_ok=True)
-    df.to_parquet(f, index=False)
+    tmp = f.with_suffix(".parquet.tmp")
+    with _user_lock(username):
+        df.to_parquet(tmp, index=False)
+        os.replace(tmp, f)  # atomic on POSIX; best-effort on Windows
 
 
 # ---------------------------------------------------------------------------

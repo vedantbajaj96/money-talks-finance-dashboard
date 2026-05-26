@@ -11,7 +11,7 @@ const { DonutChart, StackedBarChart, AreaChart, Sparkline, BarList } = window;
 let _liveCategories = [...CATEGORIES];
 async function refreshLiveCategories() {
   try {
-    const res  = await fetch('/api/categories');
+    const res  = await apiFetch('/api/categories');
     const data = await res.json();
     if (data.categories) {
       _liveCategories = data.categories;
@@ -511,7 +511,7 @@ function OverviewTab() {
   // Data quality stats — fetched from /api/review
   const [reviewStats, setReviewStats] = useState(null);
   useEffect(() => {
-    fetch('/api/review')
+    apiFetch('/api/review')
       .then(r => r.json())
       .then(d => setReviewStats(d))
       .catch(() => {});
@@ -1047,7 +1047,7 @@ function AddTransactionModal({ onClose, refreshFin }) {
     setSaving(true); setErr(null);
     try {
       const amtRaw = parseFloat(form.amount);
-      const res = await fetch('/api/transactions', {
+      const res = await apiFetch('/api/transactions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1943,7 +1943,7 @@ function BudgetBars({ monthKey }) {
   const [saving,     setSaving]     = useState(false);
 
   useEffect(() => {
-    fetch('/api/budgets')
+    apiFetch('/api/budgets')
       .then(r => r.json())
       .then(setBudgets)
       .catch(() => setBudgets({}));
@@ -1976,7 +1976,7 @@ function BudgetBars({ monthKey }) {
     setSaving(true);
     const amount = value === '' || value === '0' ? null : parseFloat(value);
     try {
-      const res = await fetch('/api/budgets', {
+      const res = await apiFetch('/api/budgets', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ [catId]: amount }),
@@ -2530,7 +2530,7 @@ function AccountsTab({ onSync, syncing }) {
   const [error, setError]                 = useState('');
 
   const loadAccounts = () =>
-    fetch('/api/plaid/accounts').then(r => r.json()).then(d => {
+    apiFetch('/api/plaid/accounts').then(r => r.json()).then(d => {
       setConfigured(d.configured);
       setPlaidAccounts(d.accounts || []);
     });
@@ -2541,7 +2541,7 @@ function AccountsTab({ onSync, syncing }) {
     setError('');
     setLinking(true);
     try {
-      const res = await fetch('/api/plaid/link-token', { method: 'POST' });
+      const res = await apiFetch('/api/plaid/link-token', { method: 'POST' });
       const data = await res.json();
       if (!res.ok) { setError(data.detail || 'Failed to get link token'); setLinking(false); return; }
 
@@ -2558,7 +2558,7 @@ function AccountsTab({ onSync, syncing }) {
         token: data.link_token,
         onSuccess: async (public_token, metadata) => {
           const inst = metadata?.institution?.name || 'Unknown';
-          await fetch('/api/plaid/exchange', {
+          await apiFetch('/api/plaid/exchange', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ public_token, institution_name: inst }),
@@ -2983,7 +2983,7 @@ function ChatTab() {
 
   // Check if AI is configured
   React.useEffect(() => {
-    fetch('/api/config').then((r) => r.json()).then((cfg) => {
+    apiFetch('/api/config').then((r) => r.json()).then((cfg) => {
       setConfigOk(cfg.has_anthropic || cfg.has_gemini);
     });
   }, []);
@@ -3054,7 +3054,7 @@ function ChatTab() {
     setInput('');
     setLoading(true);
     try {
-      const res = await fetch('/api/chat', {
+      const res = await apiFetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         // Only send conversation history — no raw financial data
@@ -3232,7 +3232,7 @@ function PlaidSyncCard() {
   async function sync(full = false) {
     setSyncing(true); setResult(null);
     try {
-      const res  = await fetch('/api/plaid/sync', {
+      const res  = await apiFetch('/api/plaid/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ full }),
@@ -3344,7 +3344,7 @@ function CategoriesManagerCard() {
   const [saving, setSaving]     = useState({});
 
   useEffect(() => {
-    fetch('/api/categories').then(r => r.json()).then(d => {
+    apiFetch('/api/categories').then(r => r.json()).then(d => {
       setCats((d.categories || []).filter(c => !SYSTEM_IDS.has(c.id)));
     });
   }, []);
@@ -3370,7 +3370,7 @@ function CategoriesManagerCard() {
     if (swap < 0 || swap >= next.length) return;
     [next[idx], next[swap]] = [next[swap], next[idx]];
     setCats(next);
-    await fetch('/api/categories/reorder', {
+    await apiFetch('/api/categories/reorder', {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ order: next.map(c => c.id) }),
     });
@@ -3380,7 +3380,7 @@ function CategoriesManagerCard() {
   async function addCat() {
     if (!newName.trim()) return;
     setAddErr('');
-    const res  = await fetch('/api/categories', {
+    const res  = await apiFetch('/api/categories', {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ name: newName.trim(), color: newColor, group: 'variable' }),
     });
@@ -3544,6 +3544,186 @@ function CategoriesManagerCard() {
 }
 
 // ─── Settings Tab ─────────────────────────────────────────────────────────
+const NOTIFICATION_SUBS = [
+  { key: 'market_drop',     label: 'Market drop alert',      desc: 'Email when SPY falls your threshold in a day — DCA signal' },
+  { key: 'portfolio_drop',  label: 'Portfolio drop alert',   desc: 'Email when your Wealthfront value drops your threshold' },
+  { key: 'daily_brief',     label: 'Daily market brief',     desc: 'AI-written market summary every morning (7–10am)' },
+  { key: 'monthly_digest',  label: 'Monthly portfolio digest', desc: 'End-of-month recap: portfolio vs SPY, fees, AI summary' },
+];
+
+function NotificationsCard() {
+  const [alertEmail,    setAlertEmail]    = useState('');
+  const [dropThreshold, setDropThreshold] = useState('1.5');
+  const [portThreshold, setPortThreshold] = useState('3.0');
+  const [subs,          setSubs]          = useState({});   // { market_drop: true, ... }
+  const [saving,        setSaving]        = useState(false);
+  const [saved,         setSaved]         = useState(false);
+  const [testStatus,    setTestStatus]    = useState(null);
+  const [testMsg,       setTestMsg]       = useState('');
+
+  useEffect(() => {
+    apiFetch('/api/config').then(r => r.json()).then(d => {
+      setAlertEmail(d.alert_email || '');
+      setDropThreshold(String(d.market_drop_threshold ?? 1.5));
+      setPortThreshold(String(d.portfolio_drop_threshold ?? 3.0));
+      setSubs({
+        market_drop:    !!d.notify_market_drop,
+        portfolio_drop: !!d.notify_portfolio_drop,
+        daily_brief:    !!d.daily_brief_enabled,
+        monthly_digest: !!d.monthly_digest_enabled,
+      });
+    });
+  }, []);
+
+  async function save() {
+    setSaving(true);
+    await apiFetch('/api/config', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        alert_email:              alertEmail.trim() || null,
+        market_drop_threshold:    parseFloat(dropThreshold) || 1.5,
+        portfolio_drop_threshold: parseFloat(portThreshold) || 3.0,
+        notify_market_drop:    !!subs.market_drop,
+        notify_portfolio_drop: !!subs.portfolio_drop,
+        daily_brief_enabled:   !!subs.daily_brief,
+        monthly_digest_enabled:!!subs.monthly_digest,
+      }),
+    });
+    setSaving(false); setSaved(true);
+    setTimeout(() => setSaved(false), 2500);
+  }
+
+  async function sendTestEmail() {
+    setTestStatus('sending'); setTestMsg('');
+    try {
+      const res  = await apiFetch('/api/notifications/test', { method: 'POST' });
+      const data = await res.json();
+      if (res.ok) { setTestStatus('ok');    setTestMsg(`Sent to ${data.sent_to}`); }
+      else        { setTestStatus('error'); setTestMsg(data.detail || 'Failed'); }
+    } catch(e) { setTestStatus('error'); setTestMsg(String(e)); }
+    setTimeout(() => { setTestStatus(null); setTestMsg(''); }, 4000);
+  }
+
+  const FieldLabel = ({ children }) => (
+    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-4)', marginBottom: 6 }}>{children}</div>
+  );
+
+  return (
+    <SettingsCard title="Notifications">
+      <div style={{ display: 'grid', gap: 16 }}>
+        <div style={{ fontSize: 13, color: 'var(--ink-3)', lineHeight: 1.6 }}>
+          AI-powered email alerts sent from the MoneyTalks account. Enter your personal email below to receive them.
+        </div>
+
+        <div>
+          <FieldLabel>Your Email (receive alerts here)</FieldLabel>
+          <input value={alertEmail} onChange={e => setAlertEmail(e.target.value)}
+            placeholder="you@gmail.com" type="email"
+            style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1px solid var(--line)', background: 'var(--surface-3)', color: 'var(--ink)', fontSize: 13, boxSizing: 'border-box' }} />
+        </div>
+
+        {/* Subscription toggles */}
+        <div style={{ background: 'var(--surface-3)', borderRadius: 10, overflow: 'hidden' }}>
+          {NOTIFICATION_SUBS.map(({ key, label, desc }, i) => (
+            <div key={key} onClick={() => setSubs(p => ({ ...p, [key]: !p[key] }))} style={{
+              display: 'flex', alignItems: 'center', gap: 14, padding: '12px 16px',
+              borderTop: i > 0 ? '1px solid var(--line)' : 'none', cursor: 'pointer',
+            }}>
+              {/* Checkbox */}
+              <div style={{
+                width: 18, height: 18, borderRadius: 5, flexShrink: 0,
+                border: `2px solid ${subs[key] ? 'var(--accent)' : 'var(--line-2)'}`,
+                background: subs[key] ? 'var(--accent)' : 'transparent',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                {subs[key] && <span style={{ color: '#fff', fontSize: 11, fontWeight: 700 }}>✓</span>}
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{label}</div>
+                <div style={{ fontSize: 11, color: 'var(--ink-4)', marginTop: 2 }}>{desc}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Thresholds — only show if relevant subs are on */}
+        {(subs.market_drop || subs.portfolio_drop) && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+            {subs.market_drop && (
+              <div>
+                <FieldLabel>Alert me when SPY drops more than…</FieldLabel>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input value={dropThreshold} onChange={e => setDropThreshold(e.target.value)}
+                    type="number" step="0.1" min="0.1"
+                    style={{ flex: 1, padding: '9px 12px', borderRadius: 8, border: '1px solid var(--line)', background: 'var(--surface-3)', color: 'var(--ink)', fontSize: 13 }} />
+                  <span style={{ fontSize: 13, color: 'var(--ink-3)', flexShrink: 0 }}>% in a day</span>
+                </div>
+                <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+                  {['0.5', '1', '1.5', '2', '3'].map(v => (
+                    <button key={v} onClick={() => setDropThreshold(v)} style={{
+                      padding: '3px 10px', borderRadius: 99, fontSize: 12, fontWeight: 600, cursor: 'pointer', border: '1px solid',
+                      borderColor: dropThreshold === v ? 'var(--accent)' : 'var(--line)',
+                      background: dropThreshold === v ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'transparent',
+                      color: dropThreshold === v ? 'var(--accent)' : 'var(--ink-4)',
+                    }}>{v}%</button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {subs.portfolio_drop && (
+              <div>
+                <FieldLabel>Alert me when my portfolio drops more than…</FieldLabel>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input value={portThreshold} onChange={e => setPortThreshold(e.target.value)}
+                    type="number" step="0.1" min="0.1"
+                    style={{ flex: 1, padding: '9px 12px', borderRadius: 8, border: '1px solid var(--line)', background: 'var(--surface-3)', color: 'var(--ink)', fontSize: 13 }} />
+                  <span style={{ fontSize: 13, color: 'var(--ink-3)', flexShrink: 0 }}>% in a day</span>
+                </div>
+                <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+                  {['1', '2', '3', '5', '7'].map(v => (
+                    <button key={v} onClick={() => setPortThreshold(v)} style={{
+                      padding: '3px 10px', borderRadius: 99, fontSize: 12, fontWeight: 600, cursor: 'pointer', border: '1px solid',
+                      borderColor: portThreshold === v ? 'var(--accent)' : 'var(--line)',
+                      background: portThreshold === v ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'transparent',
+                      color: portThreshold === v ? 'var(--accent)' : 'var(--ink-4)',
+                    }}>{v}%</button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 10 }}>
+          <button onClick={save} disabled={saving} style={{
+            background: 'var(--accent)', color: '#052015', border: 'none',
+            borderRadius: 10, padding: '11px 0', fontWeight: 600, fontSize: 14,
+            fontFamily: 'inherit', cursor: 'pointer', opacity: saving ? 0.6 : 1,
+          }}>
+            {saving ? 'Saving…' : saved ? '✓ Saved' : 'Save'}
+          </button>
+          <button onClick={sendTestEmail} disabled={testStatus === 'sending'} style={{
+            background: 'var(--surface-3)', color: 'var(--ink-2)', border: '1px solid var(--line)',
+            borderRadius: 10, padding: '11px 18px', fontWeight: 600, fontSize: 13,
+            fontFamily: 'inherit', cursor: 'pointer', whiteSpace: 'nowrap',
+          }}>
+            {testStatus === 'sending' ? 'Sending…' : 'Send Test'}
+          </button>
+        </div>
+
+        {testMsg && (
+          <div style={{
+            padding: '10px 14px', borderRadius: 8, fontSize: 13,
+            background: testStatus === 'ok' ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : 'color-mix(in srgb, var(--terra) 10%, transparent)',
+            color: testStatus === 'ok' ? 'var(--accent)' : 'var(--terra)',
+            border: `1px solid ${testStatus === 'ok' ? 'var(--accent)' : 'var(--terra)'}`,
+          }}>{testMsg}</div>
+        )}
+      </div>
+    </SettingsCard>
+  );
+}
+
 function SettingsTab({ refreshFin }) {
   const { useState, useEffect, useRef } = React;
 
@@ -3564,15 +3744,17 @@ function SettingsTab({ refreshFin }) {
   const [saved, setSaved]                 = useState(false);
   const [repairing, setRepairing]         = useState(false);
   const [repairResult, setRepairResult]   = useState(null);
-  const [syncInterval, setSyncInterval]   = useState(0);
+  const [syncInterval, setSyncInterval]             = useState(0);
+  const [autoInvestSnapshot, setAutoInvestSnapshot] = useState(false);
 
   useEffect(() => {
-    fetch('/api/config').then(r => r.json()).then(d => {
+    apiFetch('/api/config').then(r => r.json()).then(d => {
       setCfg(d);
       setProvider(d.preferred_provider || 'claude');
       if (d.plaid_environment) setPlaidEnv(d.plaid_environment);
       if (d.plaid_redirect_uri) setPlaidRedirect(d.plaid_redirect_uri);
       setSyncInterval(d.auto_sync_interval || 0);
+      setAutoInvestSnapshot(!!d.auto_investment_snapshot);
     });
   }, []);
 
@@ -3586,7 +3768,7 @@ function SettingsTab({ refreshFin }) {
     const form = new FormData();
     form.append('file', file);
     try {
-      const res = await fetch('/api/upload', { method: 'POST', body: form });
+      const res = await apiFetch('/api/upload', { method: 'POST', body: form });
       const data = await res.json();
       if (!res.ok) setUpload({ error: data.detail || 'Upload failed' });
       else setUpload(data);
@@ -3605,7 +3787,7 @@ function SettingsTab({ refreshFin }) {
     if (plaidId)      body.plaid_client_id    = plaidId;
     if (plaidSecret)  body.plaid_secret       = plaidSecret;
     body.plaid_redirect_uri = plaidRedirect.trim() || null;
-    await fetch('/api/config', {
+    await apiFetch('/api/config', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -3767,7 +3949,7 @@ function SettingsTab({ refreshFin }) {
           </div>
           <button onClick={async () => {
             setSaving(true);
-            await fetch('/api/config', {
+            await apiFetch('/api/config', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ auto_sync_interval: syncInterval }),
@@ -3783,6 +3965,43 @@ function SettingsTab({ refreshFin }) {
           </button>
         </div>
       </Card>
+
+      <Card title="Investment Snapshot">
+        <div style={{ display: 'grid', gap: 14 }}>
+          <div style={{ fontSize: 13, color: 'var(--ink-3)', lineHeight: 1.6 }}>
+            Record your portfolio value once a day in the background. Builds the historical chart on the Investments tab.
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {[{ value: false, label: 'Off' }, { value: true, label: 'Daily' }].map(({ value, label }) => (
+              <button key={label} onClick={() => setAutoInvestSnapshot(value)} style={{
+                padding: '8px 18px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+                cursor: 'pointer', border: '1px solid',
+                borderColor: autoInvestSnapshot === value ? 'var(--accent)' : 'var(--line)',
+                background: autoInvestSnapshot === value ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'var(--surface-3)',
+                color: autoInvestSnapshot === value ? 'var(--accent)' : 'var(--ink-3)',
+              }}>{label}</button>
+            ))}
+          </div>
+          <button onClick={async () => {
+            setSaving(true);
+            await apiFetch('/api/config', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ auto_investment_snapshot: autoInvestSnapshot }),
+            });
+            setSaving(false); setSaved(true);
+            setTimeout(() => setSaved(false), 2500);
+          }} disabled={saving} style={{
+            background: 'var(--accent)', color: '#052015', border: 'none',
+            borderRadius: 10, padding: '11px 0', fontWeight: 600, fontSize: 14,
+            fontFamily: 'inherit', cursor: 'pointer', opacity: saving ? 0.6 : 1, width: '100%',
+          }}>
+            {saving ? 'Saving…' : saved ? '✓ Saved' : 'Save'}
+          </button>
+        </div>
+      </Card>
+
+      <NotificationsCard />
 
       <CategoriesManagerCard />
 
@@ -3818,7 +4037,7 @@ function SettingsTab({ refreshFin }) {
           <button onClick={async () => {
             setRepairing(true); setRepairResult(null);
             try {
-              const res = await fetch('/api/repair', { method: 'POST' });
+              const res = await apiFetch('/api/repair', { method: 'POST' });
               setRepairResult(await res.json());
             } catch (e) { setRepairResult({ ok: false, error: String(e) }); }
             finally { setRepairing(false); }
@@ -3933,7 +4152,7 @@ function ReviewTab({ refreshFin }) {
 
   const load = useCallback(() => {
     setLoading(true);
-    fetch('/api/review')
+    apiFetch('/api/review')
       .then(r => r.json())
       .then(d => { setState(d); setEdits({}); })
       .finally(() => setLoading(false));
@@ -3952,7 +4171,7 @@ function ReviewTab({ refreshFin }) {
         const rowKey = t.id ?? `row-${i}`;
         if (edits[rowKey] && t.id) overrides[t.id] = edits[rowKey];
       });
-      const res  = await fetch('/api/review/approve', {
+      const res  = await apiFetch('/api/review/approve', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids, overrides }),
@@ -4178,7 +4397,7 @@ function FeedbackTab() {
   const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
-    fetch('/api/feedback')
+    apiFetch('/api/feedback')
       .then(r => r.json())
       .then(d => { setEntries(d.entries || []); setIsAdmin(d.is_admin); });
   }, [sent]);
@@ -4187,7 +4406,7 @@ function FeedbackTab() {
     if (!msg.trim()) return;
     setSending(true); setErr('');
     try {
-      const res = await fetch('/api/feedback', {
+      const res = await apiFetch('/api/feedback', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ category: cat, message: msg.trim() }),
@@ -4382,21 +4601,21 @@ function AdminTab() {
   const [logsLoading, setLogsLoading] = useState(false);
 
   useEffect(() => {
-    fetch('/api/config').then(r => r.json()).then(d => {
+    apiFetch('/api/config').then(r => r.json()).then(d => {
       setCfg(d);
       setProvider(d.preferred_provider || 'gemini');
     });
-    fetch('/api/auth/users').then(r => r.json()).then(d => setUsers(d.users || [])).catch(() => {});
+    apiFetch('/api/auth/users').then(r => r.json()).then(d => setUsers(d.users || [])).catch(() => {});
     runHealthChecks();
   }, []);
 
   useEffect(() => {
     if (page === 'feedback') {
-      fetch('/api/feedback').then(r => r.json()).then(d => setFeedback(d.entries || [])).catch(() => {});
+      apiFetch('/api/feedback').then(r => r.json()).then(d => setFeedback(d.entries || [])).catch(() => {});
     }
     if (page === 'logs') {
       setLogsLoading(true);
-      fetch('/api/admin/logs?lines=300').then(r => r.json()).then(d => {
+      apiFetch('/api/admin/logs?lines=300').then(r => r.json()).then(d => {
         setLogs(d.lines || []);
         setLogsLoading(false);
       }).catch(() => setLogsLoading(false));
@@ -4432,13 +4651,13 @@ function AdminTab() {
 
   async function runHealthChecks() {
     setHealthLoading(true);
-    const hd = await fetch('/api/admin/health').then(r => r.json()).catch(() => ({ checks: [] }));
+    const hd = await apiFetch('/api/admin/health').then(r => r.json()).catch(() => ({ checks: [] }));
     setHealthChecks(hd.checks || []);
     const endpoints = [
       { name: 'Transactions API', url: '/api/fin?months=1' },
       { name: 'Config API',       url: '/api/config' },
-      { name: 'Accounts API',     url: '/api/accounts' },
-      { name: 'Search API',       url: '/api/search?q=test' },
+      { name: 'Accounts API',     url: '/api/plaid/accounts' },
+      { name: 'Search API',       url: '/api/transactions/search?q=test' },
     ];
     const pings = await Promise.all(endpoints.map(async ({ name, url }) => {
       const t0 = performance.now();
@@ -4455,7 +4674,7 @@ function AdminTab() {
 
   async function triggerDeploy() {
     setDeployOutput(''); setDeployDone(false); setDeployOk(false); setDeployRunning(true);
-    const d = await fetch('/api/admin/deploy', { method: 'POST' }).then(r => r.json());
+    const d = await apiFetch('/api/admin/deploy', { method: 'POST' }).then(r => r.json());
     setDeployJobId(d.job_id);
   }
 
@@ -4466,20 +4685,9 @@ function AdminTab() {
     startTestPoll(suite, d.job_id);
   }
 
-  async function saveApiKeys() {
-    setSaving(true); setSaved(false);
-    const body = { preferred_provider: provider };
-    if (geminiKey) body.gemini_api_key    = geminiKey;
-    if (claudeKey) body.anthropic_api_key = claudeKey;
-    await fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    const d = await fetch('/api/config').then(r => r.json());
-    setCfg(d); setGeminiKey(''); setClaudeKey('');
-    setSaving(false); setSaved(true); setTimeout(() => setSaved(false), 2500);
-  }
-
   async function createUser() {
     if (!newUser || !newPass) return;
-    const r = await fetch('/api/auth/register', {
+    const r = await apiFetch('/api/auth/register', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username: newUser, password: newPass, is_admin: newAdmin }),
     });
@@ -4487,7 +4695,7 @@ function AdminTab() {
     if (d.ok) {
       setUserMsg(`User "${newUser}" created.`);
       setNewUser(''); setNewPass(''); setNewAdmin(false);
-      fetch('/api/auth/users').then(r => r.json()).then(d => setUsers(d.users || []));
+      apiFetch('/api/auth/users').then(r => r.json()).then(d => setUsers(d.users || []));
     } else {
       setUserMsg(d.detail || 'Failed to create user.');
     }
@@ -4700,7 +4908,38 @@ function AdminTab() {
             placeholder="sk-ant-…" style={input} />
         </div>
 
-        <button onClick={saveApiKeys} disabled={saving}
+        <div style={{ borderTop: '1px solid var(--line)', paddingTop: 16, display: 'grid', gap: 12 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+            Notification Sender (Admin)
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--ink-3)' }}>
+            The MoneyTalks Gmail account that sends alerts to all users.
+          </div>
+          <div>
+            <FieldLabel>From Email (MoneyTalks Gmail)</FieldLabel>
+            <input type="email" value={cfg?.alert_from_email || ''} onChange={e => setCfg(p => ({ ...p, alert_from_email: e.target.value }))}
+              placeholder="moneytalks.alerts@gmail.com" style={input} />
+          </div>
+          <div>
+            <FieldLabel>Gmail App Password</FieldLabel>
+            <input type="password" placeholder="xxxx xxxx xxxx xxxx"
+              onChange={e => setCfg(p => ({ ...p, _new_smtp_pass: e.target.value }))}
+              style={input} />
+          </div>
+        </div>
+
+        <button onClick={async () => {
+          setSaving(true); setSaved(false);
+          const body = { preferred_provider: provider };
+          if (geminiKey) body.gemini_api_key    = geminiKey;
+          if (claudeKey) body.anthropic_api_key = claudeKey;
+          if (cfg?.alert_from_email) body.alert_from_email = cfg.alert_from_email;
+          if (cfg?._new_smtp_pass)   body.alert_smtp_password = cfg._new_smtp_pass;
+          await apiFetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+          const d = await apiFetch('/api/config').then(r => r.json());
+          setCfg(d); setGeminiKey(''); setClaudeKey('');
+          setSaving(false); setSaved(true); setTimeout(() => setSaved(false), 2500);
+        }} disabled={saving}
           style={{ ...btnPrimary, opacity: saving ? 0.6 : 1 }}>
           {saving ? 'Saving…' : saved ? '✓ Saved' : 'Save'}
         </button>
@@ -4792,7 +5031,7 @@ function AdminTab() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
           <button onClick={() => {
             setLogsLoading(true);
-            fetch('/api/admin/logs?lines=300').then(r => r.json()).then(d => {
+            apiFetch('/api/admin/logs?lines=300').then(r => r.json()).then(d => {
               setLogs(d.lines || []); setLogsLoading(false);
             }).catch(() => setLogsLoading(false));
           }} style={{
@@ -4870,6 +5109,250 @@ function AdminTab() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// PerformancePanel — statement-based portfolio analytics
+// ═══════════════════════════════════════════════════════════════════
+
+function PerformancePanel() {
+  const [data, setData]       = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState(null);
+
+  useEffect(() => {
+    apiFetch('/api/portfolio/performance')
+      .then(r => r && r.json())
+      .then(d => { setData(d); setLoading(false); })
+      .catch(e => { setError(String(e)); setLoading(false); });
+  }, []);
+
+  if (loading) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--ink-4)', fontSize: 14 }}>Analyzing statements…</div>;
+  if (error)   return <div style={{ padding: 40, textAlign: 'center', color: 'var(--terra)', fontSize: 14 }}>{error}</div>;
+  if (!data?.ok) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--terra)', fontSize: 14 }}>{data?.error || 'Could not load performance data.'}</div>;
+
+  const perf         = data.performance || {};
+  const monthly      = perf.monthly_returns || [];
+  const deposits     = data.all_deposits || [];
+  const balances     = data.balances || [];
+
+  const totalInvested   = data.total_invested || 0;
+  const cashDeposited   = data.total_deposits || 0;
+  const transferIn      = data.transfer_in || 0;
+  const currentValue    = data.current_value || 0;
+  const totalFees       = data.total_fees || 0;
+  const trueGain        = currentValue - totalInvested;
+  const trueGainPct     = totalInvested > 0 ? (trueGain / totalInvested) * 100 : 0;
+
+  // Quarterly buckets from monthly balances
+  const quarters = {};
+  balances.forEach((b, i) => {
+    const [year, mon] = b.month.split('-').map(Number);
+    const q = `${year} Q${Math.ceil(mon / 3)}`;
+    quarters[q] = { end: b.value, label: q };
+    if (i === 0) quarters[q].start = balances[0].value;
+    else {
+      const prevQ = quarters[q].start == null ? balances[i - 1].value : quarters[q].start;
+      if (quarters[q].start == null) quarters[q].start = prevQ;
+    }
+  });
+  // Compute quarter start properly: first balance of the quarter
+  const qKeys = [];
+  const qMap = {};
+  balances.forEach((b, i) => {
+    const [year, mon] = b.month.split('-').map(Number);
+    const q = `${year} Q${Math.ceil(mon / 3)}`;
+    if (!qMap[q]) { qMap[q] = { start: i > 0 ? balances[i-1].value : 0, end: b.value, label: q }; qKeys.push(q); }
+    qMap[q].end = b.value;
+  });
+  const quarterList = qKeys.map(k => {
+    const { start, end, label } = qMap[k];
+    const gain = end - start;
+    const pct  = start > 0 ? (gain / start) * 100 : 0;
+    return { label, end, gain, pct };
+  }).filter(q => q.end > 0);
+
+  // SPY benchmark TWR for display
+  const twrPort = perf.twr_portfolio;
+  const twrSpy  = perf.twr_spy;
+  const beta     = perf.beta;
+  const alpha    = perf.alpha;
+  const rSq      = perf.r_squared;
+
+  // Monthly return bars — last 12 months
+  const recentMonthly = monthly.slice(-12);
+  const maxAbsReturn  = Math.max(...recentMonthly.map(m => Math.max(Math.abs(m.portfolio), Math.abs(m.spy || 0))), 1);
+
+  const StatCard = ({ label, value, sub, positive, negative, small }) => (
+    <div style={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 14, padding: '18px 20px' }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>{label}</div>
+      <div style={{
+        fontSize: small ? 18 : 22, fontWeight: 700, fontVariantNumeric: 'tabular-nums',
+        color: positive ? 'var(--accent)' : negative ? 'var(--terra)' : 'var(--ink)',
+      }}>{value}</div>
+      {sub && <div style={{ fontSize: 12, color: 'var(--ink-4)', marginTop: 4 }}>{sub}</div>}
+    </div>
+  );
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+
+      {/* Summary cards row 1 */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
+        <StatCard label="Portfolio Value"    value={fmtMoney(currentValue)} />
+        <StatCard label="Cash Deposited"     value={fmtMoney(cashDeposited)} sub={`${deposits.length} ACH deposits`} />
+        <StatCard label="Transferred In"     value={fmtMoney(transferIn)}   sub="E*Trade stocks (May 2024)" />
+        <StatCard label="Total Fees Paid"    value={`$${totalFees.toFixed(2)}`} sub={`0.25%/yr · ${data.statement_count} months`} negative />
+      </div>
+
+      {/* Summary cards row 2 */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
+        <StatCard label="Total Invested"     value={fmtMoney(totalInvested)} sub="Cash + transfer-in" />
+        <StatCard label="True Gain"
+          value={`${trueGain >= 0 ? '+' : '−'}${fmtMoney(Math.abs(trueGain))}`}
+          sub={`${trueGainPct >= 0 ? '+' : ''}${trueGainPct.toFixed(1)}% on total invested`}
+          positive={trueGain > 0} negative={trueGain < 0} />
+        <StatCard label="Your TWR"
+          value={twrPort != null ? `${twrPort >= 0 ? '+' : ''}${twrPort.toFixed(1)}%` : '—'}
+          sub="Time-weighted return" positive={twrPort > 0} negative={twrPort < 0} />
+        <StatCard label="SPY (benchmark)"
+          value={twrSpy != null ? `${twrSpy >= 0 ? '+' : ''}${twrSpy.toFixed(1)}%` : '—'}
+          sub="Same period"
+          positive={twrSpy > 0} negative={twrSpy < 0} />
+      </div>
+
+      {/* Beta / Alpha badges */}
+      {(beta != null || alpha != null) && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
+          {beta != null && (
+            <div style={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 14, padding: '18px 20px' }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Beta vs SPY</div>
+              <div style={{ fontSize: 28, fontWeight: 700, color: beta < 1 ? 'var(--accent)' : 'var(--terra)', fontVariantNumeric: 'tabular-nums' }}>{beta.toFixed(2)}</div>
+              <div style={{ fontSize: 12, color: 'var(--ink-4)', marginTop: 6, lineHeight: 1.5 }}>
+                {beta < 0.8 ? 'Much less volatile than the market — your portfolio moves more gently than SPY.'
+                : beta < 1.0 ? 'Slightly less volatile than SPY — good for capital preservation.'
+                : beta < 1.2 ? 'Moves roughly in step with the market.'
+                : 'More volatile than SPY — bigger swings both up and down.'}
+              </div>
+            </div>
+          )}
+          {alpha != null && (
+            <div style={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 14, padding: '18px 20px' }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Alpha (annualized)</div>
+              <div style={{ fontSize: 28, fontWeight: 700, color: alpha >= 0 ? 'var(--accent)' : 'var(--terra)', fontVariantNumeric: 'tabular-nums' }}>{alpha >= 0 ? '+' : ''}{alpha.toFixed(2)}%</div>
+              <div style={{ fontSize: 12, color: 'var(--ink-4)', marginTop: 6, lineHeight: 1.5 }}>
+                {alpha >= 1 ? `Outperforming SPY by ~${alpha.toFixed(1)}%/yr after adjusting for market moves.`
+                : alpha >= 0 ? 'Roughly matching the market on a risk-adjusted basis.'
+                : `Underperforming SPY by ~${Math.abs(alpha).toFixed(1)}%/yr after adjusting for market moves.`}
+              </div>
+            </div>
+          )}
+          {rSq != null && (
+            <div style={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 14, padding: '18px 20px' }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>R² (vs SPY)</div>
+              <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>{(rSq * 100).toFixed(0)}%</div>
+              <div style={{ fontSize: 12, color: 'var(--ink-4)', marginTop: 6, lineHeight: 1.5 }}>
+                {rSq > 0.9 ? 'Moves almost entirely with SPY — highly correlated.'
+                : rSq > 0.7 ? 'Mostly tracks SPY with some independent variation.'
+                : 'Meaningful portion of your return is independent of the market.'}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Monthly returns chart */}
+      {recentMonthly.length > 0 && (
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 14, padding: '20px 24px' }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', marginBottom: 4 }}>Monthly Returns — Last 12 Months vs SPY</div>
+          <div style={{ fontSize: 11, color: 'var(--ink-4)', marginBottom: 16 }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginRight: 16 }}>
+              <span style={{ width: 10, height: 10, borderRadius: 2, background: 'var(--accent)', display: 'inline-block' }} /> Your portfolio
+            </span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+              <span style={{ width: 10, height: 10, borderRadius: 2, background: '#94a3b8', display: 'inline-block' }} /> SPY
+            </span>
+          </div>
+          <div style={{ display: 'flex', gap: 4, alignItems: 'flex-end', height: 120 }}>
+            {recentMonthly.map((m, i) => {
+              const portH = Math.max(2, Math.abs(m.portfolio) / maxAbsReturn * 55);
+              const spyH  = m.spy != null ? Math.max(2, Math.abs(m.spy) / maxAbsReturn * 55) : 0;
+              const portPos = m.portfolio >= 0;
+              const spyPos  = (m.spy || 0) >= 0;
+              return (
+                <div key={m.month} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                  {/* positive bars above midline */}
+                  <div style={{ height: 60, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', gap: 2 }}>
+                    <div style={{ width: 6, height: portPos ? portH : 0, background: 'var(--accent)', borderRadius: '2px 2px 0 0' }} />
+                    <div style={{ width: 6, height: spyPos && m.spy != null ? spyH : 0, background: '#94a3b8', borderRadius: '2px 2px 0 0' }} />
+                  </div>
+                  {/* zero line */}
+                  <div style={{ width: '100%', height: 1, background: 'var(--line)' }} />
+                  {/* negative bars below midline */}
+                  <div style={{ height: 60, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', gap: 2 }}>
+                    <div style={{ width: 6, height: !portPos ? portH : 0, background: 'var(--terra)', borderRadius: '0 0 2px 2px' }} />
+                    <div style={{ width: 6, height: !spyPos && m.spy != null ? spyH : 0, background: '#f87171', borderRadius: '0 0 2px 2px' }} />
+                  </div>
+                  <div style={{ fontSize: 9, color: 'var(--ink-4)', marginTop: 2 }}>{m.month.slice(5)}</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Quarterly growth */}
+      {quarterList.length > 0 && (
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 14, overflow: 'hidden' }}>
+          <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--line)', fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>
+            Quarterly Portfolio Growth
+          </div>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr style={{ background: 'var(--surface-3)' }}>
+                {['Quarter', 'End Value', 'Gain / Loss', 'Return'].map(h => (
+                  <th key={h} style={{ padding: '10px 20px', textAlign: h === 'Quarter' ? 'left' : 'right', fontSize: 11, fontWeight: 600, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {quarterList.map((q, i) => (
+                <tr key={q.label} style={{ borderTop: i > 0 ? '1px solid var(--line)' : 'none' }}>
+                  <td style={{ padding: '12px 20px', fontWeight: 600, color: 'var(--ink)' }}>{q.label}</td>
+                  <td style={{ padding: '12px 20px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--ink-2)' }}>{fmtMoney(q.end)}</td>
+                  <td style={{ padding: '12px 20px', textAlign: 'right', fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: q.gain >= 0 ? 'var(--accent)' : 'var(--terra)' }}>
+                    {q.gain >= 0 ? '+' : '−'}{fmtMoney(Math.abs(q.gain))}
+                  </td>
+                  <td style={{ padding: '12px 20px', textAlign: 'right', fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: q.pct >= 0 ? 'var(--accent)' : 'var(--terra)' }}>
+                    {q.pct >= 0 ? '+' : ''}{q.pct.toFixed(1)}%
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Cash contributions timeline */}
+      {deposits.length > 0 && (
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 14, overflow: 'hidden' }}>
+          <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Cash Deposit History</div>
+            <div style={{ fontSize: 12, color: 'var(--ink-4)' }}>Total: {fmtMoney(cashDeposited)}</div>
+          </div>
+          {deposits.map((d, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '12px 24px', borderTop: i > 0 ? '1px solid var(--line)' : 'none' }}>
+              <div style={{ fontSize: 12, color: 'var(--ink-4)', width: 100, flexShrink: 0 }}>{d.date}</div>
+              <div style={{ flex: 1, height: 6, background: 'var(--line)', borderRadius: 99 }}>
+                <div style={{ height: 6, borderRadius: 99, background: 'var(--accent)', width: `${(d.amount / cashDeposited) * 100}%` }} />
+              </div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums', minWidth: 80, textAlign: 'right' }}>{fmtMoney(d.amount)}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+    </div>
+  );
+}
+
 // InvestmentsTab — portfolio overview (mock data, real API coming soon)
 // ═══════════════════════════════════════════════════════════════════
 
@@ -4922,12 +5405,14 @@ function InvestmentsTab() {
   const [error,   setError]     = useState(null);
 
   useEffect(() => {
-    fetch('/api/investments')
-      .then(r => r.json())
-      .then(d => { setInvData(d); setLoading(false); })
+    apiFetch('/api/investments')
+      .then(r => r && r.json())
+      .then(d => { if (d) { setInvData(d); setLoading(false); } })
       .catch(e => { setError(String(e)); setLoading(false); });
   }, []);
 
+  const [invTab, setInvTab] = useState('holdings');
+  const [hoveredBar, setHoveredBar] = useState(null);
   const [holdingSort, setHoldingSort] = useState({ col: 'value', dir: 'desc' });
   function toggleHoldingSort(col) {
     setHoldingSort(prev => prev.col === col
@@ -4982,8 +5467,10 @@ function InvestmentsTab() {
   const knownCost  = holdings.some(h => h.cost_basis != null);
   const totalGain  = knownCost ? totalValue - totalCost : null;
   const totalGainPct = (totalGain != null && totalCost > 0) ? (totalGain / totalCost) * 100 : null;
-  const ytdContribs  = transactions.filter(t => t.type === 'cash'     && t.date.startsWith(thisYear)).reduce((s, t) => s + Math.abs(t.amount), 0);
-  const ytdDividends = transactions.filter(t => t.type === 'dividend' && t.date.startsWith(thisYear)).reduce((s, t) => s + Math.abs(t.amount), 0);
+  // Real cash deposits have price < 0 (Plaid encodes them as 1 share @ -depositAmount).
+  // Small positive-price cash/deposit entries are dividend reinvestments — exclude from contributions.
+  const ytdContribs  = transactions.filter(t => t.type === 'cash' && t.price < 0 && t.date.startsWith(thisYear)).reduce((s, t) => s + Math.abs(t.amount), 0);
+  const ytdDividends = transactions.filter(t => (t.type === 'dividend' || (t.type === 'cash' && t.price > 0 && t.amount < 0)) && t.date.startsWith(thisYear)).reduce((s, t) => s + Math.abs(t.amount), 0);
 
   // Asset allocation
   const byClass = {};
@@ -5081,18 +5568,36 @@ function InvestmentsTab() {
             </div>
           ) : (
             <>
-              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: 100, marginTop: 16 }}>
-                {monthlyValues.map(([month, value]) => (
-                  <div key={month} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                    <div style={{
-                      width: '100%', borderRadius: 4,
-                      background: 'color-mix(in srgb, var(--accent) 70%, transparent)',
-                      height: `${Math.max(4, (value / maxMonthly) * 80)}px`,
-                      transition: 'height 0.2s',
-                    }} title={fmtMoney(value)} />
-                    <div style={{ fontSize: 9, color: 'var(--ink-4)' }}>{month.slice(5)}</div>
+              <div style={{ position: 'relative' }}>
+                {hoveredBar && (
+                  <div style={{
+                    position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)',
+                    background: 'var(--surface-2)', border: '1px solid var(--line)',
+                    borderRadius: 8, padding: '6px 12px', fontSize: 12, color: 'var(--ink)',
+                    pointerEvents: 'none', whiteSpace: 'nowrap', zIndex: 10,
+                  }}>
+                    <span style={{ color: 'var(--ink-4)', marginRight: 6 }}>{hoveredBar.month}</span>
+                    <span style={{ fontWeight: 700 }}>{fmtMoney(hoveredBar.value)}</span>
                   </div>
-                ))}
+                )}
+                <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: 100, marginTop: 36 }}>
+                  {monthlyValues.map(([month, value]) => (
+                    <div key={month} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, cursor: 'pointer' }}
+                      onMouseEnter={() => setHoveredBar({ month, value })}
+                      onMouseLeave={() => setHoveredBar(null)}
+                    >
+                      <div style={{
+                        width: '100%', borderRadius: 4,
+                        background: hoveredBar?.month === month
+                          ? 'var(--accent)'
+                          : 'color-mix(in srgb, var(--accent) 70%, transparent)',
+                        height: `${Math.max(4, (value / maxMonthly) * 80)}px`,
+                        transition: 'background 0.1s',
+                      }} />
+                      <div style={{ fontSize: 9, color: hoveredBar?.month === month ? 'var(--ink)' : 'var(--ink-4)' }}>{month.slice(5)}</div>
+                    </div>
+                  ))}
+                </div>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10, fontSize: 11, color: 'var(--ink-4)' }}>
                 <span>{fmtMoney(monthlyValues[0][1])}</span>
@@ -5109,8 +5614,19 @@ function InvestmentsTab() {
         </div>
       </div>
 
+      {/* Tab switcher */}
+      <div style={{ display: 'flex', gap: 4, background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 10, padding: 4, alignSelf: 'flex-start' }}>
+        {[['holdings', `Holdings (${holdings.length})`], ['transactions', `Transactions (${transactions.length})`], ['performance', 'Performance']].map(([key, label]) => (
+          <button key={key} onClick={() => setInvTab(key)} style={{
+            padding: '6px 16px', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600,
+            background: invTab === key ? 'var(--accent)' : 'transparent',
+            color: invTab === key ? '#fff' : 'var(--ink-3)',
+          }}>{label}</button>
+        ))}
+      </div>
+
       {/* Holdings table */}
-      {holdings.length > 0 && (
+      {invTab === 'holdings' && holdings.length > 0 && (
         <div style={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 14, overflow: 'hidden' }}>
           <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Holdings</div>
@@ -5184,11 +5700,21 @@ function InvestmentsTab() {
         </div>
       )}
 
+      {invTab === 'holdings' && holdings.length === 0 && (
+        <div style={{ color: 'var(--ink-4)', fontSize: 13, textAlign: 'center', padding: 32 }}>No holdings data — re-link your investment accounts in Settings.</div>
+      )}
+
       {/* Investment transactions */}
-      {transactions.length > 0 && (
+      {invTab === 'transactions' && transactions.length === 0 && (
+        <div style={{ color: 'var(--ink-4)', fontSize: 13, textAlign: 'center', padding: 32 }}>No investment transactions found.</div>
+      )}
+
+      {invTab === 'performance' && <PerformancePanel />}
+
+      {invTab === 'transactions' && transactions.length > 0 && (
         <div style={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 14, overflow: 'hidden' }}>
           <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--line)' }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Activity</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Transaction History</div>
           </div>
           <div>
             {transactions.map((t, i) => {

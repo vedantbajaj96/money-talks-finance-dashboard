@@ -35,14 +35,14 @@ function ProfilePanel({ me, onClose, onDisplayNameChange }) {
   // Load user list when family section opens
   useEffect(() => {
     if (section === 'family' && users === null) {
-      fetch('/api/auth/users').then(r => r.json()).then(d => setUsers(d.users || []));
+      apiFetch('/api/auth/users').then(r => r.json()).then(d => setUsers(d.users || []));
     }
   }, [section]);
 
   async function changePassword() {
     if (!oldPw || !newPw) return;
     setPwBusy(true); setPwMsg(null);
-    const res = await fetch('/api/auth/change-password', {
+    const res = await apiFetch('/api/auth/change-password', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ old_password: oldPw, new_password: newPw }),
@@ -56,7 +56,7 @@ function ProfilePanel({ me, onClose, onDisplayNameChange }) {
   async function addUser() {
     if (!uname || !upass) return;
     setAddBusy(true); setAddMsg(null);
-    const res = await fetch('/api/auth/register', {
+    const res = await apiFetch('/api/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username: uname, password: upass, is_admin: uadmin }),
@@ -66,7 +66,7 @@ function ProfilePanel({ me, onClose, onDisplayNameChange }) {
     if (res.ok) {
       setAddMsg({ ok: true });
       setUname(''); setUpass(''); setUadmin(false);
-      fetch('/api/auth/users').then(r => r.json()).then(d => setUsers(d.users || []));
+      apiFetch('/api/auth/users').then(r => r.json()).then(d => setUsers(d.users || []));
     } else {
       setAddMsg({ error: d.detail || 'Failed' });
     }
@@ -81,7 +81,7 @@ function ProfilePanel({ me, onClose, onDisplayNameChange }) {
   async function saveDisplayName() {
     if (!draftName.trim()) return;
     setNameBusy(true);
-    const res = await fetch('/api/auth/me', {
+    const res = await apiFetch('/api/auth/me', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ display_name: draftName.trim() }),
@@ -238,7 +238,7 @@ function ProfilePanel({ me, onClose, onDisplayNameChange }) {
       {/* ── Sign out ─────────────────────────────────────── */}
       <div style={{ padding: '8px 16px 16px' }}>
         <button style={btnStyle(false)} onClick={async () => {
-          await fetch('/api/auth/logout', { method: 'POST' });
+          await apiFetch('/api/auth/logout', { method: 'POST' });
           window.location.href = '/login';
         }}>Sign out</button>
       </div>
@@ -377,7 +377,7 @@ function TopBar({ tab, monthKey, setMonthKey, search, setSearch, syncState, sync
   const [showProfile, setShowProfile] = useState(false);
 
   useEffect(() => {
-    fetch('/api/auth/me').then(r => r.json()).then(setMe).catch(() => {});
+    apiFetch('/api/auth/me').then(r => r.json()).then(setMe).catch(() => {});
   }, []);
 
   function fmtLastSync(iso) {
@@ -579,22 +579,22 @@ function App() {
   const [syncProgress, setSyncProgress] = useState(null);
 
   useEffect(() => {
-    fetch('/api/auth/me').then(r => r.json()).then(me => {
+    apiFetch('/api/auth/me').then(r => r.json()).then(me => {
       if (me?.is_admin) { setIsAdmin(true); setTab('admin'); return; }
-      fetch('/api/review').then(r => r.json()).then(d => {
+      apiFetch('/api/review').then(r => r.json()).then(d => {
         setTab(d.remaining === 0 ? 'monthly' : 'review');
       }).catch(() => setTab('monthly'));
     }).catch(() => {
-      fetch('/api/review').then(r => r.json()).then(d => {
+      apiFetch('/api/review').then(r => r.json()).then(d => {
         setTab(d.remaining === 0 ? 'monthly' : 'review');
       }).catch(() => setTab('monthly'));
     });
     // Auto-sync on load if stale
-    fetch('/api/plaid/sync_status').then(r => r.json()).then(d => {
+    apiFetch('/api/plaid/sync_status').then(r => r.json()).then(d => {
       setSyncState(d);
       if (d.needs_sync) {
         setSyncing(true);
-        fetch('/api/plaid/sync', { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' })
+        apiFetch('/api/plaid/sync', { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' })
           .then(r => r.json())
           .then(res => {
             setSyncing(false);
@@ -614,7 +614,7 @@ function App() {
     setSyncProgress({ step: full ? 'Resetting cursors…' : 'Connecting to bank…', pct: 10, error: null });
     try {
       setSyncProgress({ step: 'Fetching transactions…', pct: 35, error: null });
-      const r   = await fetch('/api/plaid/sync', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ full }) });
+      const r   = await apiFetch('/api/plaid/sync', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ full }) });
       setSyncProgress({ step: 'Categorizing…', pct: 70, error: null });
       if (r.status === 401) { window.location.href = '/login.html'; return; }
       const res = await r.json();
@@ -645,7 +645,7 @@ function App() {
   // Re-fetch /api/fin and update window.FIN so all tabs see latest data.
   // Arrays are mutated in-place so module-level destructured references (TRANSACTIONS etc.) stay valid.
   const refreshFin = useCallback(() => {
-    fetch('/api/fin').then(r => r.json()).then(data => {
+    apiFetch('/api/fin').then(r => r.json()).then(data => {
       if (data.hasData === false) return;
       // Mutate arrays in-place so const destructurings at module scope stay in sync
       const arrayKeys = ['transactions', 'months', 'accounts', 'categories', 'recurring', 'net_worth_history'];
