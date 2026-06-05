@@ -430,7 +430,9 @@ def sync_all_transactions(
         # so we use a ±3-day window rather than exact date matching.
         import datetime as _dt
         existing_fps: dict = {}  # (amount, desc_fp) -> [(date_str, txn_id)]
+        existing_plaid_ids: set = set()  # all plaid_txn_ids already stored
         if not df.empty and "plaid_txn_id" in df.columns:
+            existing_plaid_ids = set(df["plaid_txn_id"].dropna().astype(str))
             inst_rows = df[df["source"] == inst_source]
             for _, r in inst_rows.iterrows():
                 key = (round(float(r.get("expense_amount", 0)), 2), _desc_fp(r.get("description", "")))
@@ -467,16 +469,30 @@ def sync_all_transactions(
                     continue
                 seen_ids.add(txn_id)
 
-                # Cross-batch: same amount+description AND date within ±3 days of an existing row
-                # (covers Plaid pending→posted date shifts of 1-3 days)
+                # Cross-batch ID check: plaid_txn_id already in the stored dataframe → skip
+                if txn_id and txn_id in existing_plaid_ids:
+                    logger.info("[sync:%s] skipped cross-batch duplicate plaid_txn_id: %s", inst_name, txn_id)
+                    skipped += 1
+                    continue
+
+                # Cross-batch fingerprint check: same amount+description within ±3 days
+                # (covers Plaid pending→posted date shifts that assign a new transaction_id)
                 key = (round(float(row["expense_amount"]), 2), _desc_fp(row["description"]))
                 existing_entries = existing_fps.get(key, [])
                 if existing_entries and _within_window(str(row["date"])[:10], existing_entries):
-                    # Only flag if the IDs are all different (not just same txn seen again)
                     if all(eid != txn_id for _, eid in existing_entries):
-                        logger.info("[sync:%s] flagging possible duplicate (date-window): %s %.2f", inst_name, row["date"], row["expense_amount"])
-                        row["notes"] = "⚠ Possible duplicate — review and delete if needed"
-                        row["category"] = "Pending Review"
+                        new_date = str(row["date"])[:10]
+                        exact_date_match = any(ds == new_date for ds, _ in existing_entries)
+                        if exact_date_match:
+                            # Identical date+amount+description → definite duplicate, skip
+                            logger.info("[sync:%s] skipped exact-match duplicate: %s %.2f on %s", inst_name, row["description"], row["expense_amount"], new_date)
+                            skipped += 1
+                            continue
+                        else:
+                            # Date shifted slightly → likely pending→posted, flag for review
+                            logger.info("[sync:%s] flagging possible duplicate (date-window): %s %.2f", inst_name, row["date"], row["expense_amount"])
+                            row["notes"] = "⚠ Possible duplicate — review and delete if needed"
+                            row["category"] = "Pending Review"
 
                 deduped.append(row)
             total_added += len(deduped)

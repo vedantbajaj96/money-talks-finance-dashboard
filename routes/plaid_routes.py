@@ -85,6 +85,10 @@ async def plaid_sync(body: dict[str, Any] = {}, current_user: str = Depends(get_
 
         existing = load_df(current_user)
         df, errors, stats = sync_all_transactions(existing, cfg=cfg, data_dir=data_dir)
+        from core.parsers import deduplicate as _dedup
+        df, dupes_removed = _dedup(df)
+        if dupes_removed:
+            logger.info("[sync:%s] removed %d semantic duplicates after sync", current_user, dupes_removed)
         t_sync = time.monotonic()
         logger.info("[sync:%s] transactions fetched in %.1fs — added=%s modified=%s removed=%s",
                     current_user, t_sync - t_refresh,

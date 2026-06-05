@@ -46,6 +46,10 @@ def _sync_user(username: str) -> None:
         refresh_all(cfg=cfg, data_dir=data_dir)
         existing = load_df(username)
         df, errors, stats = sync_all_transactions(existing, cfg=cfg, data_dir=data_dir)
+        from core.parsers import deduplicate as _dedup
+        df, dupes_removed = _dedup(df)
+        if dupes_removed:
+            logger.warning("[scheduler:%s] removed %d semantic duplicates after sync", username, dupes_removed)
 
         if errors:
             logger.warning("[scheduler:%s] sync errors: %s", username, errors)
