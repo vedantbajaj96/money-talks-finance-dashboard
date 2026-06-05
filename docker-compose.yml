@@ -4,9 +4,6 @@ services:
     ports:
       - "8502:8502"
     volumes:
-      - moneytalks_data:/app/data
+      - ./data:/app/data
       - /var/run/docker.sock:/var/run/docker.sock
     restart: unless-stopped
-
-volumes:
-  moneytalks_data:
