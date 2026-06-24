@@ -144,6 +144,11 @@ async def plaid_sync(body: dict[str, Any] = {}, current_user: str = Depends(get_
 
             from core.categories import detect_refund_pairs
             df, _ = detect_refund_pairs(df, user_rules_path=user_dir(current_user) / "user_rules.py")
+
+            # Any row the user manually edited is already reviewed — approve it.
+            _ue = df.get("user_edited", pd.Series(False, index=df.index)).fillna(False).astype(bool)
+            df.loc[_ue, "approved"] = True
+
             save_df(current_user, df)
 
         # Integrity check: user-edited row count must never decrease after sync.

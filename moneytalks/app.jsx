@@ -691,7 +691,7 @@ function App() {
       case 'overview':    return <OverviewTab    {...props} />;
       case 'txns':        return <TransactionsTab {...props} />;
       case 'monthly':     return <MonthlyTab {...props} />;
-      case 'review':      return <ReviewTab refreshFin={refreshFin} />;
+      case 'review':      return <ReviewTab refreshFin={refreshFin} setTab={setTab} />;
       case 'cashflow':    return <CashFlowTab />;
       case 'income':      return <IncomeTab      {...props} />;
       case 'spending':    return <SpendingTab    {...props} />;

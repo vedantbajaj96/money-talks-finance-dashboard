@@ -386,6 +386,7 @@ def sync_all_transactions(
                             "notes":       r.get("notes"),
                             "tags":        r.get("tags"),
                             "user_edited": bool(r.get("user_edited", False)),
+                            "approved":    bool(r.get("approved", False)),
                             "date":        r.get("date") if bool(r.get("user_edited", False)) else None,
                         }
             df = df[df["source"] != inst_source].copy()
@@ -429,16 +430,25 @@ def sync_all_transactions(
         # Plaid pending→posted transitions shift the date by 1-3 days and assign a new ID,
         # so we use a ±3-day window rather than exact date matching.
         import datetime as _dt
+        import re as _re
         existing_fps: dict = {}  # (amount, desc_fp) -> [(date_str, txn_id)]
+        existing_numeric_ids: dict = {}  # (amount, numeric_id) -> [(date_str, txn_id)]
         existing_plaid_ids: set = set()  # all plaid_txn_ids already stored
+
+        def _long_numeric_ids(desc: str) -> set:
+            """Extract numeric IDs ≥8 digits — matches PPD/ACH IDs across raw vs clean descriptions."""
+            return set(_re.findall(r'\b\d{8,}\b', str(desc)))
+
         if not df.empty and "plaid_txn_id" in df.columns:
             existing_plaid_ids = set(df["plaid_txn_id"].dropna().astype(str))
             inst_rows = df[df["source"] == inst_source]
             for _, r in inst_rows.iterrows():
-                key = (round(float(r.get("expense_amount", 0)), 2), _desc_fp(r.get("description", "")))
-                existing_fps.setdefault(key, []).append(
-                    (str(r.get("date", ""))[:10], str(r.get("plaid_txn_id", "")))
-                )
+                amt = round(float(r.get("expense_amount", 0)), 2)
+                key = (amt, _desc_fp(r.get("description", "")))
+                entry = (str(r.get("date", ""))[:10], str(r.get("plaid_txn_id", "")))
+                existing_fps.setdefault(key, []).append(entry)
+                for nid in _long_numeric_ids(r.get("description", "")):
+                    existing_numeric_ids.setdefault((amt, nid), []).append(entry)
 
         def _within_window(new_date_str: str, existing: list, days: int = 3) -> bool:
             """Return True if any existing date is within `days` of new_date_str."""
@@ -477,14 +487,24 @@ def sync_all_transactions(
 
                 # Cross-batch fingerprint check: same amount+description within ±3 days
                 # (covers Plaid pending→posted date shifts that assign a new transaction_id)
-                key = (round(float(row["expense_amount"]), 2), _desc_fp(row["description"]))
+                amt = round(float(row["expense_amount"]), 2)
+                key = (amt, _desc_fp(row["description"]))
                 existing_entries = existing_fps.get(key, [])
+
+                # Secondary: match via shared long numeric ID (PPD/ACH ID) + same amount
+                # Catches cases where Plaid changes description entirely on posting
+                if not existing_entries:
+                    for nid in _long_numeric_ids(row["description"]):
+                        existing_entries = existing_numeric_ids.get((amt, nid), [])
+                        if existing_entries:
+                            break
+
                 if existing_entries and _within_window(str(row["date"])[:10], existing_entries):
                     if all(eid != txn_id for _, eid in existing_entries):
                         new_date = str(row["date"])[:10]
                         exact_date_match = any(ds == new_date for ds, _ in existing_entries)
                         if exact_date_match:
-                            # Identical date+amount+description → definite duplicate, skip
+                            # Identical date+amount → definite duplicate, skip
                             logger.info("[sync:%s] skipped exact-match duplicate: %s %.2f on %s", inst_name, row["description"], row["expense_amount"], new_date)
                             skipped += 1
                             continue
@@ -517,6 +537,8 @@ def sync_all_transactions(
                         new_df.at[i, "tags"] = ann["tags"]
                     if was_user_edited:
                         new_df.at[i, "user_edited"] = True
+                    if ann.get("approved"):
+                        new_df.at[i, "approved"] = True
                     if ann.get("date") is not None:
                         try:
                             new_df.at[i, "date"] = pd.to_datetime(ann["date"])

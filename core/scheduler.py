@@ -79,6 +79,10 @@ def _sync_user(username: str) -> None:
             df.loc[mask & (df["expense_amount"] < 0) & _is_income,  "transaction_type"] = "income"
             df.loc[mask & (df["expense_amount"] < 0) & ~_is_income, "transaction_type"] = "expense"
 
+            # Any row the user manually edited is already reviewed — approve it.
+            _ue = df.get("user_edited", pd.Series(False, index=df.index)).fillna(False).astype(bool)
+            df.loc[_ue, "approved"] = True
+
             save_df(username, df)
 
         cfg["last_sync"] = datetime.datetime.utcnow().isoformat() + "Z"

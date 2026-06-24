@@ -521,7 +521,9 @@ def get_review_batch(current_user: str = Depends(get_current_user)) -> dict:
             df.loc[idx, "user_edited"] = False
         save_df(current_user, df)
 
-    reviewable    = df
+    from core.categories import map_category as _mc
+    _SKIP = {"transfer", "savings", "refund"}
+    reviewable    = df[~df["category"].apply(lambda c: _mc(str(c or "")) in _SKIP)]
     _still_pending = reviewable["category"].isin(["Pending Review", "pending review", ""]) | reviewable["category"].isna()
     approved_mask = reviewable["approved"].fillna(False).infer_objects(copy=False).astype(bool) & ~_still_pending
     total         = len(reviewable)
@@ -689,6 +691,7 @@ async def approve_batch(body: dict[str, Any], current_user: str = Depends(get_cu
     n_approved     = int((reviewable["approved"].fillna(False).infer_objects(copy=False).astype(bool) & ~_still_pending).sum())
     return {
         "ok":           True,
+        "total":        len(reviewable),
         "approved":     n_approved,
         "remaining":    len(reviewable) - n_approved,
         "streak":       streak,

@@ -4060,9 +4060,20 @@ function SettingsTab({ refreshFin }) {
 // ═══════════════════════════════════════════════════════════════════
 // ALL-DONE CELEBRATION
 // ═══════════════════════════════════════════════════════════════════
-function AllDoneCelebration({ total, streak }) {
+function AllDoneCelebration({ total, streak, setTab }) {
   const { useEffect, useState } = React;
   const [show, setShow] = useState(false);
+  const [countdown, setCountdown] = useState(5);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCountdown(c => {
+        if (c <= 1) { clearInterval(interval); if (setTab) setTab('monthly'); return 0; }
+        return c - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [setTab]);
 
   useEffect(() => {
     if (!document.getElementById('review-done-css')) {
@@ -4131,7 +4142,7 @@ function AllDoneCelebration({ total, streak }) {
           </div>
         )}
         <div style={{ marginTop: 24, fontSize: 12, color: 'var(--muted)' }}>
-          New transactions will appear here after your next sync.
+          Redirecting to Monthly tab in {countdown}s…
         </div>
       </div>
     </div>
@@ -4142,7 +4153,7 @@ function AllDoneCelebration({ total, streak }) {
 // ═══════════════════════════════════════════════════════════════════
 // REVIEW TAB
 // ═══════════════════════════════════════════════════════════════════
-function ReviewTab({ refreshFin }) {
+function ReviewTab({ refreshFin, setTab }) {
   const { useState, useEffect, useCallback } = React;
 
   const [state, setState]     = useState(null);   // {batch, total, approved, remaining}
@@ -4182,11 +4193,12 @@ function ReviewTab({ refreshFin }) {
         // Only fetch the next batch if there are more transactions left.
         setState(prev => ({
           ...prev,
+          total:         data.total ?? prev.total,
           approved:      data.approved,
           remaining:     data.remaining,
           streak:        data.streak,
           last_reviewed: data.last_reviewed,
-          batch:         [],   // clear current batch; load() will fill it if needed
+          batch:         [],
         }));
         setEdits({});
         if (refreshFin) refreshFin();
@@ -4268,7 +4280,7 @@ function ReviewTab({ refreshFin }) {
       </div>
 
       {allDone && total > 0 ? (
-        <AllDoneCelebration total={total} streak={streak} />
+        <AllDoneCelebration total={total} streak={streak} setTab={setTab} />
       ) : allDone ? null : (
         <>
           {/* Batch card */}
