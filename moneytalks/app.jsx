@@ -259,6 +259,7 @@ const TWEAK_DEFAULTS = {
   density: 'regular',
   monoNumbers: true,
   sidebarLayout: 'labeled',
+  darkMode: false,
 };
 
 const ACCENT_PRESETS = {
@@ -271,6 +272,8 @@ const ACCENT_PRESETS = {
 // ─── SVG icons ────────────────────────────────────────────────────
 const Icon = ({ name, size = 18 }) => {
   const paths = {
+    sun:         'M12 3v1M12 20v1M4.22 4.22l.7.7M18.36 18.36l.7.7M3 12h1M20 12h1M4.22 19.78l.7-.7M18.36 5.64l.7-.7M12 7a5 5 0 1 0 0 10A5 5 0 0 0 12 7z',
+    moon:        'M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z',
     sync:        'M4 12a8 8 0 0 1 14-5l3-3v6h-6M20 12a8 8 0 0 1-14 5l-3 3v-6h6',
     overview:    'M3 12h4l3-8 4 16 3-8h4',
     txns:        'M3 6h18M3 12h18M3 18h12',
@@ -386,7 +389,7 @@ function Sidebar({ active, onChange, layout, syncState }) {
 }
 
 // ─── Topbar ───────────────────────────────────────────────────────
-function TopBar({ tab, monthKey, setMonthKey, search, setSearch, syncState, syncing, syncProgress, manualSync, isAdmin }) {
+function TopBar({ tab, monthKey, setMonthKey, search, setSearch, syncState, syncing, syncProgress, manualSync, isAdmin, darkMode, onToggleDark }) {
   const [me,           setMe]          = useState(null);
   const [showProfile,  setShowProfile] = useState(false);
   const [showMonthPicker, setShowMonthPicker] = useState(false);
@@ -506,6 +509,10 @@ function TopBar({ tab, monthKey, setMonthKey, search, setSearch, syncState, sync
               onChange={(e) => setSearch(e.target.value)} />
             <kbd>⌘K</kbd>
           </div>
+          <button className="icon-btn" title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+            onClick={onToggleDark}>
+            <Icon name={darkMode ? 'sun' : 'moon'} size={16} />
+          </button>
         </>}
 
         {/* Avatar button — opens profile panel */}
@@ -800,7 +807,7 @@ function App() {
   };
 
   return (
-    <div className={`app density-${t.density} ${t.monoNumbers ? 'mono' : ''} ${isAdmin ? 'no-sidebar' : ''}`} style={cssVars}>
+    <div className={`app density-${t.density} ${t.monoNumbers ? 'mono' : ''} ${isAdmin ? 'no-sidebar' : ''} ${t.darkMode ? 'dark' : ''}`} style={cssVars}>
       {syncProgress && (
         <div style={{
           position: 'fixed', inset: 0, zIndex: 9999,
@@ -852,7 +859,8 @@ function App() {
         <TopBar tab={tab} monthKey={monthKey} setMonthKey={setMonthKey}
                 search={search} setSearch={setSearch}
                 syncState={syncState} syncing={syncing} syncProgress={syncProgress}
-                manualSync={manualSync} isAdmin={isAdmin} />
+                manualSync={manualSync} isAdmin={isAdmin}
+                darkMode={t.darkMode} onToggleDark={() => setTweak('darkMode', !t.darkMode)} />
         <div className={`page${tab ? ` tab-${tab}` : ''}`}>
           {/* key=tab resets the boundary and triggers fade-in whenever the user switches tabs */}
           <ErrorBoundary key={tab}>
@@ -868,6 +876,8 @@ function App() {
 
       <TweaksPanel title="Tweaks">
         <TweakSection label="Theme">
+          <TweakToggle label="Dark mode" value={t.darkMode}
+            onChange={(v) => setTweak('darkMode', v)} />
           <TweakRadio label="Accent" value={t.accent}
             options={[
               { label: 'Emerald', value: 'emerald' },

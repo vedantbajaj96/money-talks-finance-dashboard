@@ -687,7 +687,7 @@ function OverviewTab() {
                   background: over ? 'var(--terra)' : under ? 'var(--green)' : row.info.color,
                   borderRadius: 3, opacity: 0.75 }} />
               </div>
-              <div style={{ fontSize: 10, color: 'var(--ink-4)', marginTop: 3, fontFamily: 'var(--font-mono)' }}>
+              <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 3, fontFamily: 'var(--font-mono)' }}>
                 avg {fmtMoney(row.avg)}/mo
               </div>
             </div>
@@ -1226,7 +1226,7 @@ function BarCol({ label, value, maxVal }) {
         height: value > 0 ? `${Math.max(4, (value / maxVal) * 44)}px` : '3px',
         transition: 'height 0.2s, background 0.15s',
       }} />
-      <div style={{ fontSize: 9, color: 'var(--ink-4)', fontVariantNumeric: 'tabular-nums' }}>{label}</div>
+      <div style={{ fontSize: 9, color: 'var(--ink-3)', fontVariantNumeric: 'tabular-nums' }}>{label}</div>
     </div>
   );
 }
@@ -1301,7 +1301,7 @@ function MerchantDrawer({ merchant, category, onClose }) {
               <div key={label} style={{
                 background: 'var(--surface-3)', borderRadius: 10, padding: '10px 12px',
               }}>
-                <div style={{ fontSize: 11, color: 'var(--ink-4)', fontWeight: 600,
+                <div style={{ fontSize: 11, color: 'var(--ink-3)', fontWeight: 600,
                   textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{label}</div>
                 <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>{value}</div>
               </div>
@@ -1311,7 +1311,7 @@ function MerchantDrawer({ merchant, category, onClose }) {
 
         {/* Monthly bar chart */}
         <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--line)', flexShrink: 0 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase',
+          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-3)', textTransform: 'uppercase',
             letterSpacing: '0.07em', marginBottom: 10 }}>Monthly spend — last 12 months</div>
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 96 }}>
             {chartData.map(({ label, value }) => (
@@ -1458,7 +1458,7 @@ function MapPopover({ txn, onClose }) {
           <div style={{
             height: 110, display: 'flex', flexDirection: 'column',
             alignItems: 'center', justifyContent: 'center', gap: 7,
-            background: 'var(--surface-2)', color: 'var(--ink-4)', fontSize: 13,
+            background: 'var(--surface-2)', color: 'var(--ink-3)', fontSize: 13,
           }}>
             <span style={{ fontSize: 28 }}>📍</span>
             <span>No exact coordinates — city-level only</span>
@@ -1470,7 +1470,7 @@ function MapPopover({ txn, onClose }) {
           padding: '10px 16px', borderTop: '1px solid var(--line)',
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         }}>
-          <span style={{ fontSize: 11, color: 'var(--ink-4)', fontFamily: 'var(--font-mono)' }}>
+          <span style={{ fontSize: 11, color: 'var(--ink-3)', fontFamily: 'var(--font-mono)' }}>
             {hasCoords ? `${txn.lat.toFixed(5)}, ${txn.lon.toFixed(5)}` : (coordLabel || '—')}
           </span>
           <a href={mapsUrl} target="_blank" rel="noopener noreferrer"
@@ -3907,7 +3907,7 @@ function NotificationsCard() {
   }
 
   const FieldLabel = ({ children }) => (
-    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-4)', marginBottom: 6 }}>{children}</div>
+    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-3)', marginBottom: 6 }}>{children}</div>
   );
 
   return (
@@ -3942,7 +3942,7 @@ function NotificationsCard() {
               </div>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{label}</div>
-                <div style={{ fontSize: 11, color: 'var(--ink-4)', marginTop: 2 }}>{desc}</div>
+                <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 2 }}>{desc}</div>
               </div>
             </div>
           ))}
@@ -3966,7 +3966,7 @@ function NotificationsCard() {
                       padding: '3px 10px', borderRadius: 99, fontSize: 12, fontWeight: 600, cursor: 'pointer', border: '1px solid',
                       borderColor: dropThreshold === v ? 'var(--accent)' : 'var(--line)',
                       background: dropThreshold === v ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'transparent',
-                      color: dropThreshold === v ? 'var(--accent)' : 'var(--ink-4)',
+                      color: dropThreshold === v ? 'var(--accent)' : 'var(--ink-3)',
                     }}>{v}%</button>
                   ))}
                 </div>
@@ -3987,7 +3987,7 @@ function NotificationsCard() {
                       padding: '3px 10px', borderRadius: 99, fontSize: 12, fontWeight: 600, cursor: 'pointer', border: '1px solid',
                       borderColor: portThreshold === v ? 'var(--accent)' : 'var(--line)',
                       background: portThreshold === v ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'transparent',
-                      color: portThreshold === v ? 'var(--accent)' : 'var(--ink-4)',
+                      color: portThreshold === v ? 'var(--accent)' : 'var(--ink-3)',
                     }}>{v}%</button>
                   ))}
                 </div>
@@ -4692,7 +4692,7 @@ function ReviewTab({ refreshFin, setTab }) {
             <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>
               {allDone ? 'All caught up!' : `${remaining} to review`}
             </div>
-            <div style={{ fontSize: 12, color: 'var(--ink-4)', marginTop: 2 }}>
+            <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 2 }}>
               {approved} of {total} approved
             </div>
           </div>
@@ -4780,7 +4780,7 @@ function ReviewTab({ refreshFin, setTab }) {
                     onClick={() => setGroupIdx(i => Math.max(0, i - 1))}
                     style={{ opacity: safeIdx === 0 ? 0.3 : 1, cursor: safeIdx === 0 ? 'default' : 'pointer' }}
                     disabled={safeIdx === 0}>←</button>
-                  <span style={{ fontSize: 11, color: 'var(--ink-4)', padding: '0 4px', fontFamily: 'var(--font-mono)' }}>
+                  <span style={{ fontSize: 11, color: 'var(--ink-3)', padding: '0 4px', fontFamily: 'var(--font-mono)' }}>
                     {safeIdx + 1} / {groups.length}
                   </span>
                   <button className="review-nav-btn"
@@ -4807,7 +4807,7 @@ function ReviewTab({ refreshFin, setTab }) {
                     });
                   }}
                 />
-                <span style={{ fontSize: 11, color: 'var(--ink-4)' }}>overwrites all rows</span>
+                <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>overwrites all rows</span>
               </div>
             </div>
 
@@ -4816,7 +4816,7 @@ function ReviewTab({ refreshFin, setTab }) {
               display: 'grid', gridTemplateColumns: '90px 1fr auto auto auto',
               gap: 12, padding: '7px 24px',
               borderBottom: '2px solid var(--line)',
-              fontSize: 10.5, fontWeight: 700, color: 'var(--ink-4)',
+              fontSize: 10.5, fontWeight: 700, color: 'var(--ink-3)',
               textTransform: 'uppercase', letterSpacing: '0.07em',
             }}>
               <div>Date</div>
@@ -4855,7 +4855,7 @@ function ReviewTab({ refreshFin, setTab }) {
                       {t.date.slice(5).replace('-', '/')}
                     </div>
                     {t.source && (
-                      <div style={{ fontSize: 10, color: 'var(--ink-4)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {t.source}
                       </div>
                     )}
@@ -5098,7 +5098,7 @@ function FlaggedTab() {
       {/* Header */}
       <div style={{ marginBottom: 20 }}>
         <h2 style={{ fontSize: 22, fontWeight: 800, margin: 0, color: 'var(--ink)' }}>Needs Attention</h2>
-        <p style={{ fontSize: 13, color: 'var(--ink-4)', margin: '5px 0 0' }}>
+        <p style={{ fontSize: 13, color: 'var(--ink-3)', margin: '5px 0 0' }}>
           Possible duplicate charges and transactions you flagged for review.
         </p>
       </div>
@@ -5125,7 +5125,7 @@ function FlaggedTab() {
       {/* ── Duplicates section ── */}
       {section === 'dups' && (
         <>
-          <p style={{ fontSize: 12, color: 'var(--ink-4)', marginBottom: 12, lineHeight: 1.5 }}>
+          <p style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 12, lineHeight: 1.5 }}>
             Same merchant · same amount · within 7 days. Check your bank statement before deleting.
           </p>
           {pairs.length > 0 && (
@@ -5150,7 +5150,7 @@ function FlaggedTab() {
             </div>
           )}
           {visiblePairs.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--ink-4)' }}>
+            <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--ink-3)' }}>
               <div style={{ fontSize: 36, marginBottom: 10 }}>✓</div>
               <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink-3)' }}>No duplicates found</div>
               <div style={{ fontSize: 13, marginTop: 4 }}>Your transactions look clean!</div>
@@ -5177,7 +5177,7 @@ function FlaggedTab() {
                         <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>
                           {pair.txn1.description}
                         </div>
-                        <div style={{ fontSize: 11, color: 'var(--ink-4)', marginTop: 1 }}>
+                        <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 1 }}>
                           {pair.delta_days === 0 ? 'Same day' : `${pair.delta_days}d apart`}
                           {' · '}
                           <span style={{ color: pair.confidence === 'high' ? '#dc2626' : '#d97706', fontWeight: 600 }}>
@@ -5202,7 +5202,7 @@ function FlaggedTab() {
                         <div style={{ fontSize: 12, fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
                           {txn.date.slice(5).replace('-', '/')}
                         </div>
-                        <div style={{ fontSize: 10, color: 'var(--ink-4)', marginTop: 1 }}>{txn.source}</div>
+                        <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 1 }}>{txn.source}</div>
                       </div>
                       <div style={{ fontSize: 12, color: 'var(--ink-3)' }}>
                         {txn.category}
@@ -5231,11 +5231,11 @@ function FlaggedTab() {
       {/* ── Flagged transactions section ── */}
       {section === 'flagged' && (
         <>
-          <p style={{ fontSize: 12, color: 'var(--ink-4)', marginBottom: 12 }}>
+          <p style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 12 }}>
             Transactions you flagged for manual review from the Review tab.
           </p>
           {flaggedList.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--ink-4)' }}>
+            <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--ink-3)' }}>
               <div style={{ fontSize: 36, marginBottom: 10 }}>⚑</div>
               <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink-3)' }}>Nothing flagged</div>
               <div style={{ fontSize: 13, marginTop: 4 }}>
@@ -5250,7 +5250,7 @@ function FlaggedTab() {
                     <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {txn.description}
                     </div>
-                    <div style={{ fontSize: 11, color: 'var(--ink-4)', marginTop: 2 }}>
+                    <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 2 }}>
                       {txn.date.slice(5).replace('-', '/')} · {txn.source} · {txn.category}
                       {txn.approved && <span style={{ marginLeft: 8, color: 'var(--green)', fontWeight: 600 }}>✓ approved</span>}
                     </div>
@@ -5677,7 +5677,7 @@ function AdminTab() {
   );
 
   const SectionHeading = ({ children }) => (
-    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase',
+    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-3)', textTransform: 'uppercase',
       letterSpacing: '0.08em', marginBottom: 12 }}>{children}</div>
   );
 
@@ -5701,7 +5701,7 @@ function AdminTab() {
                     <StatusDot ok={ok} />{name}
                   </span>
                   <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    {latency != null && <span style={{ color: 'var(--ink-4)', fontSize: 12, fontFamily: 'var(--font-mono)' }}>{latency}ms</span>}
+                    {latency != null && <span style={{ color: 'var(--ink-3)', fontSize: 12, fontFamily: 'var(--font-mono)' }}>{latency}ms</span>}
                     <Pill ok={ok} text={ok ? 'UP' : 'DOWN'} />
                   </span>
                 </div>
@@ -5723,7 +5723,7 @@ function AdminTab() {
                   <StatusDot ok={ok} />{name}
                 </span>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  {detail && <span style={{ color: 'var(--ink-4)', fontSize: 12 }}>{detail}</span>}
+                  {detail && <span style={{ color: 'var(--ink-3)', fontSize: 12 }}>{detail}</span>}
                   <Pill ok={ok} />
                 </span>
               </div>
@@ -5823,7 +5823,7 @@ function AdminTab() {
         </div>
 
         <div style={{ borderTop: '1px solid var(--line)', paddingTop: 16, display: 'grid', gap: 12 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
             Notification Sender (Admin)
           </div>
           <div style={{ fontSize: 13, color: 'var(--ink-3)' }}>
@@ -5929,7 +5929,7 @@ function AdminTab() {
                       color: 'var(--accent)',
                     }}>{entry.category}</span>
                   )}
-                  <span style={{ fontSize: 12, color: 'var(--ink-4)', fontFamily: 'var(--font-mono)' }}>
+                  <span style={{ fontSize: 12, color: 'var(--ink-3)', fontFamily: 'var(--font-mono)' }}>
                     {new Date(entry.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                   </span>
                 </span>
@@ -5952,7 +5952,7 @@ function AdminTab() {
             padding: '6px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
             background: 'var(--surface-3)', border: '1px solid var(--line)', color: 'var(--ink)',
           }}>↻ Refresh</button>
-          <span style={{ fontSize: 12, color: 'var(--ink-4)' }}>Last 300 lines of server.log</span>
+          <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>Last 300 lines of server.log</span>
         </div>
         {logsLoading
           ? <div style={{ fontSize: 14, color: 'var(--ink-3)' }}>Loading…</div>
@@ -5988,7 +5988,7 @@ function AdminTab() {
         background: 'var(--surface)', display: 'flex', flexDirection: 'column', gap: 2,
       }}>
         <div style={{
-          fontSize: 11, fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase',
+          fontSize: 11, fontWeight: 700, color: 'var(--ink-3)', textTransform: 'uppercase',
           letterSpacing: '0.08em', padding: '0 12px', marginBottom: 12,
         }}>Admin</div>
         {NAV.map(({ key, label, icon }) => {
@@ -6038,7 +6038,7 @@ function PerformancePanel() {
       .catch(e => { setError(String(e)); setLoading(false); });
   }, []);
 
-  if (loading) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--ink-4)', fontSize: 14 }}>Analyzing statements…</div>;
+  if (loading) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--ink-3)', fontSize: 14 }}>Analyzing statements…</div>;
   if (error)   return <div style={{ padding: 40, textAlign: 'center', color: 'var(--terra)', fontSize: 14 }}>{error}</div>;
   if (!data?.ok) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--terra)', fontSize: 14 }}>{data?.error || 'Could not load performance data.'}</div>;
 
@@ -6096,12 +6096,12 @@ function PerformancePanel() {
 
   const StatCard = ({ label, value, sub, positive, negative, small }) => (
     <div style={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 14, padding: '18px 20px' }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>{label}</div>
+      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>{label}</div>
       <div style={{
         fontSize: small ? 18 : 22, fontWeight: 700, fontVariantNumeric: 'tabular-nums',
         color: positive ? 'var(--accent)' : negative ? 'var(--terra)' : 'var(--ink)',
       }}>{value}</div>
-      {sub && <div style={{ fontSize: 12, color: 'var(--ink-4)', marginTop: 4 }}>{sub}</div>}
+      {sub && <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 4 }}>{sub}</div>}
     </div>
   );
 
@@ -6137,9 +6137,9 @@ function PerformancePanel() {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
           {beta != null && (
             <div style={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 14, padding: '18px 20px' }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Beta vs SPY</div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Beta vs SPY</div>
               <div style={{ fontSize: 28, fontWeight: 700, color: beta < 1 ? 'var(--accent)' : 'var(--terra)', fontVariantNumeric: 'tabular-nums' }}>{beta.toFixed(2)}</div>
-              <div style={{ fontSize: 12, color: 'var(--ink-4)', marginTop: 6, lineHeight: 1.5 }}>
+              <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 6, lineHeight: 1.5 }}>
                 {beta < 0.8 ? 'Much less volatile than the market — your portfolio moves more gently than SPY.'
                 : beta < 1.0 ? 'Slightly less volatile than SPY — good for capital preservation.'
                 : beta < 1.2 ? 'Moves roughly in step with the market.'
@@ -6149,9 +6149,9 @@ function PerformancePanel() {
           )}
           {alpha != null && (
             <div style={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 14, padding: '18px 20px' }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Alpha (annualized)</div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Alpha (annualized)</div>
               <div style={{ fontSize: 28, fontWeight: 700, color: alpha >= 0 ? 'var(--accent)' : 'var(--terra)', fontVariantNumeric: 'tabular-nums' }}>{alpha >= 0 ? '+' : ''}{alpha.toFixed(2)}%</div>
-              <div style={{ fontSize: 12, color: 'var(--ink-4)', marginTop: 6, lineHeight: 1.5 }}>
+              <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 6, lineHeight: 1.5 }}>
                 {alpha >= 1 ? `Outperforming SPY by ~${alpha.toFixed(1)}%/yr after adjusting for market moves.`
                 : alpha >= 0 ? 'Roughly matching the market on a risk-adjusted basis.'
                 : `Underperforming SPY by ~${Math.abs(alpha).toFixed(1)}%/yr after adjusting for market moves.`}
@@ -6160,9 +6160,9 @@ function PerformancePanel() {
           )}
           {rSq != null && (
             <div style={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 14, padding: '18px 20px' }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>R² (vs SPY)</div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>R² (vs SPY)</div>
               <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>{(rSq * 100).toFixed(0)}%</div>
-              <div style={{ fontSize: 12, color: 'var(--ink-4)', marginTop: 6, lineHeight: 1.5 }}>
+              <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 6, lineHeight: 1.5 }}>
                 {rSq > 0.9 ? 'Moves almost entirely with SPY — highly correlated.'
                 : rSq > 0.7 ? 'Mostly tracks SPY with some independent variation.'
                 : 'Meaningful portion of your return is independent of the market.'}
@@ -6176,7 +6176,7 @@ function PerformancePanel() {
       {recentMonthly.length > 0 && (
         <div style={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 14, padding: '20px 24px' }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', marginBottom: 4 }}>Monthly Returns — Last 12 Months vs SPY</div>
-          <div style={{ fontSize: 11, color: 'var(--ink-4)', marginBottom: 16 }}>
+          <div style={{ fontSize: 11, color: 'var(--ink-3)', marginBottom: 16 }}>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginRight: 16 }}>
               <span style={{ width: 10, height: 10, borderRadius: 2, background: 'var(--accent)', display: 'inline-block' }} /> Your portfolio
             </span>
@@ -6204,7 +6204,7 @@ function PerformancePanel() {
                     <div style={{ width: 6, height: !portPos ? portH : 0, background: 'var(--terra)', borderRadius: '0 0 2px 2px' }} />
                     <div style={{ width: 6, height: !spyPos && m.spy != null ? spyH : 0, background: '#f87171', borderRadius: '0 0 2px 2px' }} />
                   </div>
-                  <div style={{ fontSize: 9, color: 'var(--ink-4)', marginTop: 2 }}>{m.month.slice(5)}</div>
+                  <div style={{ fontSize: 9, color: 'var(--ink-3)', marginTop: 2 }}>{m.month.slice(5)}</div>
                 </div>
               );
             })}
@@ -6222,7 +6222,7 @@ function PerformancePanel() {
             <thead>
               <tr style={{ background: 'var(--surface-3)' }}>
                 {['Quarter', 'End Value', 'Gain / Loss', 'Return'].map(h => (
-                  <th key={h} style={{ padding: '10px 20px', textAlign: h === 'Quarter' ? 'left' : 'right', fontSize: 11, fontWeight: 600, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
+                  <th key={h} style={{ padding: '10px 20px', textAlign: h === 'Quarter' ? 'left' : 'right', fontSize: 11, fontWeight: 600, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -6249,11 +6249,11 @@ function PerformancePanel() {
         <div style={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 14, overflow: 'hidden' }}>
           <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Cash Deposit History</div>
-            <div style={{ fontSize: 12, color: 'var(--ink-4)' }}>Total: {fmtMoney(cashDeposited)}</div>
+            <div style={{ fontSize: 12, color: 'var(--ink-3)' }}>Total: {fmtMoney(cashDeposited)}</div>
           </div>
           {deposits.map((d, i) => (
             <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '12px 24px', borderTop: i > 0 ? '1px solid var(--line)' : 'none' }}>
-              <div style={{ fontSize: 12, color: 'var(--ink-4)', width: 100, flexShrink: 0 }}>{d.date}</div>
+              <div style={{ fontSize: 12, color: 'var(--ink-3)', width: 100, flexShrink: 0 }}>{d.date}</div>
               <div style={{ flex: 1, height: 6, background: 'var(--line)', borderRadius: 99 }}>
                 <div style={{ height: 6, borderRadius: 99, background: 'var(--accent)', width: `${(d.amount / cashDeposited) * 100}%` }} />
               </div>
@@ -6306,7 +6306,7 @@ function AllocationDonut({ slices, total }) {
         display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column',
         textAlign: 'center',
       }}>
-        <div style={{ fontSize: 10, color: 'var(--ink-4)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total</div>
+        <div style={{ fontSize: 10, color: 'var(--ink-3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total</div>
         <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(total)}</div>
       </div>
     </div>
@@ -6392,7 +6392,7 @@ function InvestmentsTab() {
     </div>
   );
   if (!invData?.configured) return (
-    <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-4)', fontSize: 14 }}>
+    <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-3)', fontSize: 14 }}>
       Connect a Plaid account in Settings to see investments.
     </div>
   );
@@ -6465,12 +6465,12 @@ function InvestmentsTab() {
             background: 'var(--surface)', border: '1px solid var(--line)',
             borderRadius: 14, padding: '18px 20px',
           }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>{label}</div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>{label}</div>
             <div style={{
               fontSize: 24, fontWeight: 700, fontVariantNumeric: 'tabular-nums',
               color: positive ? 'var(--accent)' : negative ? 'var(--terra)' : 'var(--ink)',
             }}>{value}</div>
-            {sub && <div style={{ fontSize: 12, color: 'var(--ink-4)', marginTop: 4 }}>{sub}</div>}
+            {sub && <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 4 }}>{sub}</div>}
           </div>
         ))}
       </div>
@@ -6496,14 +6496,14 @@ function InvestmentsTab() {
                 ))}
               </div>
             </div>
-          ) : <div style={{ color: 'var(--ink-4)', fontSize: 13 }}>No holdings data</div>}
+          ) : <div style={{ color: 'var(--ink-3)', fontSize: 13 }}>No holdings data</div>}
         </div>
 
         {/* Portfolio value over time */}
         <div style={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 14, padding: '20px 24px' }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', marginBottom: 4 }}>Portfolio Value Over Time</div>
           {monthlyValues.length < 2 ? (
-            <div style={{ color: 'var(--ink-4)', fontSize: 12, marginTop: 12 }}>
+            <div style={{ color: 'var(--ink-3)', fontSize: 12, marginTop: 12 }}>
               History builds as you visit this tab over time. Check back next month.
             </div>
           ) : (
@@ -6516,7 +6516,7 @@ function InvestmentsTab() {
                     borderRadius: 8, padding: '6px 12px', fontSize: 12, color: 'var(--ink)',
                     pointerEvents: 'none', whiteSpace: 'nowrap', zIndex: 10,
                   }}>
-                    <span style={{ color: 'var(--ink-4)', marginRight: 6 }}>{hoveredBar.month}</span>
+                    <span style={{ color: 'var(--ink-3)', marginRight: 6 }}>{hoveredBar.month}</span>
                     <span style={{ fontWeight: 700 }}>{fmtMoney(hoveredBar.value)}</span>
                   </div>
                 )}
@@ -6539,7 +6539,7 @@ function InvestmentsTab() {
                   ))}
                 </div>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10, fontSize: 11, color: 'var(--ink-4)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10, fontSize: 11, color: 'var(--ink-3)' }}>
                 <span>{fmtMoney(monthlyValues[0][1])}</span>
                 {monthlyValues.length >= 2 && (() => {
                   const delta = monthlyValues[monthlyValues.length - 1][1] - monthlyValues[0][1];
@@ -6570,7 +6570,7 @@ function InvestmentsTab() {
         <div style={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 14, overflow: 'hidden' }}>
           <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Holdings</div>
-            <div style={{ fontSize: 12, color: 'var(--ink-4)' }}>{holdings.length} positions</div>
+            <div style={{ fontSize: 12, color: 'var(--ink-3)' }}>{holdings.length} positions</div>
           </div>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
@@ -6588,7 +6588,7 @@ function InvestmentsTab() {
                   ].map(({ label, col, align }) => (
                     <th key={label} onClick={() => col && toggleHoldingSort(col)} style={{
                       padding: '10px 16px', textAlign: align, fontWeight: 600,
-                      fontSize: 11, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.05em',
+                      fontSize: 11, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.05em',
                       cursor: col ? 'pointer' : 'default', whiteSpace: 'nowrap',
                     }}>
                       {label} {col && <SortIcon col={col} />}
@@ -6607,7 +6607,7 @@ function InvestmentsTab() {
                     <tr key={i} style={{ borderTop: i > 0 ? '1px solid var(--line)' : 'none' }}>
                       <td style={{ padding: '12px 16px' }}>
                         <div style={{ fontWeight: 700, color: 'var(--ink)' }}>{h.ticker}</div>
-                        <div style={{ fontSize: 11, color: 'var(--ink-4)' }}>{h.name}</div>
+                        <div style={{ fontSize: 11, color: 'var(--ink-3)' }}>{h.name}</div>
                       </td>
                       <td style={{ padding: '12px 16px' }}>
                         <span style={{
@@ -6625,10 +6625,10 @@ function InvestmentsTab() {
                       <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 600, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>
                         {fmtMoney(h.value)}
                       </td>
-                      <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: gain == null ? 'var(--ink-4)' : isPos ? 'var(--accent)' : 'var(--terra)' }}>
+                      <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: gain == null ? 'var(--ink-3)' : isPos ? 'var(--accent)' : 'var(--terra)' }}>
                         {gain == null ? '—' : `${isPos ? '+' : '−'}${fmtMoney(Math.abs(gain))}`}
                       </td>
-                      <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: gainPct == null ? 'var(--ink-4)' : isPos ? 'var(--accent)' : 'var(--terra)' }}>
+                      <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: gainPct == null ? 'var(--ink-3)' : isPos ? 'var(--accent)' : 'var(--terra)' }}>
                         {gainPct == null ? '—' : `${isPos ? '+' : ''}${gainPct.toFixed(1)}%`}
                       </td>
                     </tr>
@@ -6641,12 +6641,12 @@ function InvestmentsTab() {
       )}
 
       {invTab === 'holdings' && holdings.length === 0 && (
-        <div style={{ color: 'var(--ink-4)', fontSize: 13, textAlign: 'center', padding: 32 }}>No holdings data — re-link your investment accounts in Settings.</div>
+        <div style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 32 }}>No holdings data — re-link your investment accounts in Settings.</div>
       )}
 
       {/* Investment transactions */}
       {invTab === 'transactions' && transactions.length === 0 && (
-        <div style={{ color: 'var(--ink-4)', fontSize: 13, textAlign: 'center', padding: 32 }}>No investment transactions found.</div>
+        <div style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 32 }}>No investment transactions found.</div>
       )}
 
       {invTab === 'performance' && <PerformancePanel />}
@@ -6666,7 +6666,7 @@ function InvestmentsTab() {
                   display: 'flex', alignItems: 'center', gap: 16,
                   padding: '12px 24px', borderTop: i > 0 ? '1px solid var(--line)' : 'none',
                 }}>
-                  <div style={{ fontSize: 12, color: 'var(--ink-4)', fontVariantNumeric: 'tabular-nums', width: 80, flexShrink: 0 }}>
+                  <div style={{ fontSize: 12, color: 'var(--ink-3)', fontVariantNumeric: 'tabular-nums', width: 80, flexShrink: 0 }}>
                     {t.date.slice(5)}
                   </div>
                   <span style={{
@@ -6676,7 +6676,7 @@ function InvestmentsTab() {
                   }}>{label}</span>
                   <div style={{ flex: 1, fontSize: 13, color: 'var(--ink-2)' }}>{t.name}</div>
                   {t.shares != null && t.price != null && (
-                    <div style={{ fontSize: 12, color: 'var(--ink-4)', fontVariantNumeric: 'tabular-nums' }}>
+                    <div style={{ fontSize: 12, color: 'var(--ink-3)', fontVariantNumeric: 'tabular-nums' }}>
                       {Math.abs(t.shares).toFixed(3)} sh @ ${t.price.toFixed(2)}
                     </div>
                   )}
@@ -6846,7 +6846,7 @@ function TripsTab({ refreshFin, finVersion }) {
   // ── Detail view ──────────────────────────────────────────────────
   if (selectedId) {
     if (!selectedTrip) return (
-      <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-4)', fontSize: 14 }}>Loading…</div>
+      <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-3)', fontSize: 14 }}>Loading…</div>
     );
     const trip = selectedTrip;
     const tripDays = trip.start_date && trip.end_date
@@ -6885,19 +6885,19 @@ function TripsTab({ refreshFin, finVersion }) {
             <div style={{ fontWeight: 600, fontSize: 14 }}>Edit trip</div>
             <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: 10 }}>
               <div>
-                <div style={{ fontSize: 11, color: 'var(--ink-4)', marginBottom: 4 }}>Name</div>
+                <div style={{ fontSize: 11, color: 'var(--ink-3)', marginBottom: 4 }}>Name</div>
                 <input value={editForm.name || ''} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))} style={inputStyle} />
               </div>
               <div>
-                <div style={{ fontSize: 11, color: 'var(--ink-4)', marginBottom: 4 }}>Start date</div>
+                <div style={{ fontSize: 11, color: 'var(--ink-3)', marginBottom: 4 }}>Start date</div>
                 <input type="date" value={editForm.start_date || ''} onChange={e => setEditForm(f => ({ ...f, start_date: e.target.value }))} style={inputStyle} />
               </div>
               <div>
-                <div style={{ fontSize: 11, color: 'var(--ink-4)', marginBottom: 4 }}>End date</div>
+                <div style={{ fontSize: 11, color: 'var(--ink-3)', marginBottom: 4 }}>End date</div>
                 <input type="date" value={editForm.end_date || ''} onChange={e => setEditForm(f => ({ ...f, end_date: e.target.value }))} style={inputStyle} />
               </div>
               <div>
-                <div style={{ fontSize: 11, color: 'var(--ink-4)', marginBottom: 4 }}>Budget</div>
+                <div style={{ fontSize: 11, color: 'var(--ink-3)', marginBottom: 4 }}>Budget</div>
                 <input type="number" min="0" value={editForm.budget ?? ''} placeholder="optional"
                   onChange={e => setEditForm(f => ({ ...f, budget: e.target.value ? parseFloat(e.target.value) : null }))} style={inputStyle} />
               </div>
@@ -6913,7 +6913,7 @@ function TripsTab({ refreshFin, finVersion }) {
 
         <div>
           <h2 style={{ fontSize: 22, fontWeight: 700, color: 'var(--ink)', margin: 0 }}>{trip.name}</h2>
-          <div style={{ fontSize: 13, color: 'var(--ink-4)', marginTop: 4 }}>
+          <div style={{ fontSize: 13, color: 'var(--ink-3)', marginTop: 4 }}>
             {trip.start_date} → {trip.end_date} · {tripTxns.length} transactions · {tripDays} day{tripDays !== 1 ? 's' : ''}
           </div>
         </div>
@@ -6973,11 +6973,11 @@ function TripsTab({ refreshFin, finVersion }) {
                 <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: 130, minWidth: dailyBreakdown.length * 44 }}>
                   {dailyBreakdown.map(d => (
                     <div key={d.date} style={{ flex: 1, minWidth: 36, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                      <div style={{ fontSize: 10, color: 'var(--ink-4)' }}>{fmtMoney(d.amount)}</div>
+                      <div style={{ fontSize: 10, color: 'var(--ink-3)' }}>{fmtMoney(d.amount)}</div>
                       <div style={{ width: '100%', borderRadius: 4, minHeight: 4,
                         height: `${Math.round((d.amount / maxDay) * 80)}px`,
                         background: 'var(--accent)', opacity: 0.85 }} />
-                      <div style={{ fontSize: 10, color: 'var(--ink-4)', whiteSpace: 'nowrap' }}>{d.date.slice(5)}</div>
+                      <div style={{ fontSize: 10, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>{d.date.slice(5)}</div>
                     </div>
                   ))}
                 </div>
@@ -6995,10 +6995,10 @@ function TripsTab({ refreshFin, finVersion }) {
                   borderBottom: i < topMerchants.length - 1 ? '1px solid var(--line)' : 'none' }}>
                   <div style={{ width: 22, height: 22, borderRadius: 6, background: 'var(--surface)',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: 11, color: 'var(--ink-4)', fontWeight: 700, flexShrink: 0 }}>{i + 1}</div>
+                    fontSize: 11, color: 'var(--ink-3)', fontWeight: 700, flexShrink: 0 }}>{i + 1}</div>
                   <div style={{ flex: 1, fontSize: 14, color: 'var(--ink)', fontWeight: 500,
                     whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.name}</div>
-                  <div style={{ fontSize: 12, color: 'var(--ink-4)', marginRight: 8 }}>{m.count} txn{m.count !== 1 ? 's' : ''}</div>
+                  <div style={{ fontSize: 12, color: 'var(--ink-3)', marginRight: 8 }}>{m.count} txn{m.count !== 1 ? 's' : ''}</div>
                   <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>{fmtMoney2(m.amount)}</div>
                 </div>
               ))}
@@ -7051,7 +7051,7 @@ function TripsTab({ refreshFin, finVersion }) {
               placeholder="Search by merchant name…"
               style={{ ...inputStyle, marginBottom: 8 }} />
             {addSearch.trim() && addCandidates.length === 0 && (
-              <div style={{ fontSize: 13, color: 'var(--ink-4)', padding: '8px 0' }}>No matching transactions found.</div>
+              <div style={{ fontSize: 13, color: 'var(--ink-3)', padding: '8px 0' }}>No matching transactions found.</div>
             )}
             {addCandidates.map((t, i) => {
               const cat = catById(t.category);
@@ -7064,7 +7064,7 @@ function TripsTab({ refreshFin, finVersion }) {
                       whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {t.merchant || t.description}
                     </div>
-                    <div style={{ fontSize: 11, color: 'var(--ink-4)' }}>{(t.date || '').slice(0, 10)} · {cat.name}</div>
+                    <div style={{ fontSize: 11, color: 'var(--ink-3)' }}>{(t.date || '').slice(0, 10)} · {cat.name}</div>
                   </div>
                   <div style={{ fontSize: 13, fontWeight: 600, color: t.amount < 0 ? 'var(--ink)' : 'var(--green)', flexShrink: 0 }}>
                     {t.amount < 0 ? '-' : '+'}{fmtMoney2(Math.abs(t.amount))}
@@ -7086,7 +7086,7 @@ function TripsTab({ refreshFin, finVersion }) {
   return (
     <div style={{ padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: 20 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ fontSize: 13, color: 'var(--ink-4)' }}>Track spending for a trip or event</div>
+        <div style={{ fontSize: 13, color: 'var(--ink-3)' }}>Track spending for a trip or event</div>
         <button onClick={() => { setCreating(v => !v); setSaveMsg(null); }} style={{
           background: 'var(--accent)', color: '#052015', border: 'none', borderRadius: 10,
           padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer',
@@ -7102,16 +7102,16 @@ function TripsTab({ refreshFin, finVersion }) {
             style={inputStyle} />
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <div>
-              <div style={{ fontSize: 11, color: 'var(--ink-4)', marginBottom: 4 }}>Start date</div>
+              <div style={{ fontSize: 11, color: 'var(--ink-3)', marginBottom: 4 }}>Start date</div>
               <input type="date" value={form.start_date} onChange={e => setForm(f => ({ ...f, start_date: e.target.value }))} style={inputStyle} />
             </div>
             <div>
-              <div style={{ fontSize: 11, color: 'var(--ink-4)', marginBottom: 4 }}>End date</div>
+              <div style={{ fontSize: 11, color: 'var(--ink-3)', marginBottom: 4 }}>End date</div>
               <input type="date" value={form.end_date} onChange={e => setForm(f => ({ ...f, end_date: e.target.value }))} style={inputStyle} />
             </div>
           </div>
           <div>
-            <div style={{ fontSize: 11, color: 'var(--ink-4)', marginBottom: 4 }}>Budget (optional)</div>
+            <div style={{ fontSize: 11, color: 'var(--ink-3)', marginBottom: 4 }}>Budget (optional)</div>
             <input type="number" min="0" value={form.budget} placeholder="e.g. 1500"
               onChange={e => setForm(f => ({ ...f, budget: e.target.value }))} style={inputStyle} />
           </div>
@@ -7127,7 +7127,7 @@ function TripsTab({ refreshFin, finVersion }) {
       )}
 
       {trips.length === 0
-        ? <div style={{ padding: '48px 0', textAlign: 'center', color: 'var(--ink-4)', fontSize: 14 }}>
+        ? <div style={{ padding: '48px 0', textAlign: 'center', color: 'var(--ink-3)', fontSize: 14 }}>
             <div style={{ fontSize: 36, marginBottom: 12 }}>✈️</div>
             <div>No trips yet. Create one to track your travel spending.</div>
           </div>
@@ -7152,12 +7152,12 @@ function TripsTab({ refreshFin, finVersion }) {
                       <div style={{ fontWeight: 700, fontSize: 17, color: over ? 'var(--terra)' : 'var(--accent)' }}>
                         {fmtMoney2(trip.total_spent)}
                       </div>
-                      <div style={{ fontSize: 11, color: 'var(--ink-4)' }}>{trip.txn_count} transactions</div>
+                      <div style={{ fontSize: 11, color: 'var(--ink-3)' }}>{trip.txn_count} transactions</div>
                     </div>
                   </div>
                   {pct !== null && (
                     <div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--ink-4)', marginBottom: 4 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--ink-3)', marginBottom: 4 }}>
                         <span>Budget {fmtMoney2(b)}</span>
                         <span style={{ color: over ? 'var(--terra)' : 'var(--ink-3)' }}>
                           {over ? `${fmtMoney2(trip.total_spent - b)} over` : `${fmtMoney2(b - trip.total_spent)} left`}

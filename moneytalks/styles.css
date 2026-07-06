@@ -12,8 +12,8 @@
   --line-2:   rgba(20,24,32,0.14);
   --ink:      #111318;
   --ink-2:    #454d5c;
-  --ink-3:    #7a8090;
-  --ink-4:    #b0b8c6;
+  --ink-3:    #6d7585;
+  --ink-4:    #9aa2b0;
 
   --accent:   #3ecf6e;
   --accent-2: #5ae8d0;
@@ -1677,3 +1677,258 @@ button { cursor: pointer; font-family: inherit; }
 }
 .toast.error  { background: var(--terra); }
 .toast.success { background: #1a6637; }
+
+/* ═══════════════════════════════════════════════════════════════════
+   DARK MODE — applied when .app.dark is set
+   Warm blue-slate palette. All overrides use higher specificity.
+   ═══════════════════════════════════════════════════════════════════ */
+.app.dark {
+  /* Warm deep-slate — feels deliberate, not just inverted */
+  --bg:       #0e1116;
+  --surface:  #181c22;
+  --surface-2:#1e2330;
+  --surface-3:#252c3a;
+  --line:     rgba(255,255,255,0.065);
+  --line-2:   rgba(255,255,255,0.12);
+  --ink:      #eceef2;
+  --ink-2:    #9ba3b4;
+  --ink-3:    #7e8898;
+  --ink-4:    #606a7c;
+
+  /* Muted mineral accent */
+  --accent:   #27a555;
+  --accent-2: #38a892;
+  --green:    #27a555;
+
+  /* Deeper shadows */
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.5),  0 1px 2px rgba(0,0,0,0.35);
+  --shadow-md: 0 4px 16px rgba(0,0,0,0.55), 0 1px 4px rgba(0,0,0,0.35);
+  --shadow-lg: 0 12px 36px rgba(0,0,0,0.65), 0 2px 8px rgba(0,0,0,0.4);
+
+  background:
+    radial-gradient(ellipse 1000px 600px at 90% 0%, rgba(39,165,85,0.05), transparent 65%),
+    radial-gradient(ellipse 800px 400px at 0% 100%, rgba(56,168,146,0.04), transparent 55%),
+    var(--bg);
+  color: var(--ink);
+}
+
+/* Sidebar */
+.app.dark .sidebar {
+  background: rgba(14,17,22,0.92);
+  border-right-color: rgba(255,255,255,0.055);
+}
+.app.dark .sidebar::after {
+  background: linear-gradient(to bottom, transparent, rgba(255,255,255,0.05) 20%, rgba(255,255,255,0.05) 80%, transparent);
+}
+
+/* Nav items — white-based transparencies (dark rgba was invisible) */
+.app.dark .nav-item:hover {
+  background: rgba(255,255,255,0.05);
+  color: var(--ink-2);
+}
+.app.dark .nav-item.active {
+  background: rgba(255,255,255,0.07);
+  color: var(--ink);
+}
+
+/* Sync dot — toned down bloom */
+.app.dark .sync-dot {
+  box-shadow: 0 0 0 2px rgba(39,165,85,0.15), 0 0 7px rgba(39,165,85,0.2);
+}
+
+/* Topbar */
+.app.dark .topbar {
+  background: rgba(14,17,22,0.92);
+  border-bottom-color: rgba(255,255,255,0.065);
+}
+
+/* Cards */
+.app.dark .card {
+  background: var(--surface);
+  box-shadow: var(--shadow-sm), inset 0 1px 0 rgba(255,255,255,0.04);
+  border-color: rgba(255,255,255,0.07);
+}
+.app.dark .card:hover {
+  box-shadow: var(--shadow-md), inset 0 1px 0 rgba(255,255,255,0.06);
+  border-color: rgba(255,255,255,0.11);
+}
+
+/* Search bar */
+.app.dark .topbar-search,
+.app.dark .month-switcher {
+  background: var(--surface-2);
+  border-color: var(--line);
+}
+.app.dark .topbar-search input { color: var(--ink); }
+.app.dark .topbar-search kbd {
+  background: var(--surface-3);
+  border-color: var(--line);
+  color: var(--ink-4);
+}
+
+/* Icon buttons */
+.app.dark .icon-btn {
+  background: var(--surface-2);
+  border-color: var(--line);
+}
+.app.dark .icon-btn:hover { background: var(--surface-3); border-color: var(--line-2); }
+
+/* Avatar */
+.app.dark .avatar { border-color: var(--line); }
+
+/* Month picker popover */
+.app.dark .month-picker-popover {
+  background: var(--surface-2);
+  border-color: var(--line-2);
+}
+
+/* Category picker dropdown */
+.app.dark .cat-menu {
+  background: var(--surface-2);
+  border-color: var(--line-2);
+}
+.app.dark .cat-menu-item:hover { background: var(--surface-3); }
+
+/* Chart tooltip */
+.app.dark .chart-tooltip {
+  background: rgba(30,30,38,0.98);
+  border-color: rgba(255,255,255,0.12);
+}
+
+/* Profile panel */
+.app.dark .profile-panel {
+  background: var(--surface-2);
+  border-color: var(--line-2);
+}
+
+/* Filter buttons */
+.app.dark .filter-btn {
+  background: var(--surface-2);
+  border-color: var(--line);
+  box-shadow: none;
+}
+.app.dark .filter-btn:hover { background: var(--surface-3); border-color: var(--line-2); }
+.app.dark .filter-btn.active {
+  background: rgba(39,165,85,0.12);
+  border-color: rgba(39,165,85,0.35);
+  color: #3ec872;
+}
+
+/* Searchable selects */
+.app.dark .search-input {
+  background: var(--surface-2);
+  border-color: var(--line);
+}
+.app.dark .search-input input { color: var(--ink); }
+
+/* Amount colors — readable on dark */
+.app.dark .pos         { color: #3ec872; }
+.app.dark .txn-amt.pos { color: #3ec872; }
+.app.dark .sum-trend.up   { color: #3ec872; background: rgba(39,165,85,0.15); }
+.app.dark .sum-trend.down { color: #f07050; background: rgba(224,90,58,0.12); }
+
+/* Review chips */
+.app.dark .review-chip {
+  background: var(--surface-2);
+  border-color: var(--line);
+  color: var(--ink-3);
+}
+.app.dark .review-chip:hover { background: var(--surface-3); border-color: var(--line-2); color: var(--ink-2); }
+.app.dark .review-chip.active { color: var(--ink); }
+
+/* Review group card + progress header */
+.app.dark .review-group-card,
+.app.dark .review-progress-header {
+  border-color: rgba(255,255,255,0.07);
+  box-shadow: var(--shadow-sm), inset 0 1px 0 rgba(255,255,255,0.04);
+}
+
+/* Review txn rows — white-based hover (dark rgba was invisible) */
+.app.dark .review-txn-row:hover   { background: rgba(255,255,255,0.025) !important; }
+.app.dark .review-txn-row.flagged { background: rgba(224,90,58,0.07) !important; }
+
+/* Review footer */
+.app.dark .review-group-footer { background: var(--surface-2); border-color: rgba(255,255,255,0.06); }
+
+/* Review approve btn — desaturate raw category color (set as inline style) */
+.app.dark .review-approve-btn {
+  filter: saturate(0.48) brightness(0.78);
+  text-shadow: 0 1px 3px rgba(0,0,0,0.45);
+}
+
+/* Cat pills — mute the raw category color used for text + derived bg */
+.app.dark .cat-pill,
+.app.dark .cat-pill-btn {
+  filter: saturate(0.55) brightness(0.95);
+}
+
+/* Vendor icon circle — inline catInfo.color, soften it */
+.app.dark .review-vendor-icon {
+  filter: saturate(0.5);
+}
+
+/* Review skip btn */
+.app.dark .review-skip-btn {
+  border-color: var(--line-2);
+  color: var(--ink-3);
+}
+.app.dark .review-skip-btn:hover { border-color: rgba(255,255,255,0.22); color: var(--ink-2); }
+
+/* Review nav prev/next */
+.app.dark .review-nav-btn {
+  background: var(--surface-2);
+  border-color: var(--line);
+  color: var(--ink-3);
+}
+.app.dark .review-nav-btn:hover { background: var(--surface-3); color: var(--ink-2); }
+
+/* Review approve-all */
+.app.dark .review-approve-all-btn {
+  border-color: var(--line-2);
+  color: var(--ink-3);
+}
+.app.dark .review-approve-all-btn:hover:not(:disabled) { border-color: rgba(39,165,85,0.5); color: #3ec872; }
+
+/* Trend table */
+.app.dark .trend-table tbody tr.trend-best  { background: rgba(39,165,85,0.07); }
+.app.dark .trend-table tbody tr.trend-worst { background: rgba(224,90,58,0.07); }
+
+/* Tab accent background gradients — slightly richer on dark */
+.app.dark .page.tab-overview    { background: linear-gradient(180deg, rgba(39,165,85,0.07)    0, transparent 140px), var(--bg); }
+.app.dark .page.tab-txns        { background: linear-gradient(180deg, rgba(129,140,248,0.07)  0, transparent 140px), var(--bg); }
+.app.dark .page.tab-review      { background: linear-gradient(180deg, rgba(245,158,11,0.07)   0, transparent 140px), var(--bg); }
+.app.dark .page.tab-flagged     { background: linear-gradient(180deg, rgba(224,90,58,0.08)    0, transparent 140px), var(--bg); }
+.app.dark .page.tab-investments { background: linear-gradient(180deg, rgba(167,139,250,0.08)  0, transparent 140px), var(--bg); }
+.app.dark .page.tab-categories  { background: linear-gradient(180deg, rgba(244,114,182,0.07)  0, transparent 140px), var(--bg); }
+.app.dark .page.tab-flow        { background: linear-gradient(180deg, rgba(56,168,146,0.07)   0, transparent 140px), var(--bg); }
+.app.dark .page.tab-trips       { background: linear-gradient(180deg, rgba(96,165,250,0.07)   0, transparent 140px), var(--bg); }
+.app.dark .page.tab-cashflow    { background: linear-gradient(180deg, rgba(56,168,146,0.07)   0, transparent 140px), var(--bg); }
+.app.dark .page.tab-networth    { background: linear-gradient(180deg, rgba(129,140,248,0.07)  0, transparent 140px), var(--bg); }
+.app.dark .page.tab-accounts    { background: linear-gradient(180deg, rgba(129,140,248,0.07)  0, transparent 140px), var(--bg); }
+.app.dark .page.tab-recurring   { background: linear-gradient(180deg, rgba(245,158,11,0.07)   0, transparent 140px), var(--bg); }
+.app.dark .page.tab-trends      { background: linear-gradient(180deg, rgba(59,130,246,0.07)   0, transparent 140px), var(--bg); }
+.app.dark .page.tab-chat        { background: linear-gradient(180deg, rgba(59,130,246,0.07)   0, transparent 140px), var(--bg); }
+.app.dark .page.tab-monthly     { background: linear-gradient(180deg, rgba(39,165,85,0.07)    0, transparent 140px), var(--bg); }
+.app.dark .page.tab-settings    { background: linear-gradient(180deg, rgba(148,163,184,0.05)  0, transparent 140px), var(--bg); }
+.app.dark .page.tab-feedback    { background: linear-gradient(180deg, rgba(52,211,153,0.05)   0, transparent 140px), var(--bg); }
+
+/* Tweaks panel itself */
+.app.dark .tweaks-panel {
+  background: var(--surface-2);
+  border-color: var(--line-2);
+}
+
+/* Toast */
+.app.dark .toast.success { background: #1a5c38; }
+
+/* Skeleton shimmer — adjust for dark */
+.app.dark .skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--surface-2) 25%,
+    var(--surface-3) 50%,
+    var(--surface-2) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
