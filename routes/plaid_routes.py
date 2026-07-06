@@ -242,6 +242,26 @@ def get_investments(current_user: str = Depends(get_current_user)) -> dict:
         raise HTTPException(500, str(e))
 
 
+@router.post("/api/plaid/backfill-locations")
+async def plaid_backfill_locations(current_user: str = Depends(get_current_user)) -> dict:
+    """Re-fetch full transaction history to populate lat/lon/city for existing rows."""
+    cfg = load_config(current_user)
+    if not cfg.get("plaid_client_id") or not cfg.get("plaid_secret"):
+        raise HTTPException(400, "Plaid keys not configured")
+    try:
+        from core.plaid_client import backfill_locations
+        df = load_df(current_user)
+        if df is None or df.empty:
+            return {"ok": True, "updated": 0}
+        backup_before_sync(current_user)
+        updated_df, count = backfill_locations(df, cfg=cfg, data_dir=str(user_dir(current_user)))
+        if count > 0:
+            save_df(current_user, updated_df)
+        return {"ok": True, "updated": count}
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
 @router.delete("/api/plaid/accounts/{item_id}")
 async def plaid_remove_account(item_id: str, current_user: str = Depends(get_current_user)) -> dict:
     try:

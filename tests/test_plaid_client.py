@@ -158,7 +158,9 @@ class TestFirstSync:
             with patch.object(pc, "_get_api_client", return_value=MagicMock()):
                 _, _, stats = pc.sync_all_transactions(data_dir=data_dir)
 
-        assert stats == {"added": 3, "modified": 0, "removed": 0}
+        assert stats["added"] == 3
+        assert stats["modified"] == 0
+        assert stats["removed"] == 0
 
 
 # ---------------------------------------------------------------------------

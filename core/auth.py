@@ -10,6 +10,7 @@ from __future__ import annotations
 import datetime
 import hashlib
 import json
+import re
 import secrets
 import threading
 from pathlib import Path
@@ -116,6 +117,15 @@ def _verify_password(password: str, stored_hash: str, salt: str) -> bool:
 # ---------------------------------------------------------------------------
 # User store helpers
 # ---------------------------------------------------------------------------
+
+_USERNAME_RE = re.compile(r'^[a-zA-Z0-9_-]{1,32}$')
+
+def validate_username(username: str) -> None:
+    """Raise ValueError if username contains path-traversal or disallowed chars."""
+    if not _USERNAME_RE.match(username):
+        raise ValueError("Username must be 1–32 characters: letters, digits, _ or -")
+
+_users_lock = threading.Lock()
 
 def _load_users() -> dict:
     if USERS_FILE.exists():

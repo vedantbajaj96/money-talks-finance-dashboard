@@ -17,7 +17,7 @@ from core.auth import (
     SESSION_COOKIE, SESSION_TTL,
     _create_session, _hash_password, _verify_password,
     _load_users, _save_users, _sessions,
-    get_current_user, get_admin_user,
+    get_current_user, get_admin_user, validate_username,
 )
 from core.store import user_dir, migrate_legacy_data
 
@@ -39,6 +39,10 @@ async def auth_setup(body: dict[str, Any], response: Response) -> dict:
     password = body.get("password") or ""
     if not username or not password:
         raise HTTPException(400, "Username and password are required")
+    try:
+        validate_username(username)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
     if len(password) < 6:
         raise HTTPException(400, "Password must be at least 6 characters")
 
@@ -118,6 +122,10 @@ async def auth_register(body: dict[str, Any], admin: str = Depends(get_admin_use
     password = body.get("password") or ""
     if not username or not password:
         raise HTTPException(400, "Username and password are required")
+    try:
+        validate_username(username)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
     if len(password) < 6:
         raise HTTPException(400, "Password must be at least 6 characters")
 

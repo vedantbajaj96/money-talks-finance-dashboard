@@ -24,7 +24,7 @@ from core.store import (
 
 router = APIRouter()
 
-REVIEW_BATCH_SIZE = 10
+REVIEW_BATCH_SIZE = 60
 
 # Blocklist for /api/query — prevent reading arbitrary files via DuckDB table functions
 _BLOCKED = re.compile(
@@ -192,10 +192,20 @@ async def update_transaction(
         if "tags" not in df.columns:
             df["tags"] = ""
         df.loc[mask, "tags"] = body["tags"]
+    if "flagged" in body:
+        if "flagged" not in df.columns:
+            df["flagged"] = False
+        df.loc[mask, "flagged"] = bool(body["flagged"])
+    if "starred" in body:
+        if "starred" not in df.columns:
+            df["starred"] = False
+        df.loc[mask, "starred"] = bool(body["starred"])
 
-    if "user_edited" not in df.columns:
-        df["user_edited"] = False
-    df.loc[mask, "user_edited"] = True
+    # Only mark user_edited for content changes, not for flag/star toggles
+    if any(k in body for k in ("category", "date", "description", "amount", "notes", "tags")):
+        if "user_edited" not in df.columns:
+            df["user_edited"] = False
+        df.loc[mask, "user_edited"] = True
 
     auto_applied = 0
     if "category" in body:
@@ -550,7 +560,10 @@ def get_review_batch(current_user: str = Depends(get_current_user)) -> dict:
                 row.get("transaction_type"),
                 row.get("expense_amount", 0.0),
             ),
-            "source": str(row.get("source", "")),
+            "source":      str(row.get("source", "")),
+            "flagged":     bool(row.get("flagged", False)),
+            "starred":     bool(row.get("starred", False)),
+            "notes":       str(row.get("notes", "") or ""),
         })
 
     cfg           = load_config(current_user)
@@ -697,6 +710,93 @@ async def approve_batch(body: dict[str, Any], current_user: str = Depends(get_cu
         "streak":       streak,
         "last_reviewed": today.isoformat(),
     }
+
+
+# ---------------------------------------------------------------------------
+# Duplicates / flagged — "Needs Attention" data
+# ---------------------------------------------------------------------------
+
+@router.get("/api/flagged")
+def get_flagged_data(current_user: str = Depends(get_current_user)) -> dict:
+    """Return possible duplicate pairs and manually-flagged transactions."""
+    import re as _re, datetime as _dt
+
+    df = load_df(current_user)
+    if df is None or df.empty:
+        return {"pairs": [], "flagged": []}
+
+    # Ensure txn_ids
+    _needs_id = df["txn_id"].isna() if "txn_id" in df.columns else pd.Series(True, index=df.index)
+    if _needs_id.any():
+        if "txn_id" not in df.columns:
+            df["txn_id"] = ""
+        df.loc[_needs_id, "txn_id"] = df[_needs_id].apply(
+            lambda r: hashlib.md5(
+                f"{r['date']}|{r['description']}|{r['expense_amount']}".encode()
+            ).hexdigest()[:12],
+            axis=1,
+        )
+
+    def _norm(s: str) -> str:
+        return _re.sub(r"[^a-z0-9]+", " ", str(s).lower()).strip()
+
+    def _row_dict(r: dict) -> dict:
+        return {
+            "id":          str(r.get("txn_id", "")),
+            "date":        str(r.get("date", ""))[:10],
+            "description": str(r.get("description", "")),
+            "amount":      float(r.get("expense_amount", 0)),
+            "source":      str(r.get("source", "")),
+            "category":    str(r.get("category", "")),
+            "approved":    bool(r.get("approved", False)),
+            "notes":       str(r.get("notes", "") or ""),
+            "pending":     bool(r.get("pending", False)),
+        }
+
+    # ── Possible duplicate pairs ──────────────────────────────────────
+    working = df[df["expense_amount"].abs() > 0].copy()
+    working["_norm"] = working["description"].apply(_norm)
+    working["_amt"]  = working["expense_amount"].round(2)
+
+    pairs: list[dict] = []
+    seen_pair_ids: set = set()
+    for (_, _), grp in working.groupby(["_norm", "_amt"]):
+        if len(grp) < 2:
+            continue
+        rows = grp.sort_values("date").reset_index(drop=True)
+        for i in range(len(rows)):
+            for j in range(i + 1, len(rows)):
+                r1 = rows.iloc[i].to_dict()
+                r2 = rows.iloc[j].to_dict()
+                pair_key = tuple(sorted([str(r1.get("txn_id", "")), str(r2.get("txn_id", ""))]))
+                if pair_key in seen_pair_ids:
+                    continue
+                seen_pair_ids.add(pair_key)
+                try:
+                    d1    = _dt.date.fromisoformat(str(r1.get("date", ""))[:10])
+                    d2    = _dt.date.fromisoformat(str(r2.get("date", ""))[:10])
+                    delta = abs((d2 - d1).days)
+                except Exception:
+                    continue
+                if delta > 7:
+                    continue
+                pairs.append({
+                    "txn1":       _row_dict(r1),
+                    "txn2":       _row_dict(r2),
+                    "delta_days": delta,
+                    "confidence": "high" if delta <= 3 else "medium",
+                })
+
+    pairs.sort(key=lambda p: (p["confidence"] != "high", -abs(p["txn1"]["amount"])))
+
+    # ── Manually flagged transactions ─────────────────────────────────
+    flagged_rows: list[dict] = []
+    if "flagged" in df.columns:
+        flagged_df = df[df["flagged"].fillna(False).astype(bool)].sort_values("date", ascending=False)
+        for _, row in flagged_df.iterrows():
+            flagged_rows.append(_row_dict(row.to_dict()))
+
+    return {"pairs": pairs, "flagged": flagged_rows}
 
 
 # ---------------------------------------------------------------------------

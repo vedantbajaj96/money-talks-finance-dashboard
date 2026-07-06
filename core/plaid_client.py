@@ -181,6 +181,7 @@ def _row_from_txn(txn: dict, inst_name: str, item_id: str) -> dict:
     date_str = txn.get("date") or txn.get("settlement_date") or ""
     amount   = txn.get("amount") or txn.get("quantity") or 0.0
     txn_id   = txn.get("transaction_id") or txn.get("investment_transaction_id") or ""
+    loc      = txn.get("location") or {}
     return {
         "date":               pd.to_datetime(str(date_str)),
         "description":        str(merchant).strip(),
@@ -189,8 +190,14 @@ def _row_from_txn(txn: dict, inst_name: str, item_id: str) -> dict:
         "format":             "plaid",
         "source_file":        f"plaid_{item_id}",
         "plaid_txn_id":       txn_id,
+        "pending":            bool(txn.get("pending", False)),
         "category":           None,
         "suggested_category": None,
+        "lat":                loc.get("lat"),
+        "lon":                loc.get("lon"),
+        "location_city":      loc.get("city"),
+        "location_region":    loc.get("region"),
+        "location_address":   loc.get("address"),
     }
 
 
@@ -296,6 +303,59 @@ def get_account_balances(cfg: dict | None = None, data_dir: str | None = None) -
 def remove_account(item_id: str, data_dir: str | None = None) -> None:
     items = [i for i in _load_items(data_dir) if i.get("item_id") != item_id]
     _save_items(items, data_dir)
+
+
+def backfill_locations(
+    existing_df: pd.DataFrame,
+    cfg: dict | None = None,
+    data_dir: str | None = None,
+) -> tuple[pd.DataFrame, int]:
+    """
+    Fetch full transaction history for every connected institution and update
+    the location columns (lat, lon, location_city, location_region,
+    location_address) on matching rows — identified by plaid_txn_id.
+
+    Does NOT touch categories, amounts, descriptions, or the stored cursor.
+    Returns (updated_df, count_updated).
+    """
+    if existing_df is None or existing_df.empty or "plaid_txn_id" not in existing_df.columns:
+        return existing_df, 0
+
+    items = _load_items(data_dir)
+    if not items:
+        return existing_df, 0
+
+    client = _get_api_client(cfg)
+    df     = existing_df.copy()
+    LOC_COLS = ["lat", "lon", "location_city", "location_region", "location_address"]
+    for col in LOC_COLS:
+        if col not in df.columns:
+            df[col] = None
+
+    updated = 0
+    for item in items:
+        try:
+            added, modified, _removed, _cursor = _fetch_delta(client, item["access_token"], None)
+            for txn in added + modified:
+                tid = txn.get("transaction_id") or ""
+                if not tid:
+                    continue
+                loc = txn.get("location") or {}
+                if not any(loc.get(k) for k in ("lat", "lon", "city", "region", "address")):
+                    continue
+                mask = df["plaid_txn_id"] == tid
+                if not mask.any():
+                    continue
+                df.loc[mask, "lat"]              = loc.get("lat")
+                df.loc[mask, "lon"]              = loc.get("lon")
+                df.loc[mask, "location_city"]    = loc.get("city")
+                df.loc[mask, "location_region"]  = loc.get("region")
+                df.loc[mask, "location_address"] = loc.get("address")
+                updated += int(mask.sum())
+        except Exception as exc:
+            logger.warning("backfill_locations failed for %s: %s", item.get("institution_name"), exc)
+
+    return df, updated
 
 
 def refresh_all(cfg: dict | None = None, data_dir: str | None = None) -> list[str]:
@@ -467,7 +527,8 @@ def sync_all_transactions(
         if added:
             deduped = []
             skipped = 0
-            seen_ids: set = set()  # intra-batch dedup
+            seen_ids: set = set()   # intra-batch exact-ID dedup
+            batch_fps: dict = {}    # intra-batch fingerprint dedup: (amt, desc_fp) → [(date_str, txn_id)]
             for t in added:
                 row = _row_from_txn(t, inst_name, item["item_id"])
                 txn_id = str(row.get("plaid_txn_id", ""))
@@ -514,6 +575,23 @@ def sync_all_transactions(
                             row["notes"] = "⚠ Possible duplicate — review and delete if needed"
                             row["category"] = "Pending Review"
 
+                # Intra-batch fingerprint check: catches pending+posted arriving in the same sync
+                # response (banks that don't reliably populate Plaid's removed list)
+                batch_entries = batch_fps.get(key, [])
+                if batch_entries and _within_window(str(row["date"])[:10], batch_entries):
+                    if all(eid != txn_id for _, eid in batch_entries):
+                        new_date = str(row["date"])[:10]
+                        if any(ds == new_date for ds, _ in batch_entries):
+                            logger.info("[sync:%s] skipped intra-batch exact dup: %s %.2f on %s", inst_name, row["description"], row["expense_amount"], new_date)
+                            skipped += 1
+                            continue
+                        else:
+                            logger.info("[sync:%s] flagging intra-batch possible dup: %s %.2f", inst_name, row["description"], row["expense_amount"])
+                            if not row.get("notes"):
+                                row["notes"] = "⚠ Possible duplicate — review and delete if needed"
+                                row["category"] = "Pending Review"
+
+                batch_fps.setdefault(key, []).append((str(row["date"])[:10], txn_id))
                 deduped.append(row)
             total_added += len(deduped)
             total_skipped += skipped

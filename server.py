@@ -89,6 +89,7 @@ from routes.feedback_routes import router as feedback_router
 from routes.plaid_routes import router as plaid_router
 from routes.upload_routes import router as upload_router
 from routes.portfolio_routes import router as portfolio_router
+from routes.trips_routes import router as trips_router
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -175,6 +176,7 @@ app.include_router(plaid_router)
 app.include_router(chat_router)
 app.include_router(feedback_router)
 app.include_router(portfolio_router)
+app.include_router(trips_router)
 
 # ---------------------------------------------------------------------------
 # Serve the React frontend — must be last so /api/* routes take priority.

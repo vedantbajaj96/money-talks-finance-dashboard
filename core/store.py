@@ -42,7 +42,11 @@ def list_users() -> list[str]:
 
 
 def user_dir(username: str) -> Path:
-    return DATA_DIR / username
+    p = (DATA_DIR / username).resolve()
+    # Defense-in-depth: reject any path that escapes DATA_DIR
+    if not str(p).startswith(str(DATA_DIR.resolve())):
+        raise ValueError(f"Invalid username: {username!r}")
+    return p
 
 def data_file(username: str) -> Path:
     return user_dir(username) / "transactions.parquet"

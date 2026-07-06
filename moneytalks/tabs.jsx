@@ -350,14 +350,16 @@ function DragCard({ id, index, order, onReorder, title, children }) {
       onDragStart={onDragStart}
       onDragOver={onDragOver}
       onDrop={onDrop}
-      style={{ cursor: 'grab' }}
+      style={{ cursor: 'grab', height: '100%' }}
     >
-      <div className="card">
+      <div className="card" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
         <div className="card-head">
           <h3>{title}</h3>
           <span style={{ color: 'var(--line-2)', fontSize: 14, userSelect: 'none' }}>⠿</span>
         </div>
-        {children}
+        <div style={{ flex: 1, minHeight: 0 }}>
+          {children}
+        </div>
       </div>
     </div>
   );
@@ -810,7 +812,7 @@ function OverviewTab() {
 
   return (
     <div className="tab-body">
-      <div className="grid-2">
+      <div className="grid-overview">
         {order.map((id, idx) => renderWidget(id, idx))}
       </div>
       <div style={{ textAlign: 'center', marginTop: 8, fontSize: 11, color: 'var(--line-2)' }}>
@@ -1361,12 +1363,133 @@ function MerchantDrawer({ merchant, category, onClose }) {
   );
 }
 
-function TxnList({ txns, compact = false, onRecategorize, refreshFin, sortCol: initSortCol, sortDir: initSortDir, presorted = false }) {
+// ─── Inline map popover (OpenStreetMap, no API key needed) ─────────
+function MapPopover({ txn, onClose }) {
+  useEffect(() => {
+    // Inject animation once
+    if (!document.getElementById('map-popover-css')) {
+      const s = document.createElement('style');
+      s.id = 'map-popover-css';
+      s.textContent = `
+        @keyframes mapPopIn {
+          from { opacity: 0; transform: translate(-50%, -48%) scale(0.94); }
+          to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+        }
+      `;
+      document.head.appendChild(s);
+    }
+    const handler = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, []);
+
+  const hasCoords = txn.lat != null && txn.lon != null;
+  const fullAddress = [txn.location_address, txn.location_city, txn.location_region]
+    .filter(Boolean).join(', ');
+  const coordLabel = [txn.location_city, txn.location_region].filter(Boolean).join(', ');
+
+  const delta = 0.007;
+  const osmSrc = hasCoords
+    ? `https://www.openstreetmap.org/export/embed.html?bbox=${txn.lon - delta},${txn.lat - delta},${txn.lon + delta},${txn.lat + delta}&layer=mapnik&marker=${txn.lat},${txn.lon}`
+    : null;
+  // Use Apple Maps on iOS/macOS (opens natively), Google Maps elsewhere
+  const isApple = /iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent) && !window.MSStream;
+  const mapsUrl = hasCoords
+    ? (isApple
+        ? `https://maps.apple.com/?q=${txn.lat},${txn.lon}`
+        : `https://www.google.com/maps?q=${txn.lat},${txn.lon}`)
+    : (isApple
+        ? `https://maps.apple.com/?q=${encodeURIComponent(fullAddress || txn.merchant)}`
+        : `https://www.google.com/maps/search/${encodeURIComponent(fullAddress || txn.merchant)}`);
+
+  const cat = catById(txn.category);
+
+  return (
+    <>
+      <div onClick={onClose} style={{
+        position: 'fixed', inset: 0, zIndex: 800,
+        background: 'rgba(0,0,0,0.28)', backdropFilter: 'blur(2px)',
+      }} />
+      <div style={{
+        position: 'fixed', zIndex: 801,
+        top: '50%', left: '50%',
+        width: 340,
+        background: 'var(--surface)',
+        borderRadius: 20, overflow: 'hidden',
+        border: '1px solid var(--line)',
+        boxShadow: '0 32px 80px rgba(0,0,0,0.4)',
+        animation: 'mapPopIn 0.22s cubic-bezier(0.2, 0.8, 0.3, 1.15) forwards',
+      }}>
+        {/* Category accent bar */}
+        <div style={{ height: 3, background: cat.color }} />
+
+        {/* Header */}
+        <div style={{ padding: '14px 16px 10px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.01em', marginBottom: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {txn.merchant}
+            </div>
+            {fullAddress && (
+              <div style={{ fontSize: 11.5, color: 'var(--ink-3)', lineHeight: 1.45, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {fullAddress}
+              </div>
+            )}
+          </div>
+          <button onClick={onClose} style={{
+            background: 'var(--surface-2)', border: 'none', borderRadius: 8,
+            cursor: 'pointer', color: 'var(--ink-3)', fontSize: 13, lineHeight: 1,
+            padding: '5px 8px', flexShrink: 0, fontFamily: 'inherit',
+          }}>✕</button>
+        </div>
+
+        {/* Map */}
+        {hasCoords ? (
+          <div style={{ position: 'relative', height: 224 }}>
+            <iframe
+              src={osmSrc}
+              title={`Map: ${txn.merchant}`}
+              style={{ width: '100%', height: '100%', border: 'none', display: 'block', filter: 'saturate(0.8) brightness(0.9)' }}
+              loading="lazy"
+            />
+            {/* Inner vignette */}
+            <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', boxShadow: 'inset 0 0 24px rgba(0,0,0,0.18)' }} />
+          </div>
+        ) : (
+          <div style={{
+            height: 110, display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'center', gap: 7,
+            background: 'var(--surface-2)', color: 'var(--ink-4)', fontSize: 13,
+          }}>
+            <span style={{ fontSize: 28 }}>📍</span>
+            <span>No exact coordinates — city-level only</span>
+          </div>
+        )}
+
+        {/* Footer */}
+        <div style={{
+          padding: '10px 16px', borderTop: '1px solid var(--line)',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        }}>
+          <span style={{ fontSize: 11, color: 'var(--ink-4)', fontFamily: 'var(--font-mono)' }}>
+            {hasCoords ? `${txn.lat.toFixed(5)}, ${txn.lon.toFixed(5)}` : (coordLabel || '—')}
+          </span>
+          <a href={mapsUrl} target="_blank" rel="noopener noreferrer"
+            style={{ fontSize: 12, fontWeight: 700, color: 'var(--accent)', textDecoration: 'none', letterSpacing: '-0.01em' }}>
+            {isApple ? 'Open in Apple Maps ↗' : 'Open in Google Maps ↗'}
+          </a>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function TxnList({ txns, compact = false, onRecategorize, refreshFin, sortCol: initSortCol, sortDir: initSortDir, presorted = false, extraMenuItems }) {
   const [splitTxn, setSplitTxn]     = useState(null);
   const [editDateId, setEditDateId] = useState(null);
   const [editTxn, setEditTxn]       = useState(null);
   const [menuId, setMenuId]         = useState(null);
   const [activeMerchant, setActiveMerchant] = useState(null);
+  const [mapTxn, setMapTxn]         = useState(null);
   const [sortCol, setSortCol]       = useState(presorted ? null : (initSortCol || 'date'));
   const [sortDir, setSortDir]       = useState(initSortDir || 'desc');
   const [dateOverrides, setDateOverrides] = useState({});
@@ -1409,6 +1532,7 @@ function TxnList({ txns, compact = false, onRecategorize, refreshFin, sortCol: i
 
   return (
     <>
+      {mapTxn && <MapPopover txn={mapTxn} onClose={() => setMapTxn(null)} />}
       {activeMerchant && <MerchantDrawer merchant={activeMerchant.merchant} category={activeMerchant.category} onClose={() => setActiveMerchant(null)} />}
       {!compact && (
         <div style={{
@@ -1464,6 +1588,26 @@ function TxnList({ txns, compact = false, onRecategorize, refreshFin, sortCol: i
                   )}
                   <span className="dot-sep">·</span>
                   <span>{acct.name}</span>
+                  {(t.location_city || (t.lat != null && t.lon != null)) && (() => {
+                    const label = [t.location_city, t.location_region].filter(Boolean).join(', ');
+                    return <>
+                      <span className="dot-sep">·</span>
+                      <button
+                        onClick={e => { e.stopPropagation(); setMapTxn(t); }}
+                        title={[t.location_address, label].filter(Boolean).join(' · ')}
+                        style={{
+                          background: 'color-mix(in srgb, var(--accent) 10%, transparent)',
+                          border: 'none', borderRadius: 5, cursor: 'pointer',
+                          color: 'var(--accent)', fontSize: 10.5, fontWeight: 600,
+                          padding: '1px 6px 1px 4px', fontFamily: 'inherit', lineHeight: 1.6,
+                          display: 'inline-flex', alignItems: 'center', gap: 2,
+                          transition: 'background 0.1s',
+                        }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'color-mix(in srgb, var(--accent) 18%, transparent)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'color-mix(in srgb, var(--accent) 10%, transparent)'}
+                      >📍 {label || 'View map'}</button>
+                    </>;
+                  })()}
                 </div>
               </div>
               {canEdit && editDateId === t.id ? (
@@ -1488,6 +1632,7 @@ function TxnList({ txns, compact = false, onRecategorize, refreshFin, sortCol: i
               {onRecategorize && !isSplit && !compact ? (
                 <div style={{ position: 'relative', display: 'flex', justifyContent: 'center' }}>
                   <button
+                    className="txn-menu-btn"
                     onClick={e => { e.stopPropagation(); setMenuId(menuId === t.id ? null : t.id); }}
                     style={{
                       background: 'none', border: 'none', cursor: 'pointer',
@@ -1509,8 +1654,13 @@ function TxnList({ txns, compact = false, onRecategorize, refreshFin, sortCol: i
                           setMenuId(null);
                           if (!confirm(`Delete "${t.merchant}"?`)) return;
                           await fetch(`/api/transactions/${t.id}`, { method: 'DELETE' });
+                          window.showToast?.('Transaction deleted');
                           if (refreshFin) refreshFin();
                         }, danger: true },
+                        ...(extraMenuItems ? extraMenuItems(t).map(item => ({
+                          ...item,
+                          action: () => { setMenuId(null); item.action(); },
+                        })) : []),
                       ].map(item => (
                         <button key={item.label} onClick={item.action} style={{
                           display: 'block', width: '100%', textAlign: 'left',
@@ -1714,8 +1864,20 @@ function SearchableSelect({ value, onChange, options, placeholder = 'All' }) {
 function TransactionsTab({ monthKey, txnOverrides, setTxnOverrides, search: globalSearch = '', setSearch: setGlobalSearch, refreshFin, finVersion }) {
   const [showAdd, setShowAdd] = useState(false);
   const [search, setSearch] = useState(globalSearch);
-  const [catFilter, setCatFilter] = useState('all');
-  const [acctFilter, setAcctFilter] = useState('all');
+  const [catFilter, setCatFilter] = useState(() => {
+    try { return sessionStorage.getItem('txns.catFilter') || 'all'; } catch { return 'all'; }
+  });
+  const [acctFilter, setAcctFilter] = useState(() => {
+    try { return sessionStorage.getItem('txns.acctFilter') || 'all'; } catch { return 'all'; }
+  });
+  const [showFlagged, setShowFlagged] = useState(() => {
+    try { return sessionStorage.getItem('txns.showFlagged') === 'true'; } catch { return false; }
+  });
+
+  // Persist filter state within session
+  useEffect(() => { try { sessionStorage.setItem('txns.catFilter', catFilter); } catch {} }, [catFilter]);
+  useEffect(() => { try { sessionStorage.setItem('txns.acctFilter', acctFilter); } catch {} }, [acctFilter]);
+  useEffect(() => { try { sessionStorage.setItem('txns.showFlagged', String(showFlagged)); } catch {} }, [showFlagged]);
 
   // Semantic search state
   const [semMerchants, setSemMerchants] = useState(null); // null = not yet searched
@@ -1773,6 +1935,7 @@ function TransactionsTab({ monthKey, txnOverrides, setTxnOverrides, search: glob
   const filtered = baseTxns.filter((t) => {
     if (catFilter !== 'all' && t.category !== catFilter) return false;
     if (acctFilter !== 'all' && t.account !== acctFilter) return false;
+    if (showFlagged && !t.flagged) return false;
     if (search) {
       if (semMerchants) {
         // Semantic results: match on merchant+category pair, or merchant alone (legacy),
@@ -1892,6 +2055,12 @@ function TransactionsTab({ monthKey, txnOverrides, setTxnOverrides, search: glob
               ...ACCOUNTS.map(a => ({ value: a.id, label: a.name, dot: a.color })),
             ]}
           />
+          <button
+            onClick={() => setShowFlagged(f => !f)}
+            title={showFlagged ? 'Show all transactions' : 'Show flagged only'}
+            className={`filter-btn ${showFlagged ? 'active' : ''}`}
+            style={showFlagged ? { borderColor: '#f97316', background: 'rgba(249,115,22,0.08)', color: '#c2410c' } : {}}
+          >⚑ Flagged</button>
           <div className="filter-stats">
             <span><b>{filtered.length}</b> txns</span>
             <span className="pos">+{fmtMoney(totalIn)}</span>
@@ -2360,6 +2529,36 @@ function IncomeTab({ monthKey, finVersion }) {
           height={240}
           formatter={fmtAbbr}
         />
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// FLOW TAB (Spending + Income merged with toggle)
+// ═══════════════════════════════════════════════════════════════════
+function FlowTab({ monthKey, finVersion }) {
+  const [mode, setMode] = useState(() => {
+    try { return localStorage.getItem('flow.mode') || 'spending'; } catch { return 'spending'; }
+  });
+  function switchMode(m) {
+    setMode(m);
+    try { localStorage.setItem('flow.mode', m); } catch {}
+  }
+  return (
+    <div>
+      <div className="flow-toggle">
+        {[['spending', 'Spending'], ['income', 'Income']].map(([id, label]) => (
+          <button key={id} className={`flow-toggle-btn${mode === id ? ' active' : ''}`}
+            onClick={() => switchMode(id)}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <div key={mode} className="tab-fade">
+        {mode === 'spending'
+          ? <SpendingTab monthKey={monthKey} finVersion={finVersion} />
+          : <IncomeTab   monthKey={monthKey} finVersion={finVersion} />}
       </div>
     </div>
   );
@@ -2837,7 +3036,17 @@ function CategoriesTab({ monthKey, finVersion }) {
 // ═══════════════════════════════════════════════════════════════════
 // TRENDS TAB
 // ═══════════════════════════════════════════════════════════════════
-function TrendsTab() {
+function TrendsTab({ setTab, setMonthKey }) {
+  const [sortCol, setSortCol] = useState('key');
+  const [sortDir, setSortDir] = useState('desc');
+
+  function toggleSort(col) {
+    setSortCol(prev => {
+      if (prev === col) { setSortDir(d => d === 'desc' ? 'asc' : 'desc'); return col; }
+      setSortDir('desc'); return col;
+    });
+  }
+
   // MoM income, expense, savings rate
   const data = MONTHS.map((m) => {
     const s = monthSummary(m.key);
@@ -2879,25 +3088,78 @@ function TrendsTab() {
       </div>
 
       <div className="card">
-        <div className="card-head"><h3>Month-by-month</h3></div>
-        <table className="trend-table">
-          <thead>
-            <tr>
-              <th>Month</th><th>Income</th><th>Expenses</th><th>Net</th><th>Savings rate</th>
-            </tr>
-          </thead>
-          <tbody>
-            {[...data].reverse().map((d) => (
-              <tr key={d.key}>
-                <td>{d.label}</td>
-                <td className="pos">{fmtMoney(d.income)}</td>
-                <td className="neg">{fmtMoney(d.expenses)}</td>
-                <td className={d.net >= 0 ? 'pos' : 'neg'}>{fmt(d.net, { sign: true, decimals: 0 })}</td>
-                <td>{d.savingsRate.toFixed(0)}%</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="card-head"><h3>Month-by-month</h3>
+          <span className="muted" style={{ fontSize: 11 }}>Click a row to view that month · click headers to sort</span>
+        </div>
+        {(() => {
+          const activeData = data.filter(d => d.income > 0 || d.expenses > 0);
+          const bestNet    = activeData.length ? Math.max(...activeData.map(d => d.net)) : null;
+          const worstNet   = activeData.length ? Math.min(...activeData.map(d => d.net)) : null;
+          const bestSr     = activeData.length ? Math.max(...activeData.map(d => d.savingsRate)) : null;
+
+          const sorted = [...data].sort((a, b) => {
+            const mul = sortDir === 'desc' ? -1 : 1;
+            if (sortCol === 'income')  return mul * (a.income - b.income);
+            if (sortCol === 'expenses') return mul * (a.expenses - b.expenses);
+            if (sortCol === 'net')     return mul * (a.net - b.net);
+            if (sortCol === 'sr')      return mul * (a.savingsRate - b.savingsRate);
+            return sortDir === 'desc' ? b.key.localeCompare(a.key) : a.key.localeCompare(b.key);
+          });
+
+          const SortTh = ({ col, children, right }) => (
+            <th onClick={() => toggleSort(col)} style={{
+              cursor: 'pointer', userSelect: 'none',
+              textAlign: right ? 'right' : undefined,
+            }}>
+              {children}
+              <span style={{ marginLeft: 4, fontSize: 10, opacity: sortCol === col ? 1 : 0.25 }}>
+                {sortCol === col ? (sortDir === 'desc' ? '↓' : '↑') : '↕'}
+              </span>
+            </th>
+          );
+
+          return (
+            <table className="trend-table">
+              <thead>
+                <tr>
+                  <SortTh col="key">Month</SortTh>
+                  <SortTh col="income" right>Income</SortTh>
+                  <SortTh col="expenses" right>Expenses</SortTh>
+                  <SortTh col="net" right>Net</SortTh>
+                  <SortTh col="sr" right>Savings rate</SortTh>
+                </tr>
+              </thead>
+              <tbody>
+                {sorted.map((d) => {
+                  const isBestNet  = bestNet  !== null && d.net === bestNet  && d.income > 0;
+                  const isWorstNet = worstNet !== null && d.net === worstNet && d.income > 0;
+                  const isBestSr   = bestSr   !== null && d.savingsRate === bestSr && d.income > 0;
+                  return (
+                    <tr key={d.key}
+                      className={isBestNet || isBestSr ? 'trend-best' : isWorstNet ? 'trend-worst' : ''}
+                      title={`Click to view ${d.label} in Overview`}
+                      style={{ cursor: setTab ? 'pointer' : undefined }}
+                      onClick={() => {
+                        if (!setTab || !setMonthKey) return;
+                        setMonthKey(d.key);
+                        setTab('overview');
+                      }}>
+                      <td style={{ fontWeight: 500 }}>{d.label}</td>
+                      <td className="pos" style={{ textAlign: 'right' }}>{fmtMoney(d.income)}</td>
+                      <td className="neg" style={{ textAlign: 'right' }}>{fmtMoney(d.expenses)}</td>
+                      <td className={d.net >= 0 ? 'pos' : 'neg'} style={{ textAlign: 'right' }}>
+                        {fmt(d.net, { sign: true, decimals: 0 })}
+                      </td>
+                      <td style={{ textAlign: 'right' }}>
+                        {d.income > 0 ? `${d.savingsRate.toFixed(0)}%` : '—'}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          );
+        })()}
       </div>
     </div>
   );
@@ -3226,8 +3488,10 @@ function ChatTab() {
 // ─── Plaid sync card — lives in Settings, defined outside to avoid remounting
 function PlaidSyncCard() {
   const { useState } = React;
-  const [syncing, setSyncing]   = useState(false);
-  const [result,  setResult]    = useState(null);
+  const [syncing, setSyncing]             = useState(false);
+  const [result,  setResult]             = useState(null);
+  const [backfilling, setBackfilling]    = useState(false);
+  const [backfillResult, setBackfillResult] = useState(null);
 
   async function sync(full = false) {
     setSyncing(true); setResult(null);
@@ -3246,6 +3510,20 @@ function PlaidSyncCard() {
       setResult({ ok: false, error: String(e) });
     } finally {
       setSyncing(false);
+    }
+  }
+
+  async function backfillLocations() {
+    setBackfilling(true); setBackfillResult(null);
+    try {
+      const res  = await apiFetch('/api/plaid/backfill-locations', { method: 'POST' });
+      const data = await res.json();
+      setBackfillResult(data);
+      if (data.ok && data.updated > 0) setTimeout(() => { if (refreshFin) refreshFin(); }, 1200);
+    } catch (e) {
+      setBackfillResult({ ok: false, error: String(e) });
+    } finally {
+      setBackfilling(false);
     }
   }
 
@@ -3277,17 +3555,41 @@ function PlaidSyncCard() {
         )}
 
         <div style={{ display: 'flex', gap: 10 }}>
-          <button onClick={() => sync(false)} disabled={syncing} style={{
+          <button onClick={() => sync(false)} disabled={syncing || backfilling} style={{
             flex: 1, background: 'var(--accent)', color: '#052015', border: 'none',
             borderRadius: 10, padding: '11px 0', fontWeight: 600, fontSize: 14,
             fontFamily: 'inherit', cursor: syncing ? 'default' : 'pointer', opacity: syncing ? 0.6 : 1,
           }}>{syncing ? 'Syncing…' : 'Sync now'}</button>
-          <button onClick={() => sync(true)} disabled={syncing} style={{
+          <button onClick={() => sync(true)} disabled={syncing || backfilling} style={{
             flex: 1, background: 'transparent', color: 'var(--ink-2)',
             border: '1px solid var(--line)', borderRadius: 10, padding: '11px 0',
             fontWeight: 500, fontSize: 14, fontFamily: 'inherit',
             cursor: syncing ? 'default' : 'pointer', opacity: syncing ? 0.6 : 1,
           }}>Full re-sync</button>
+        </div>
+
+        <div style={{ borderTop: '1px solid var(--line)', paddingTop: 12 }}>
+          <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>
+            Backfill location data (📍 city/coordinates) for existing transactions. A backup is created first.
+          </div>
+          {backfillResult && (
+            <div style={{
+              padding: '10px 14px', borderRadius: 8, fontSize: 12, marginBottom: 8,
+              background: backfillResult.ok ? 'rgba(94,201,138,0.08)' : 'rgba(239,68,68,0.08)',
+              border: `1px solid ${backfillResult.ok ? 'rgba(94,201,138,0.3)' : 'rgba(239,68,68,0.3)'}`,
+              color: backfillResult.ok ? 'var(--ink)' : '#f87171',
+            }}>
+              {backfillResult.ok
+                ? `✓ Updated location on ${backfillResult.updated} transaction${backfillResult.updated !== 1 ? 's' : ''}${backfillResult.updated > 0 ? ' — reloading…' : ''}`
+                : `⚠ ${backfillResult.error || 'Failed'}`}
+            </div>
+          )}
+          <button onClick={backfillLocations} disabled={syncing || backfilling} style={{
+            background: 'transparent', color: 'var(--muted)',
+            border: '1px solid var(--line)', borderRadius: 8, padding: '8px 16px',
+            fontWeight: 500, fontSize: 13, fontFamily: 'inherit',
+            cursor: backfilling ? 'default' : 'pointer', opacity: backfilling ? 0.6 : 1,
+          }}>{backfilling ? 'Fetching locations…' : '📍 Backfill locations'}</button>
         </div>
       </div>
     </SettingsCard>
@@ -4154,233 +4456,833 @@ function AllDoneCelebration({ total, streak, setTab }) {
 // REVIEW TAB
 // ═══════════════════════════════════════════════════════════════════
 function ReviewTab({ refreshFin, setTab }) {
-  const { useState, useEffect, useCallback } = React;
+  const { useState, useEffect, useCallback, useMemo } = React;
 
-  const [state, setState]     = useState(null);   // {batch, total, approved, remaining}
-  const [edits, setEdits]     = useState({});      // {txn_id: new_category}
-  const [approving, setApp]   = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [state, setState]         = useState(null);
+  const [loading, setLoading]     = useState(true);
+  const [groupIdx, setGroupIdx]   = useState(() => {
+    try { return parseInt(localStorage.getItem('review.groupIdx') || '0', 10) || 0; } catch { return 0; }
+  });
+  const [groupCats, setGroupCats] = useState({});   // vendorKey → group fill category
+  const [itemCats, setItemCats]   = useState(() => {
+    try { return JSON.parse(localStorage.getItem('review.itemCats') || '{}'); } catch { return {}; }
+  });   // txnId → per-row category override
+  const [localFlags, setLocalFlags] = useState({});
+  const [approving, setApproving]   = useState(false);
+
+  // Persist groupIdx and itemCats across sessions
+  useEffect(() => {
+    try { localStorage.setItem('review.groupIdx', String(groupIdx)); } catch {}
+  }, [groupIdx]);
+  useEffect(() => {
+    try { localStorage.setItem('review.itemCats', JSON.stringify(itemCats)); } catch {}
+  }, [itemCats]);
 
   const load = useCallback(() => {
     setLoading(true);
     apiFetch('/api/review')
       .then(r => r.json())
-      .then(d => { setState(d); setEdits({}); })
+      .then(d => {
+        setState(d);
+        setGroupCats({});
+        // Keep itemCats — they may still be valid for transactions in the new batch
+        const flags = {};
+        (d.batch || []).forEach(t => { if (t.id) flags[t.id] = !!t.flagged; });
+        setLocalFlags(flags);
+      })
       .finally(() => setLoading(false));
   }, []);
 
   useEffect(() => { load(); }, [load]);
 
-  async function approveBatch() {
-    if (!state?.batch?.length || approving) return;
-    setApp(true);
+  // Group batch by normalized merchant description
+  const groups = useMemo(() => {
+    if (!state?.batch?.length) return [];
+    const map = {};
+    state.batch.forEach(t => {
+      const key = t.description.trim().toLowerCase().replace(/\s+/g, ' ');
+      if (!map[key]) map[key] = { key, name: t.description, txns: [] };
+      map[key].txns.push(t);
+    });
+    return Object.values(map)
+      .sort((a, b) => b.txns.length - a.txns.length || a.name.localeCompare(b.name))
+      .map(g => ({
+        ...g,
+        txns: g.txns.slice().sort((a, b) => (b.date > a.date ? 1 : -1)),
+        total: g.txns.reduce((s, t) => s + Math.abs(t.amount), 0),
+        suggestedCat: g.txns[0].category,
+        isExpense: g.txns[0].amount >= 0,
+      }));
+  }, [state?.batch]);
+
+  // Clamp groupIdx to valid range after groups change
+  const safeIdx = Math.max(0, Math.min(groupIdx, groups.length - 1));
+
+  function getGroupCat(g)   { return groupCats[g.key] ?? g.suggestedCat; }
+  function getItemCat(g, t) { return itemCats[t.id] ?? getGroupCat(g); }
+
+  function toggleFlag(txnId) {
+    const next = !localFlags[txnId];
+    setLocalFlags(prev => ({ ...prev, [txnId]: next }));
+    apiFetch(`/api/transactions/${txnId}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ flagged: next }),
+    }).catch(() => setLocalFlags(prev => ({ ...prev, [txnId]: !next })));
+  }
+
+  async function deleteRow(txnId) {
+    const r = await apiFetch(`/api/transactions/${txnId}`, { method: 'DELETE' });
+    if (!r.ok) return;
+    setState(prev => ({
+      ...prev,
+      batch:     (prev.batch || []).filter(t => t.id !== txnId),
+      remaining: Math.max(0, (prev.remaining || 1) - 1),
+      total:     Math.max(0, (prev.total || 1) - 1),
+    }));
+    setItemCats(prev => { const n = {...prev}; delete n[txnId]; return n; });
+  }
+
+  async function doApprove(ids, overrides) {
+    const r = await apiFetch('/api/review/approve', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids, overrides }),
+    });
+    return r.json();
+  }
+
+  async function approveGroup(g) {
+    if (approving) return;
+    setApproving(true);
     try {
-      const ids = state.batch.map(t => t.id).filter(Boolean);
-      // Rebuild overrides keyed by real txn_id (edits may use row-N fallback keys)
       const overrides = {};
-      state.batch.forEach((t, i) => {
-        const rowKey = t.id ?? `row-${i}`;
-        if (edits[rowKey] && t.id) overrides[t.id] = edits[rowKey];
-      });
-      const res  = await apiFetch('/api/review/approve', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ids, overrides }),
-      });
-      const data = await res.json();
+      g.txns.forEach(t => { if (t.id) overrides[t.id] = getItemCat(g, t); });
+      const ids = g.txns.map(t => t.id).filter(Boolean);
+      const data = await doApprove(ids, overrides);
       if (data.ok) {
-        // Update counts immediately from the response so the UI reacts right away.
-        // Only fetch the next batch if there are more transactions left.
+        const gone = new Set(ids);
+        const newBatch = (state.batch || []).filter(t => !gone.has(t.id));
         setState(prev => ({
           ...prev,
-          total:         data.total ?? prev.total,
-          approved:      data.approved,
-          remaining:     data.remaining,
-          streak:        data.streak,
+          total: data.total ?? prev.total,
+          approved: data.approved,
+          remaining: data.remaining,
+          streak: data.streak,
           last_reviewed: data.last_reviewed,
-          batch:         [],
+          batch: newBatch,
         }));
-        setEdits({});
+        window.showToast?.(`Approved ${ids.length} transaction${ids.length !== 1 ? 's' : ''}`);
+        // Clamp to valid index — groups will re-derive with one fewer entry
+        if (groupIdx >= groups.length - 1 && groupIdx > 0) setGroupIdx(groups.length - 2);
+        if (refreshFin) refreshFin();
+        if (newBatch.length === 0 && data.remaining > 0) load();
+      }
+    } catch(_) {}
+    finally { setApproving(false); }
+  }
+
+  async function approveAll() {
+    if (approving || !state?.batch?.length) return;
+    setApproving(true);
+    try {
+      const overrides = {};
+      groups.forEach(g => g.txns.forEach(t => { if (t.id) overrides[t.id] = getItemCat(g, t); }));
+      const ids = state.batch.map(t => t.id).filter(Boolean);
+      const data = await doApprove(ids, overrides);
+      if (data.ok) {
+        setState(prev => ({
+          ...prev,
+          total: data.total ?? prev.total,
+          approved: data.approved,
+          remaining: data.remaining,
+          streak: data.streak,
+          last_reviewed: data.last_reviewed,
+          batch: [],
+        }));
+        window.showToast?.(`Approved all ${ids.length} transaction${ids.length !== 1 ? 's' : ''}`);
         if (refreshFin) refreshFin();
         if (data.remaining > 0) load();
-      } else {
-        load();  // fallback refresh on unexpected response
       }
-    } catch (_) {
-      load();    // fallback refresh on network error
-    } finally {
-      setApp(false);
-    }
+    } catch(_) {}
+    finally { setApproving(false); }
   }
 
   if (loading) return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 300, color: 'var(--muted)', fontSize: 14 }}>
-      Loading…
+    <div className="tab-body review-tab-body">
+      {/* Progress header skeleton */}
+      <div className="review-progress-header">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div className="skeleton" style={{ height: 10, width: 130, borderRadius: 4 }} />
+            <div className="skeleton" style={{ height: 16, width: 100, borderRadius: 4 }} />
+            <div className="skeleton" style={{ height: 12, width: 80, borderRadius: 4 }} />
+          </div>
+          <div className="skeleton" style={{ height: 40, width: 64, borderRadius: 6 }} />
+        </div>
+        <div className="skeleton" style={{ height: 5, width: '100%', borderRadius: 3 }} />
+      </div>
+      {/* Group card skeleton */}
+      <div className="review-group-card" style={{ marginTop: 20 }}>
+        <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div className="skeleton" style={{ height: 18, width: 160, borderRadius: 4 }} />
+            <div className="skeleton" style={{ height: 12, width: 100, borderRadius: 4 }} />
+          </div>
+          <div className="skeleton" style={{ height: 22, width: 80, borderRadius: 11 }} />
+        </div>
+        {[1, 2, 3].map(i => (
+          <div key={i} style={{ display: 'grid', gridTemplateColumns: '90px 1fr auto auto auto', gap: 12, padding: '14px 24px', borderBottom: '1px solid var(--line)' }}>
+            <div className="skeleton" style={{ height: 14, width: 50, borderRadius: 4 }} />
+            <div className="skeleton" style={{ height: 24, width: 120, borderRadius: 6 }} />
+            <div className="skeleton" style={{ height: 16, width: 64, borderRadius: 4, justifySelf: 'end' }} />
+            <div className="skeleton" style={{ height: 18, width: 18, borderRadius: '50%' }} />
+            <div className="skeleton" style={{ height: 18, width: 18, borderRadius: '50%' }} />
+          </div>
+        ))}
+      </div>
     </div>
   );
 
-  const { batch = [], total = 0, approved = 0, remaining = 0,
-          streak = 0, last_reviewed = null } = state || {};
+  const { total = 0, approved = 0, remaining = 0, streak = 0, last_reviewed = null } = state || {};
   const pct = total > 0 ? Math.round((approved / total) * 100) : 100;
-  const allDone = state !== null && remaining === 0;
+  const allDone = state !== null && remaining === 0 && total > 0;
+  const g = groups[safeIdx] || null;
+  const catInfo = g ? FIN.catById(getGroupCat(g)) : null;
+  const batchCount = state?.batch?.length || 0;
 
-  // Days since last review
-  const daysSince = last_reviewed
-    ? Math.floor((Date.now() - new Date(last_reviewed)) / 864e5)
-    : null;
-  const lastReviewedLabel = daysSince === null ? 'Never reviewed'
-    : daysSince === 0 ? 'Reviewed today'
-    : daysSince === 1 ? 'Reviewed yesterday'
-    : `Last reviewed ${daysSince}d ago`;
+  // Detect if current group looks like a duplicate pair
+  const dupGroup = g && g.txns.length >= 2 && g.txns.every(t =>
+    Math.abs(Math.abs(t.amount) - Math.abs(g.txns[0].amount)) < 0.01 &&
+    Math.abs(new Date(t.date) - new Date(g.txns[0].date)) / 86400000 <= 7
+  );
+  const dupOlder = dupGroup ? [...g.txns].sort((a, b) => a.date < b.date ? -1 : 1)[0] : null;
+  const dupNewer = dupGroup ? [...g.txns].sort((a, b) => a.date > b.date ? -1 : 1)[0] : null;
+
+  async function resolveDup(keepId) {
+    if (!g) return;
+    const deleteIds = g.txns.filter(t => t.id !== keepId).map(t => t.id);
+    // Delete the others
+    await Promise.all(deleteIds.map(id => apiFetch(`/api/transactions/${id}`, { method: 'DELETE' })));
+    // Approve the kept one
+    const overrides = {};
+    overrides[keepId] = getItemCat(g, g.txns.find(t => t.id === keepId));
+    await doApprove([keepId], overrides);
+    setState(prev => {
+      const removed = new Set([...deleteIds]);
+      const batch = (prev.batch || []).filter(t => !removed.has(t.id) && t.id !== keepId);
+      return { ...prev, batch, remaining: Math.max(0, (prev.remaining || 0) - g.txns.length) };
+    });
+    setItemCats(prev => {
+      const n = {...prev};
+      g.txns.forEach(t => delete n[t.id]);
+      return n;
+    });
+    if (groupIdx >= groups.length - 1 && groupIdx > 0) setGroupIdx(groups.length - 2);
+  }
 
   return (
-    <div className="tab-body" style={{ maxWidth: 680, margin: '0 auto' }}>
+    <div className="tab-body review-tab-body">
 
-      {/* Progress header */}
-      <div style={{
-        background: 'var(--surface)', borderRadius: 16,
-        border: '1px solid var(--line)', padding: '20px 24px',
-        marginBottom: 20,
-      }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+      {/* ── Progress header ─────────────────────────────────────────── */}
+      <div className="review-progress-header">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
           <div>
-            <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)' }}>Transaction Review</div>
-            <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 2 }}>
-              {allDone ? 'All caught up!' : `${approved} of ${total} approved · ${remaining} remaining`}
+            <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 5 }}>
+              Transaction Review
+            </div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>
+              {allDone ? 'All caught up!' : `${remaining} to review`}
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--ink-4)', marginTop: 2 }}>
+              {approved} of {total} approved
             </div>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
-            <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--accent)', fontVariantNumeric: 'tabular-nums' }}>
-              {pct}%
-            </div>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3 }}>
+            <div style={{
+              fontSize: 36, fontWeight: 800,
+              color: pct >= 90 ? 'var(--green)' : pct >= 70 ? '#fbbf24' : 'var(--accent)',
+              letterSpacing: '-0.05em', fontFamily: 'var(--font-display)', lineHeight: 1,
+            }}>{pct}%</div>
             {streak > 0 && (
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: 4,
-                fontSize: 12, fontWeight: 600,
-                color: streak >= 4 ? '#f97316' : streak >= 2 ? '#fbbf24' : 'var(--muted)',
-              }}>
-                {streak >= 2 ? '🔥' : '✓'} {streak} week{streak !== 1 ? 's' : ''} in a row
-              </div>
-            )}
-            {daysSince !== null && (
-              <div style={{ fontSize: 11, color: daysSince > 7 ? 'var(--terra)' : 'var(--muted)' }}>
-                {lastReviewedLabel}
+              <div style={{ fontSize: 11.5, fontWeight: 700, color: streak >= 4 ? '#f97316' : streak >= 2 ? '#fbbf24' : 'var(--ink-3)' }}>
+                {streak >= 2 ? '🔥' : '✓'} {streak} week{streak !== 1 ? 's' : ''} streak
               </div>
             )}
           </div>
         </div>
-        {/* Progress bar */}
-        <div style={{ height: 6, background: 'var(--line)', borderRadius: 3, overflow: 'hidden' }}>
+        <div style={{ height: 5, background: 'var(--line)', borderRadius: 3, overflow: 'hidden' }}>
           <div style={{
             height: '100%', width: `${pct}%`, borderRadius: 3,
-            background: 'linear-gradient(90deg, var(--accent), var(--accent2, var(--accent)))',
-            transition: 'width 0.4s ease',
+            background: 'linear-gradient(90deg, var(--accent), var(--accent-2, var(--accent)))',
+            transition: 'width 0.5s cubic-bezier(0.22,1,0.36,1)',
           }} />
         </div>
       </div>
 
-      {allDone && total > 0 ? (
+      {allDone ? (
         <AllDoneCelebration total={total} streak={streak} setTab={setTab} />
-      ) : allDone ? null : (
+      ) : !g ? null : (
         <>
-          {/* Batch card */}
-          <div style={{
-            background: 'var(--surface)', borderRadius: 16,
-            border: '1px solid var(--line)', overflow: 'hidden',
-            marginBottom: 16,
-          }}>
-            <div style={{
-              padding: '14px 20px',
-              borderBottom: '1px solid var(--line)',
-              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-            }}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>
-                Next {batch.length} transactions
+          {/* ── Group navigator chips ──────────────────────────────── */}
+          {groups.length > 1 && (
+            <div className="review-chips">
+              {groups.map((grp, i) => {
+                const isActive = i === safeIdx;
+                const gc = FIN.catById(getGroupCat(grp));
+                return (
+                  <button key={grp.key} className={`review-chip ${isActive ? 'active' : ''}`}
+                    style={{
+                      borderColor: isActive ? gc.color : undefined,
+                      background: isActive ? gc.color + '16' : undefined,
+                    }}
+                    onClick={() => setGroupIdx(i)}>
+                    <span style={{ color: gc.color }}>{gc.icon}</span>
+                    <span style={{ maxWidth: 110, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {grp.name}
+                    </span>
+                    <span className="review-chip-count" style={{
+                      background: isActive ? gc.color : 'var(--line)',
+                      color: isActive ? '#fff' : 'var(--ink-3)',
+                    }}>{grp.txns.length}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* ── Main group card ────────────────────────────────────── */}
+          <div className="review-group-card">
+
+            {/* Group header */}
+            <div className="review-group-header" style={{ background: catInfo.color + '09' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
+                {/* Vendor icon + name */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                  <div className="review-vendor-icon" style={{ background: catInfo.color + '20', color: catInfo.color }}>
+                    {catInfo.icon}
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--ink)', letterSpacing: '-0.025em', marginBottom: 3 }}>
+                      {g.name}
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--ink-3)' }}>
+                      {g.txns.length} transaction{g.txns.length !== 1 ? 's' : ''}
+                      <span style={{ color: 'var(--ink-4)', margin: '0 6px' }}>·</span>
+                      <span style={{ fontWeight: 600, fontFamily: 'var(--font-mono)', color: 'var(--ink-2)' }}>
+                        {fmtMoney2(g.total)}
+                      </span> total
+                    </div>
+                  </div>
+                </div>
+
+                {/* Prev / count / Next */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                  <button className="review-nav-btn"
+                    onClick={() => setGroupIdx(i => Math.max(0, i - 1))}
+                    style={{ opacity: safeIdx === 0 ? 0.3 : 1, cursor: safeIdx === 0 ? 'default' : 'pointer' }}
+                    disabled={safeIdx === 0}>←</button>
+                  <span style={{ fontSize: 11, color: 'var(--ink-4)', padding: '0 4px', fontFamily: 'var(--font-mono)' }}>
+                    {safeIdx + 1} / {groups.length}
+                  </span>
+                  <button className="review-nav-btn"
+                    onClick={() => setGroupIdx(i => Math.min(groups.length - 1, i + 1))}
+                    style={{ opacity: safeIdx === groups.length - 1 ? 0.3 : 1, cursor: safeIdx === groups.length - 1 ? 'default' : 'pointer' }}
+                    disabled={safeIdx === groups.length - 1}>→</button>
+                </div>
               </div>
-              <div style={{ fontSize: 12, color: 'var(--muted)' }}>
-                Set category, then approve
+
+              {/* "Fill all" shortcut — sets every row's category at once, individually still editable */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderRadius: 10, background: 'rgba(20,24,32,0.04)' }}>
+                <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>
+                  Fill all →
+                </span>
+                <CategoryPicker
+                  value={getGroupCat(g)}
+                  onChange={cat => {
+                    setGroupCats(prev => ({ ...prev, [g.key]: cat }));
+                    // Push the chosen category to every item that hasn't been individually overridden yet
+                    setItemCats(prev => {
+                      const next = { ...prev };
+                      g.txns.forEach(t => { next[t.id] = cat; });
+                      return next;
+                    });
+                  }}
+                />
+                <span style={{ fontSize: 11, color: 'var(--ink-4)' }}>overwrites all rows</span>
               </div>
             </div>
 
-            {batch.map((t, i) => {
-              const rowKey = t.id ?? `row-${i}`;
-              const cat = edits[rowKey] || t.category;
-              const catInfo = FIN.catById(cat);
-              const isExpense = t.amount >= 0;
-              return (
-                <div key={rowKey} style={{
-                  display: 'grid',
-                  gridTemplateColumns: '80px 1fr auto',
-                  alignItems: 'center',
-                  gap: 12,
-                  padding: '12px 20px',
-                  borderBottom: i < batch.length - 1 ? '1px solid var(--line)' : 'none',
-                  background: i % 2 === 0 ? 'transparent' : 'color-mix(in srgb, var(--line) 30%, transparent)',
-                }}>
-                  {/* Date */}
-                  <div style={{ fontSize: 12, color: 'var(--muted)', fontVariantNumeric: 'tabular-nums' }}>
-                    {t.date.slice(5)}
-                  </div>
+            {/* Column header */}
+            <div style={{
+              display: 'grid', gridTemplateColumns: '90px 1fr auto auto auto',
+              gap: 12, padding: '7px 24px',
+              borderBottom: '2px solid var(--line)',
+              fontSize: 10.5, fontWeight: 700, color: 'var(--ink-4)',
+              textTransform: 'uppercase', letterSpacing: '0.07em',
+            }}>
+              <div>Date</div>
+              <div>Category</div>
+              <div style={{ textAlign: 'right' }}>Amount</div>
+              <div />
+              <div />
+            </div>
 
-                  {/* Description + category picker */}
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{
-                      display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2,
-                    }}>
-                      <div style={{
-                        fontSize: 13, fontWeight: 500, color: 'var(--ink)',
-                        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                        flex: 1, minWidth: 0,
-                      }}>{t.description}</div>
-                      {t.confidence === 'low' && (
-                        <span title="Needs your attention — category uncertain" style={{
-                          fontSize: 10, padding: '1px 6px', borderRadius: 8, flexShrink: 0,
-                          background: '#fef3c7', color: '#d97706', fontWeight: 600,
-                        }}>?</span>
-                      )}
+            {/* Transaction rows — each has its own category picker, always visible */}
+            {g.txns.map((t, i) => {
+              const isFlagged   = !!localFlags[t.id];
+              const currentCat  = getItemCat(g, t);
+              const currentInfo = FIN.catById(currentCat);
+              const isExpense   = t.amount >= 0;
+              const isIndividual = !!itemCats[t.id] && itemCats[t.id] !== getGroupCat(g);
+              // Detect if this row is a possible duplicate within its group
+              const isPossibleDup = t.notes?.includes('Possible duplicate') || g.txns.some((other, oi) =>
+                oi !== i &&
+                Math.abs(Math.abs(other.amount) - Math.abs(t.amount)) < 0.01 &&
+                Math.abs(new Date(other.date) - new Date(t.date)) / 86400000 <= 7
+              );
+              return (
+                <div key={t.id || i}
+                  style={{
+                    display: 'grid', gridTemplateColumns: '90px 1fr auto auto auto',
+                    alignItems: 'center', gap: 12, padding: '10px 24px',
+                    borderBottom: i < g.txns.length - 1 ? '1px solid var(--line)' : 'none',
+                    background: isPossibleDup ? 'rgba(234,179,8,0.04)' : isFlagged ? 'rgba(249,115,22,0.04)' : i % 2 === 1 ? 'rgba(20,24,32,0.012)' : undefined,
+                    transition: 'background 0.1s',
+                  }}>
+
+                  {/* Date + source */}
+                  <div>
+                    <div style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: 'var(--ink)', fontWeight: 500 }}>
+                      {t.date.slice(5).replace('-', '/')}
                     </div>
                     {t.source && (
-                      <div style={{
-                        fontSize: 11, color: 'var(--muted)', marginBottom: 4,
-                        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                      }}>{t.source}</div>
+                      <div style={{ fontSize: 10, color: 'var(--ink-4)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {t.source}
+                      </div>
                     )}
-                    <CategoryPicker
-                      value={cat}
-                      onChange={(c) => setEdits(prev => ({ ...prev, [rowKey]: c }))}
-                    />
+                    {isPossibleDup && (
+                      <div style={{ fontSize: 9.5, color: '#ca8a04', fontWeight: 700, marginTop: 2, letterSpacing: '0.03em' }}>
+                        ⚠ dup?
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Per-row category picker — always visible */}
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <CategoryPicker
+                        value={currentCat}
+                        onChange={cat => {
+                          setItemCats(prev => ({ ...prev, [t.id]: cat }));
+                        }}
+                      />
+                      {/* Fill below: apply this category to all rows after this one */}
+                      {i < g.txns.length - 1 && (
+                        <button
+                          title="Apply this category to all rows below"
+                          onClick={() => {
+                            const below = g.txns.slice(i + 1);
+                            setItemCats(prev => {
+                              const n = { ...prev };
+                              below.forEach(bt => { n[bt.id] = currentCat; });
+                              return n;
+                            });
+                          }}
+                          style={{
+                            background: 'none', border: '1px solid var(--line)', borderRadius: 4,
+                            cursor: 'pointer', color: 'var(--ink-4)', fontSize: 10, padding: '1px 4px',
+                            lineHeight: 1.4, fontFamily: 'inherit', flexShrink: 0,
+                          }}>
+                          ↓ fill
+                        </button>
+                      )}
+                    </div>
+                    {isIndividual && (
+                      <button
+                        onClick={() => setItemCats(prev => { const n = {...prev}; delete n[t.id]; return n; })}
+                        style={{
+                          background: 'none', border: 'none', cursor: 'pointer',
+                          color: 'var(--ink-4)', fontSize: 10, padding: '1px 0',
+                          fontFamily: 'inherit', textDecoration: 'underline dotted',
+                        }}>
+                        reset
+                      </button>
+                    )}
                   </div>
 
                   {/* Amount */}
                   <div style={{
-                    fontSize: 14, fontWeight: 600,
-                    color: isExpense ? 'var(--ink)' : 'var(--accent)',
-                    fontVariantNumeric: 'tabular-nums',
-                    whiteSpace: 'nowrap',
+                    fontSize: 14, fontWeight: 700, fontFamily: 'var(--font-mono)',
+                    color: isExpense ? 'var(--ink)' : 'var(--green)',
+                    whiteSpace: 'nowrap', textAlign: 'right', letterSpacing: '-0.02em',
                   }}>
                     {isExpense ? '−' : '+'}{FIN.fmt(Math.abs(t.amount))}
                   </div>
+
+                  {/* Flag */}
+                  <button
+                    onClick={() => t.id && toggleFlag(t.id)}
+                    title={isFlagged ? 'Remove flag' : 'Flag for later review'}
+                    style={{
+                      background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px',
+                      fontSize: 14, lineHeight: 1,
+                      color: isFlagged ? '#f97316' : 'var(--ink-4)',
+                      opacity: isFlagged ? 1 : 0.45,
+                      transition: 'color 0.12s, opacity 0.12s',
+                    }}
+                    onMouseEnter={e => { if (!isFlagged) e.currentTarget.style.opacity = '1'; }}
+                    onMouseLeave={e => { if (!isFlagged) e.currentTarget.style.opacity = '0.45'; }}
+                  >⚑</button>
+
+                  {/* Delete */}
+                  <button
+                    onClick={() => t.id && deleteRow(t.id)}
+                    title="Delete this transaction"
+                    style={{
+                      background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px',
+                      fontSize: 15, lineHeight: 1, color: 'var(--ink-4)',
+                      opacity: 0.3, transition: 'color 0.12s, opacity 0.12s',
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.color = '#dc2626'; }}
+                    onMouseLeave={e => { e.currentTarget.style.opacity = '0.3'; e.currentTarget.style.color = 'var(--ink-4)'; }}
+                  >×</button>
                 </div>
               );
             })}
+
+            {/* Footer — dup resolution or normal approve */}
+            {dupGroup ? (
+              <div style={{ padding: '12px 20px', borderTop: '1px solid var(--line)', background: 'rgba(234,179,8,0.04)' }}>
+                <div style={{ fontSize: 11, color: '#92400e', fontWeight: 600, marginBottom: 8, letterSpacing: '0.02em' }}>
+                  ⚠ Possible duplicate — which charge is real?
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button className="review-skip-btn"
+                    onClick={() => setGroupIdx(i => (i + 1) % groups.length)}>
+                    Skip →
+                  </button>
+                  <button
+                    disabled={approving}
+                    onClick={() => dupOlder && resolveDup(dupOlder.id)}
+                    style={{
+                      flex: 1, padding: '10px 14px', borderRadius: 10, border: 'none',
+                      background: 'var(--surface-2)', color: 'var(--ink)',
+                      fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+                    }}>
+                    Keep {dupOlder?.date.slice(5).replace('-', '/')} · delete newer
+                  </button>
+                  <button
+                    disabled={approving}
+                    onClick={() => dupNewer && resolveDup(dupNewer.id)}
+                    style={{
+                      flex: 1, padding: '10px 14px', borderRadius: 10, border: 'none',
+                      background: catInfo?.color || 'var(--accent)', color: '#fff',
+                      fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+                    }}>
+                    Keep {dupNewer?.date.slice(5).replace('-', '/')} · delete older
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="review-group-footer">
+                <button className="review-skip-btn"
+                  onClick={() => setGroupIdx(i => (i + 1) % groups.length)}>
+                  Skip →
+                </button>
+                <button className="review-approve-btn" disabled={approving}
+                  onClick={() => approveGroup(g)}
+                  style={{ background: catInfo.color || 'var(--accent)' }}>
+                  {approving ? 'Saving…' : `✓ Approve ${g.txns.length} · ${fmtMoney2(g.total)}`}
+                </button>
+              </div>
+            )}
           </div>
 
-          {/* Approve button */}
-          <button onClick={approveBatch} disabled={approving} style={{
-            width: '100%', padding: '14px 0',
-            background: 'var(--accent)', color: '#052015',
-            border: 'none', borderRadius: 14,
-            fontSize: 15, fontWeight: 700,
-            fontFamily: 'inherit', cursor: approving ? 'default' : 'pointer',
-            opacity: approving ? 0.7 : 1,
-            letterSpacing: '0.01em',
-          }}>
-            {approving ? 'Saving…' : `✓ Approve these ${batch.length} transactions`}
+          {/* Approve all */}
+          {groups.length > 0 && batchCount > (g?.txns?.length || 0) && (
+            <div style={{ textAlign: 'center' }}>
+              <button className="review-approve-all-btn" disabled={approving} onClick={approveAll}>
+                Approve all {batchCount} transactions ({groups.length} group{groups.length !== 1 ? 's' : ''})
+              </button>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// FLAGGED TAB — possible duplicates + manually flagged transactions
+// ═══════════════════════════════════════════════════════════════════
+function FlaggedTab() {
+  const { useState, useEffect, useCallback } = React;
+  const [data, setData]       = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [section, setSection] = useState('dups'); // 'dups' | 'flagged'
+  const [filter, setFilter]   = useState('all');  // 'all' | 'high'
+  const [deleting, setDeleting] = useState(null);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    apiFetch('/api/flagged')
+      .then(r => r.json())
+      .then(d => setData(d))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function deleteTxn(txnId) {
+    setDeleting(txnId);
+    try {
+      const r = await apiFetch(`/api/transactions/${txnId}`, { method: 'DELETE' });
+      if (!r.ok) return;
+      setData(prev => ({
+        ...prev,
+        pairs:   (prev.pairs   || []).filter(p => p.txn1.id !== txnId && p.txn2.id !== txnId),
+        flagged: (prev.flagged || []).filter(t => t.id !== txnId),
+      }));
+    } finally {
+      setDeleting(null);
+    }
+  }
+
+  async function unflagTxn(txnId) {
+    await apiFetch(`/api/transactions/${txnId}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ flagged: false }),
+    });
+    setData(prev => ({ ...prev, flagged: (prev.flagged || []).filter(t => t.id !== txnId) }));
+  }
+
+  if (loading) return (
+    <div style={{ maxWidth: 820, margin: '0 auto', padding: '28px 24px' }}>
+      <div style={{ marginBottom: 20 }}>
+        <div className="skeleton" style={{ height: 26, width: 180, borderRadius: 6, marginBottom: 10 }} />
+        <div className="skeleton" style={{ height: 13, width: 320, borderRadius: 4 }} />
+      </div>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 24 }}>
+        <div className="skeleton" style={{ height: 34, width: 160, borderRadius: 8 }} />
+        <div className="skeleton" style={{ height: 34, width: 100, borderRadius: 8 }} />
+      </div>
+      {[1, 2, 3].map(i => (
+        <div key={i} style={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 12, padding: 20, marginBottom: 12 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            <div className="skeleton" style={{ height: 14, width: 80, borderRadius: 4 }} />
+            <div className="skeleton" style={{ height: 20, width: 50, borderRadius: 10 }} />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <div style={{ padding: 12, border: '1px solid var(--line)', borderRadius: 8 }}>
+              <div className="skeleton" style={{ height: 12, width: '70%', borderRadius: 4, marginBottom: 6 }} />
+              <div className="skeleton" style={{ height: 16, width: '50%', borderRadius: 4 }} />
+            </div>
+            <div style={{ padding: 12, border: '1px solid var(--line)', borderRadius: 8 }}>
+              <div className="skeleton" style={{ height: 12, width: '70%', borderRadius: 4, marginBottom: 6 }} />
+              <div className="skeleton" style={{ height: 16, width: '50%', borderRadius: 4 }} />
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+
+  const pairs       = data?.pairs   || [];
+  const flaggedList = data?.flagged || [];
+  const highCount   = pairs.filter(p => p.confidence === 'high').length;
+  const visiblePairs = filter === 'high' ? pairs.filter(p => p.confidence === 'high') : pairs;
+
+  return (
+    <div style={{ maxWidth: 820, margin: '0 auto', padding: '28px 24px' }}>
+
+      {/* Header */}
+      <div style={{ marginBottom: 20 }}>
+        <h2 style={{ fontSize: 22, fontWeight: 800, margin: 0, color: 'var(--ink)' }}>Needs Attention</h2>
+        <p style={{ fontSize: 13, color: 'var(--ink-4)', margin: '5px 0 0' }}>
+          Possible duplicate charges and transactions you flagged for review.
+        </p>
+      </div>
+
+      {/* Section toggle */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+        {[
+          { id: 'dups',    label: `Possible Duplicates (${pairs.length})` },
+          { id: 'flagged', label: `Flagged (${flaggedList.length})` },
+        ].map(s => (
+          <button key={s.id} onClick={() => setSection(s.id)}
+            style={{
+              padding: '7px 16px', borderRadius: 8, border: '1px solid var(--line)',
+              background: section === s.id ? 'var(--ink)' : 'var(--surface)',
+              color: section === s.id ? 'var(--bg)' : 'var(--ink)',
+              fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+              transition: 'all 0.15s',
+            }}>
+            {s.label}
           </button>
-          <div style={{ textAlign: 'center', marginTop: 10, fontSize: 12, color: 'var(--muted)' }}>
-            Change any category above, then approve to lock them in
-          </div>
+        ))}
+      </div>
 
+      {/* ── Duplicates section ── */}
+      {section === 'dups' && (
+        <>
+          <p style={{ fontSize: 12, color: 'var(--ink-4)', marginBottom: 12, lineHeight: 1.5 }}>
+            Same merchant · same amount · within 7 days. Check your bank statement before deleting.
+          </p>
+          {pairs.length > 0 && (
+            <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+              {[
+                { id: 'all',  label: `All (${pairs.length})`,           color: null },
+                { id: 'high', label: `High confidence (${highCount})`,  color: '#dc2626' },
+              ].map(f => (
+                <button key={f.id} onClick={() => setFilter(f.id)}
+                  style={{
+                    padding: '5px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600,
+                    cursor: 'pointer', fontFamily: 'inherit', border: '1px solid',
+                    background: filter === f.id
+                      ? (f.color ? 'rgba(220,38,38,0.08)' : 'var(--surface-2)')
+                      : 'var(--surface)',
+                    color:       filter === f.id ? (f.color || 'var(--ink)') : 'var(--ink-3)',
+                    borderColor: filter === f.id ? (f.color ? 'rgba(220,38,38,0.3)' : 'var(--line)') : 'var(--line)',
+                  }}>
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          )}
+          {visiblePairs.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--ink-4)' }}>
+              <div style={{ fontSize: 36, marginBottom: 10 }}>✓</div>
+              <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink-3)' }}>No duplicates found</div>
+              <div style={{ fontSize: 13, marginTop: 4 }}>Your transactions look clean!</div>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {visiblePairs.map(pair => (
+                <div key={`${pair.txn1.id}-${pair.txn2.id}`} className="card" style={{ overflow: 'hidden', padding: 0 }}>
+                  {/* Pair header */}
+                  <div style={{
+                    padding: '12px 18px', borderBottom: '1px solid var(--line)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{
+                        width: 30, height: 30, borderRadius: '50%', background: 'var(--surface-2)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: 12, fontWeight: 800, color: 'var(--ink-3)',
+                        flexShrink: 0,
+                      }}>
+                        {(pair.txn1.description.trim()[0] || '?').toUpperCase()}
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>
+                          {pair.txn1.description}
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--ink-4)', marginTop: 1 }}>
+                          {pair.delta_days === 0 ? 'Same day' : `${pair.delta_days}d apart`}
+                          {' · '}
+                          <span style={{ color: pair.confidence === 'high' ? '#dc2626' : '#d97706', fontWeight: 600 }}>
+                            {pair.confidence === 'high' ? 'high' : 'medium'} confidence
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ fontSize: 15, fontWeight: 800, fontFamily: 'var(--font-mono)', color: 'var(--ink)' }}>
+                      {FIN.fmt(Math.abs(pair.txn1.amount))}
+                    </div>
+                  </div>
+                  {/* Two rows */}
+                  {[pair.txn1, pair.txn2].map((txn, ti) => (
+                    <div key={txn.id} style={{
+                      display: 'grid', gridTemplateColumns: '100px 1fr auto',
+                      alignItems: 'center', gap: 12, padding: '10px 18px',
+                      borderBottom: ti === 0 ? '1px solid var(--line)' : 'none',
+                      background: ti === 1 ? 'rgba(20,24,32,0.015)' : undefined,
+                    }}>
+                      <div>
+                        <div style={{ fontSize: 12, fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
+                          {txn.date.slice(5).replace('-', '/')}
+                        </div>
+                        <div style={{ fontSize: 10, color: 'var(--ink-4)', marginTop: 1 }}>{txn.source}</div>
+                      </div>
+                      <div style={{ fontSize: 12, color: 'var(--ink-3)' }}>
+                        {txn.category}
+                        {txn.approved && <span style={{ marginLeft: 8, fontSize: 10, color: 'var(--green)', fontWeight: 700 }}>✓ approved</span>}
+                        {txn.pending  && <span style={{ marginLeft: 8, fontSize: 10, color: '#d97706', fontWeight: 700 }}>pending</span>}
+                        {txn.notes?.includes('Possible duplicate') && <span style={{ marginLeft: 8, fontSize: 10, color: '#d97706', fontWeight: 700 }}>⚠ flagged</span>}
+                      </div>
+                      <button onClick={() => deleteTxn(txn.id)} disabled={!!deleting}
+                        style={{
+                          padding: '4px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600,
+                          cursor: deleting ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
+                          border: '1px solid rgba(220,38,38,0.25)', background: 'rgba(220,38,38,0.06)',
+                          color: '#dc2626', opacity: deleting === txn.id ? 0.5 : 1, transition: 'opacity 0.1s',
+                        }}>
+                        {deleting === txn.id ? '…' : 'Delete'}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ── Flagged transactions section ── */}
+      {section === 'flagged' && (
+        <>
+          <p style={{ fontSize: 12, color: 'var(--ink-4)', marginBottom: 12 }}>
+            Transactions you flagged for manual review from the Review tab.
+          </p>
+          {flaggedList.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--ink-4)' }}>
+              <div style={{ fontSize: 36, marginBottom: 10 }}>⚑</div>
+              <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink-3)' }}>Nothing flagged</div>
+              <div style={{ fontSize: 13, marginTop: 4 }}>
+                Flag transactions in Review to see them here.
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {flaggedList.map(txn => (
+                <div key={txn.id} className="card" style={{ padding: '12px 18px', display: 'flex', alignItems: 'center', gap: 14 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {txn.description}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--ink-4)', marginTop: 2 }}>
+                      {txn.date.slice(5).replace('-', '/')} · {txn.source} · {txn.category}
+                      {txn.approved && <span style={{ marginLeft: 8, color: 'var(--green)', fontWeight: 600 }}>✓ approved</span>}
+                    </div>
+                    {txn.notes && <div style={{ fontSize: 11, color: '#d97706', marginTop: 2 }}>{txn.notes}</div>}
+                  </div>
+                  <div style={{ fontSize: 15, fontWeight: 800, fontFamily: 'var(--font-mono)', color: 'var(--ink)', whiteSpace: 'nowrap' }}>
+                    {txn.amount >= 0 ? '−' : '+'}{FIN.fmt(Math.abs(txn.amount))}
+                  </div>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button onClick={() => unflagTxn(txn.id)}
+                      style={{
+                        padding: '4px 10px', borderRadius: 6, fontSize: 12, fontWeight: 600,
+                        cursor: 'pointer', fontFamily: 'inherit',
+                        border: '1px solid var(--line)', background: 'var(--surface)',
+                        color: 'var(--ink-3)',
+                      }}>
+                      Unflag
+                    </button>
+                    <button onClick={() => deleteTxn(txn.id)} disabled={!!deleting}
+                      style={{
+                        padding: '4px 10px', borderRadius: 6, fontSize: 12, fontWeight: 600,
+                        cursor: deleting ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
+                        border: '1px solid rgba(220,38,38,0.25)', background: 'rgba(220,38,38,0.06)',
+                        color: '#dc2626', opacity: deleting === txn.id ? 0.5 : 1,
+                      }}>
+                      {deleting === txn.id ? '…' : 'Delete'}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </>
       )}
     </div>
@@ -5454,8 +6356,34 @@ function InvestmentsTab() {
   };
 
   if (loading) return (
-    <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-4)', fontSize: 14 }}>
-      Loading investments…
+    <div className="tab-body">
+      {/* Summary cards skeleton */}
+      <div className="grid-4">
+        {[1, 2, 3, 4].map(i => (
+          <div key={i} className="card" style={{ padding: 20 }}>
+            <div className="skeleton" style={{ height: 11, width: 80, borderRadius: 4, marginBottom: 10 }} />
+            <div className="skeleton" style={{ height: 26, width: 100, borderRadius: 5, marginBottom: 6 }} />
+            <div className="skeleton" style={{ height: 11, width: 60, borderRadius: 4 }} />
+          </div>
+        ))}
+      </div>
+      {/* Holdings table skeleton */}
+      <div className="card">
+        <div className="card-head">
+          <div className="skeleton" style={{ height: 16, width: 80, borderRadius: 4 }} />
+        </div>
+        {[1, 2, 3, 4, 5].map(i => (
+          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0', borderBottom: '1px solid var(--line)' }}>
+            <div className="skeleton" style={{ height: 32, width: 32, borderRadius: '50%', flexShrink: 0 }} />
+            <div style={{ flex: 1 }}>
+              <div className="skeleton" style={{ height: 14, width: '40%', borderRadius: 4, marginBottom: 5 }} />
+              <div className="skeleton" style={{ height: 11, width: '25%', borderRadius: 4 }} />
+            </div>
+            <div className="skeleton" style={{ height: 14, width: 72, borderRadius: 4 }} />
+            <div className="skeleton" style={{ height: 14, width: 56, borderRadius: 4 }} />
+          </div>
+        ))}
+      </div>
     </div>
   );
   if (error) return (
@@ -5766,10 +6694,494 @@ function InvestmentsTab() {
   );
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// TRIPS TAB
+// ═══════════════════════════════════════════════════════════════════
+function TripsTab({ refreshFin, finVersion }) {
+  const [trips, setTrips]       = useState([]);
+  const [selectedId, setSelectedId] = useState(null);
+  const [creating, setCreating] = useState(false);
+  const [form, setForm]         = useState({ name: '', start_date: '', end_date: '', budget: '' });
+  const [saving, setSaving]     = useState(false);
+  const [saveMsg, setSaveMsg]   = useState(null);
+  const [selectedCat, setSelectedCat] = useState(null);
+  const [sortBy, setSortBy]     = useState('date');
+  const [addSearch, setAddSearch] = useState('');
+  const [editMode, setEditMode] = useState(false);
+  const [editForm, setEditForm] = useState({});
+  const [editSaving, setEditSaving] = useState(false);
+  const [editMsg, setEditMsg]   = useState(null);
+
+  function loadTrips() {
+    apiFetch('/api/trips').then(r => r.json()).then(d => setTrips(d.trips || []));
+  }
+  useEffect(() => { loadTrips(); }, [finVersion]);
+
+  const selectedTrip = trips.find(t => t.id === selectedId);
+
+  // Derive trip transactions client-side from window.FIN.TRANSACTIONS
+  const tripTxns = useMemo(() => {
+    if (!selectedId) return [];
+    return TRANSACTIONS.filter(t =>
+      (t.tags || '').split(',').map(s => s.trim()).includes(`trip:${selectedId}`)
+    );
+  }, [selectedId, finVersion]);
+
+  const expenses = useMemo(() => tripTxns.filter(t => t.amount < 0), [tripTxns]);
+  const totalSpent = useMemo(() => expenses.reduce((s, t) => s - t.amount, 0), [expenses]);
+
+  const catBreakdown = useMemo(() => {
+    const map = {};
+    expenses.forEach(t => {
+      const c = catById(t.category);
+      if (!map[t.category]) map[t.category] = { cat: t.category, name: c.name, color: c.color, amount: 0 };
+      map[t.category].amount -= t.amount;
+    });
+    return Object.values(map).sort((a, b) => b.amount - a.amount);
+  }, [expenses]);
+
+  const dailyBreakdown = useMemo(() => {
+    const map = {};
+    expenses.forEach(t => {
+      const d = (t.date || '').slice(0, 10);
+      if (d) map[d] = (map[d] || 0) - t.amount;
+    });
+    return Object.entries(map).map(([date, amount]) => ({ date, amount }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }, [expenses]);
+
+  const topMerchants = useMemo(() => {
+    const map = {};
+    expenses.forEach(t => {
+      const m = t.merchant || t.description || 'Unknown';
+      if (!map[m]) map[m] = { name: m, amount: 0, count: 0 };
+      map[m].amount -= t.amount;
+      map[m].count++;
+    });
+    return Object.values(map).sort((a, b) => b.amount - a.amount).slice(0, 5);
+  }, [expenses]);
+
+  const displayTxns = useMemo(() => {
+    const arr = selectedCat ? tripTxns.filter(t => t.category === selectedCat) : [...tripTxns];
+    if (sortBy === 'amount') return arr.sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
+    return arr.sort((a, b) => new Date(b.date) - new Date(a.date));
+  }, [tripTxns, selectedCat, sortBy]);
+
+  const addCandidates = useMemo(() => {
+    if (!selectedId || !addSearch.trim()) return [];
+    const q = addSearch.toLowerCase();
+    return TRANSACTIONS
+      .filter(t => !(t.tags || '').split(',').map(s => s.trim()).includes(`trip:${selectedId}`))
+      .filter(t => (t.merchant || t.description || '').toLowerCase().includes(q))
+      .slice(0, 20);
+  }, [selectedId, addSearch, finVersion]);
+
+  async function createTrip() {
+    if (!form.name || !form.start_date || !form.end_date) return;
+    setSaving(true); setSaveMsg(null);
+    const res = await apiFetch('/api/trips', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: form.name, start_date: form.start_date, end_date: form.end_date,
+        budget: form.budget ? parseFloat(form.budget) : null }),
+    });
+    const data = await res.json();
+    setSaving(false);
+    if (res.ok) {
+      setSaveMsg(`Created! ${data.auto_tagged} transaction${data.auto_tagged !== 1 ? 's' : ''} auto-tagged.`);
+      setForm({ name: '', start_date: '', end_date: '', budget: '' });
+      setCreating(false);
+      if (refreshFin) refreshFin();
+    } else {
+      setSaveMsg(`Error: ${data.detail || 'Failed'}`);
+    }
+  }
+
+  async function removeFromTrip(txnId) {
+    await apiFetch(`/api/trips/${selectedId}/transactions/${txnId}`, { method: 'DELETE' });
+    if (refreshFin) refreshFin();
+  }
+
+  async function addToTrip(txnId) {
+    await apiFetch(`/api/trips/${selectedId}/transactions/${txnId}`, { method: 'POST' });
+    setAddSearch('');
+    if (refreshFin) refreshFin();
+  }
+
+  async function deleteTrip() {
+    if (!confirm('Delete this trip? Transactions will be un-tagged but not deleted.')) return;
+    await apiFetch(`/api/trips/${selectedId}`, { method: 'DELETE' });
+    setSelectedId(null); setSelectedCat(null);
+    if (refreshFin) refreshFin();
+  }
+
+  async function saveEdit() {
+    setEditSaving(true); setEditMsg(null);
+    const res = await apiFetch(`/api/trips/${selectedId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(editForm),
+    });
+    setEditSaving(false);
+    if (res.ok) { setEditMode(false); loadTrips(); }
+    else { const d = await res.json(); setEditMsg(d.detail || 'Failed to save'); }
+  }
+
+  const recat = async (id, cat) => {
+    try {
+      await fetch(`/api/transactions/${id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ category: cat }),
+      });
+      if (refreshFin) refreshFin();
+    } catch(e) {}
+  };
+
+  const inputStyle = {
+    width: '100%', padding: '9px 12px', borderRadius: 9, border: '1px solid var(--line)',
+    background: 'var(--bg)', color: 'var(--ink)', fontSize: 13, fontFamily: 'inherit',
+    outline: 'none', boxSizing: 'border-box',
+  };
+
+  // ── Detail view ──────────────────────────────────────────────────
+  if (selectedId) {
+    if (!selectedTrip) return (
+      <div style={{ padding: 48, textAlign: 'center', color: 'var(--ink-4)', fontSize: 14 }}>Loading…</div>
+    );
+    const trip = selectedTrip;
+    const tripDays = trip.start_date && trip.end_date
+      ? Math.max(1, Math.round((new Date(trip.end_date) - new Date(trip.start_date)) / 86400000) + 1) : 1;
+    const budget    = trip.budget != null ? parseFloat(trip.budget) : null;
+    const remaining = budget != null ? budget - totalSpent : null;
+    const over      = budget != null && totalSpent > budget;
+    const pct       = budget != null ? Math.min(totalSpent / budget * 100, 100) : null;
+    const maxDay    = dailyBreakdown.length ? Math.max(...dailyBreakdown.map(d => d.amount), 1) : 1;
+
+    return (
+      <div className="tab-body">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+          <button onClick={() => { setSelectedId(null); setSelectedCat(null); setEditMode(false); }} style={{
+            display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none',
+            color: 'var(--ink-3)', fontSize: 13, cursor: 'pointer', padding: '6px 0',
+          }}>← Back to trips</button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={() => {
+              setEditMode(v => !v);
+              setEditForm({ name: trip.name, start_date: trip.start_date, end_date: trip.end_date, budget: trip.budget ?? '' });
+              setEditMsg(null);
+            }} style={{
+              background: 'none', border: '1px solid var(--line)', borderRadius: 8,
+              padding: '5px 12px', fontSize: 12, cursor: 'pointer', color: 'var(--ink-3)',
+            }}>{editMode ? 'Cancel' : 'Edit trip'}</button>
+            <button onClick={deleteTrip} style={{
+              background: 'none', border: '1px solid color-mix(in srgb, var(--terra) 40%, transparent)',
+              color: 'var(--terra)', borderRadius: 8, padding: '5px 12px', fontSize: 12, cursor: 'pointer',
+            }}>Delete</button>
+          </div>
+        </div>
+
+        {editMode && (
+          <div className="card" style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ fontWeight: 600, fontSize: 14 }}>Edit trip</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: 10 }}>
+              <div>
+                <div style={{ fontSize: 11, color: 'var(--ink-4)', marginBottom: 4 }}>Name</div>
+                <input value={editForm.name || ''} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))} style={inputStyle} />
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: 'var(--ink-4)', marginBottom: 4 }}>Start date</div>
+                <input type="date" value={editForm.start_date || ''} onChange={e => setEditForm(f => ({ ...f, start_date: e.target.value }))} style={inputStyle} />
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: 'var(--ink-4)', marginBottom: 4 }}>End date</div>
+                <input type="date" value={editForm.end_date || ''} onChange={e => setEditForm(f => ({ ...f, end_date: e.target.value }))} style={inputStyle} />
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: 'var(--ink-4)', marginBottom: 4 }}>Budget</div>
+                <input type="number" min="0" value={editForm.budget ?? ''} placeholder="optional"
+                  onChange={e => setEditForm(f => ({ ...f, budget: e.target.value ? parseFloat(e.target.value) : null }))} style={inputStyle} />
+              </div>
+            </div>
+            {editMsg && <div style={{ fontSize: 13, color: 'var(--terra)' }}>{editMsg}</div>}
+            <button onClick={saveEdit} disabled={editSaving} style={{
+              alignSelf: 'flex-start', background: 'var(--accent)', color: '#052015', border: 'none',
+              borderRadius: 9, padding: '8px 20px', fontSize: 13, fontWeight: 600, cursor: 'pointer',
+              opacity: editSaving ? 0.6 : 1,
+            }}>{editSaving ? 'Saving…' : 'Save changes'}</button>
+          </div>
+        )}
+
+        <div>
+          <h2 style={{ fontSize: 22, fontWeight: 700, color: 'var(--ink)', margin: 0 }}>{trip.name}</h2>
+          <div style={{ fontSize: 13, color: 'var(--ink-4)', marginTop: 4 }}>
+            {trip.start_date} → {trip.end_date} · {tripTxns.length} transactions · {tripDays} day{tripDays !== 1 ? 's' : ''}
+          </div>
+        </div>
+
+        <div className="grid-4">
+          <SummaryCard label="Total spent"   n={totalSpent}            accent="var(--terra)" />
+          <SummaryCard label="Daily avg"     n={totalSpent / tripDays} accent="var(--accent)" />
+          <SummaryCard label="Transactions"  value={`${tripTxns.length}`} />
+          {budget != null
+            ? <SummaryCard label={over ? 'Over budget' : 'Remaining'} n={Math.abs(remaining)} accent={over ? 'var(--terra)' : 'var(--green)'} />
+            : <SummaryCard label="Trip days" value={`${tripDays}`} accent="var(--ink-3)" />
+          }
+        </div>
+
+        {pct !== null && (
+          <div className="card" style={{ padding: '16px 20px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 8 }}>
+              <span style={{ fontWeight: 600 }}>Budget: {fmtMoney2(budget)}</span>
+              <span style={{ color: over ? 'var(--terra)' : 'var(--ink-3)' }}>
+                {fmtMoney2(totalSpent)} spent ({pct.toFixed(0)}%)
+              </span>
+            </div>
+            <div style={{ height: 8, borderRadius: 4, background: 'var(--line)' }}>
+              <div style={{ height: '100%', borderRadius: 4, width: `${pct}%`,
+                background: over ? 'var(--terra)' : 'var(--accent)', transition: 'width .3s' }} />
+            </div>
+          </div>
+        )}
+
+        <div className="grid-2">
+          {catBreakdown.length > 0 && (
+            <div className="card">
+              <div className="card-head"><h3>By category</h3></div>
+              <div className="donut-row">
+                <DonutChart data={catBreakdown} size={180} thickness={22} formatter={fmtMoney}
+                  selectedCat={selectedCat}
+                  onSliceClick={s => setSelectedCat(c => c === s.cat ? null : s.cat)} />
+                <div className="donut-legend">
+                  {catBreakdown.map(b => (
+                    <div key={b.cat} className="legend-row"
+                      style={{ cursor: 'pointer', opacity: selectedCat && selectedCat !== b.cat ? 0.4 : 1, transition: 'opacity .15s' }}
+                      onClick={() => setSelectedCat(c => c === b.cat ? null : b.cat)}>
+                      <span className="cat-dot" style={{ background: b.color }} />
+                      <span className="legend-name">{b.name}</span>
+                      <span className="legend-amt">{fmtMoney(b.amount)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {dailyBreakdown.length > 0 && (
+            <div className="card">
+              <div className="card-head"><h3>Daily spending</h3></div>
+              <div style={{ overflowX: 'auto', padding: '0 4px 8px' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: 130, minWidth: dailyBreakdown.length * 44 }}>
+                  {dailyBreakdown.map(d => (
+                    <div key={d.date} style={{ flex: 1, minWidth: 36, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                      <div style={{ fontSize: 10, color: 'var(--ink-4)' }}>{fmtMoney(d.amount)}</div>
+                      <div style={{ width: '100%', borderRadius: 4, minHeight: 4,
+                        height: `${Math.round((d.amount / maxDay) * 80)}px`,
+                        background: 'var(--accent)', opacity: 0.85 }} />
+                      <div style={{ fontSize: 10, color: 'var(--ink-4)', whiteSpace: 'nowrap' }}>{d.date.slice(5)}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {topMerchants.length > 0 && (
+          <div className="card">
+            <div className="card-head"><h3>Top merchants</h3></div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {topMerchants.map((m, i) => (
+                <div key={m.name} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0',
+                  borderBottom: i < topMerchants.length - 1 ? '1px solid var(--line)' : 'none' }}>
+                  <div style={{ width: 22, height: 22, borderRadius: 6, background: 'var(--surface)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 11, color: 'var(--ink-4)', fontWeight: 700, flexShrink: 0 }}>{i + 1}</div>
+                  <div style={{ flex: 1, fontSize: 14, color: 'var(--ink)', fontWeight: 500,
+                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.name}</div>
+                  <div style={{ fontSize: 12, color: 'var(--ink-4)', marginRight: 8 }}>{m.count} txn{m.count !== 1 ? 's' : ''}</div>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>{fmtMoney2(m.amount)}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="card">
+          <div className="card-head">
+            <h3>
+              {selectedCat
+                ? <><span className="cat-dot" style={{ background: catById(selectedCat).color, display: 'inline-block', marginRight: 6 }} />{catById(selectedCat).name}</>
+                : 'Transactions'}
+            </h3>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              {['date', 'amount'].map(s => (
+                <button key={s} onClick={() => setSortBy(s)} style={{
+                  background: sortBy === s ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'none',
+                  border: `1px solid ${sortBy === s ? 'var(--accent)' : 'var(--line)'}`,
+                  borderRadius: 6, padding: '2px 10px', fontSize: 12, cursor: 'pointer',
+                  color: sortBy === s ? 'var(--accent)' : 'var(--ink-3)', fontFamily: 'inherit',
+                }}>{s === 'amount' ? '$ Amount' : '📅 Date'}</button>
+              ))}
+              {selectedCat && (
+                <button onClick={() => setSelectedCat(null)} style={{
+                  background: 'none', border: '1px solid var(--line)', borderRadius: 6,
+                  padding: '2px 10px', fontSize: 12, color: 'var(--ink-3)', cursor: 'pointer',
+                }}>Clear filter</button>
+              )}
+              <span className="muted">{displayTxns.length} transactions</span>
+            </div>
+          </div>
+          <TxnList
+            txns={displayTxns}
+            compact
+            presorted
+            onRecategorize={recat}
+            refreshFin={refreshFin}
+            extraMenuItems={t => [{ label: 'Remove from trip', action: () => removeFromTrip(t.id) }]}
+          />
+        </div>
+
+        <div className="card">
+          <div className="card-head">
+            <h3>Add transactions</h3>
+            <span className="muted">Search any transaction not yet in this trip</span>
+          </div>
+          <div style={{ padding: '0 0 12px' }}>
+            <input value={addSearch} onChange={e => setAddSearch(e.target.value)}
+              placeholder="Search by merchant name…"
+              style={{ ...inputStyle, marginBottom: 8 }} />
+            {addSearch.trim() && addCandidates.length === 0 && (
+              <div style={{ fontSize: 13, color: 'var(--ink-4)', padding: '8px 0' }}>No matching transactions found.</div>
+            )}
+            {addCandidates.map((t, i) => {
+              const cat = catById(t.category);
+              return (
+                <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0',
+                  borderBottom: i < addCandidates.length - 1 ? '1px solid var(--line)' : 'none' }}>
+                  <span className="cat-dot" style={{ background: cat.color, flexShrink: 0 }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, color: 'var(--ink)', fontWeight: 500,
+                      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {t.merchant || t.description}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--ink-4)' }}>{(t.date || '').slice(0, 10)} · {cat.name}</div>
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: t.amount < 0 ? 'var(--ink)' : 'var(--green)', flexShrink: 0 }}>
+                    {t.amount < 0 ? '-' : '+'}{fmtMoney2(Math.abs(t.amount))}
+                  </div>
+                  <button onClick={() => addToTrip(t.id)} style={{
+                    background: 'var(--accent)', color: '#052015', border: 'none', borderRadius: 7,
+                    padding: '4px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer', flexShrink: 0,
+                  }}>+ Add</button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── List view ─────────────────────────────────────────────────────
+  return (
+    <div style={{ padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ fontSize: 13, color: 'var(--ink-4)' }}>Track spending for a trip or event</div>
+        <button onClick={() => { setCreating(v => !v); setSaveMsg(null); }} style={{
+          background: 'var(--accent)', color: '#052015', border: 'none', borderRadius: 10,
+          padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer',
+        }}>{creating ? 'Cancel' : '+ New Trip'}</button>
+      </div>
+
+      {creating && (
+        <div className="card" style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ fontWeight: 600, fontSize: 14 }}>New trip</div>
+          <input autoFocus value={form.name} placeholder="Trip name (e.g. Mexico City)"
+            onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+            onKeyDown={e => e.key === 'Enter' && createTrip()}
+            style={inputStyle} />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <div>
+              <div style={{ fontSize: 11, color: 'var(--ink-4)', marginBottom: 4 }}>Start date</div>
+              <input type="date" value={form.start_date} onChange={e => setForm(f => ({ ...f, start_date: e.target.value }))} style={inputStyle} />
+            </div>
+            <div>
+              <div style={{ fontSize: 11, color: 'var(--ink-4)', marginBottom: 4 }}>End date</div>
+              <input type="date" value={form.end_date} onChange={e => setForm(f => ({ ...f, end_date: e.target.value }))} style={inputStyle} />
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize: 11, color: 'var(--ink-4)', marginBottom: 4 }}>Budget (optional)</div>
+            <input type="number" min="0" value={form.budget} placeholder="e.g. 1500"
+              onChange={e => setForm(f => ({ ...f, budget: e.target.value }))} style={inputStyle} />
+          </div>
+          {saveMsg && (
+            <div style={{ fontSize: 13, color: saveMsg.startsWith('Error') ? 'var(--terra)' : 'var(--accent)' }}>{saveMsg}</div>
+          )}
+          <button onClick={createTrip} disabled={saving || !form.name || !form.start_date || !form.end_date} style={{
+            background: 'var(--accent)', color: '#052015', border: 'none', borderRadius: 9,
+            padding: '9px 0', fontSize: 13, fontWeight: 600, cursor: 'pointer',
+            opacity: (saving || !form.name || !form.start_date || !form.end_date) ? 0.6 : 1,
+          }}>{saving ? 'Creating…' : 'Create Trip'}</button>
+        </div>
+      )}
+
+      {trips.length === 0
+        ? <div style={{ padding: '48px 0', textAlign: 'center', color: 'var(--ink-4)', fontSize: 14 }}>
+            <div style={{ fontSize: 36, marginBottom: 12 }}>✈️</div>
+            <div>No trips yet. Create one to track your travel spending.</div>
+          </div>
+        : <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 14 }}>
+            {trips.map(trip => {
+              const b    = trip.budget != null ? parseFloat(trip.budget) : null;
+              const pct  = b ? Math.min(trip.total_spent / b * 100, 100) : null;
+              const over = b && trip.total_spent > b;
+              return (
+                <div key={trip.id} onClick={() => { setSelectedId(trip.id); setSelectedCat(null); }} style={{
+                  background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 16,
+                  padding: '18px 20px', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 10,
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: 15, color: 'var(--ink)' }}>{trip.name}</div>
+                      <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 3 }}>
+                        {trip.start_date} → {trip.end_date}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontWeight: 700, fontSize: 17, color: over ? 'var(--terra)' : 'var(--accent)' }}>
+                        {fmtMoney2(trip.total_spent)}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--ink-4)' }}>{trip.txn_count} transactions</div>
+                    </div>
+                  </div>
+                  {pct !== null && (
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--ink-4)', marginBottom: 4 }}>
+                        <span>Budget {fmtMoney2(b)}</span>
+                        <span style={{ color: over ? 'var(--terra)' : 'var(--ink-3)' }}>
+                          {over ? `${fmtMoney2(trip.total_spent - b)} over` : `${fmtMoney2(b - trip.total_spent)} left`}
+                        </span>
+                      </div>
+                      <div style={{ height: 5, borderRadius: 3, background: 'var(--line)' }}>
+                        <div style={{ height: '100%', borderRadius: 3, width: `${pct}%`,
+                          background: over ? 'var(--terra)' : 'var(--accent)' }} />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+      }
+    </div>
+  );
+}
+
 Object.assign(window, {
-  OverviewTab, MonthlyTab, TransactionsTab, SpendingTab, IncomeTab, CashFlowTab,
+  OverviewTab, MonthlyTab, TransactionsTab, FlowTab, SpendingTab, IncomeTab, CashFlowTab,
   NetWorthTab, AccountsTab, RecurringTab, CategoriesTab, TrendsTab,
-  ChatTab, SettingsTab, AdminTab, TxnList, AccountList, ReviewTab, FeedbackTab,
-  InvestmentsTab,
+  ChatTab, SettingsTab, AdminTab, TxnList, AccountList, ReviewTab, FlaggedTab, FeedbackTab,
+  InvestmentsTab, TripsTab,
 });
 })();

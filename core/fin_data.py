@@ -116,16 +116,30 @@ def build_fin_data(username: str) -> dict:
     select_txn_type   = "transaction_type"  if "transaction_type"  in col_names else "NULL"
     select_user_edit  = "user_edited"       if "user_edited"       in col_names else "FALSE"
     select_source_type = "source_type"      if "source_type"       in col_names else "NULL"
+    select_flagged         = "flagged"         if "flagged"         in col_names else "FALSE"
+    select_starred         = "starred"         if "starred"         in col_names else "FALSE"
+    select_lat             = "lat"             if "lat"             in col_names else "NULL"
+    select_lon             = "lon"             if "lon"             in col_names else "NULL"
+    select_location_city   = "location_city"   if "location_city"   in col_names else "NULL"
+    select_location_region = "location_region" if "location_region" in col_names else "NULL"
+    select_location_address = "location_address" if "location_address" in col_names else "NULL"
 
     rows = conn.execute(f"""
         SELECT
             date, description, expense_amount, category, source,
-            {select_txn_id}     AS txn_id,
-            {select_notes}      AS notes,
-            {select_tags}       AS tags,
-            {select_txn_type}   AS txn_type,
-            {select_user_edit}  AS user_edited,
-            {select_source_type} AS source_type
+            {select_txn_id}      AS txn_id,
+            {select_notes}       AS notes,
+            {select_tags}        AS tags,
+            {select_txn_type}    AS txn_type,
+            {select_user_edit}   AS user_edited,
+            {select_source_type} AS source_type,
+            {select_flagged}     AS flagged,
+            {select_starred}     AS starred,
+            {select_lat}         AS lat,
+            {select_lon}         AS lon,
+            {select_location_city}    AS location_city,
+            {select_location_region}  AS location_region,
+            {select_location_address} AS location_address
         FROM txns
         ORDER BY date DESC
     """).fetchall()
@@ -140,7 +154,7 @@ def build_fin_data(username: str) -> dict:
         _user_edited_ids = set()
 
     transactions = []
-    for date, desc, expense_amount, category, source, txn_id, notes, tags, txn_type, user_edited, source_type in rows:
+    for date, desc, expense_amount, category, source, txn_id, notes, tags, txn_type, user_edited, source_type, flagged, starred, lat, lon, location_city, location_region, location_address in rows:
         if not txn_id:
             txn_id = hashlib.md5(
                 f"{date}|{desc}|{expense_amount}".encode()
@@ -171,6 +185,13 @@ def build_fin_data(username: str) -> dict:
             "tags":        str(tags or ""),
             "confidence":  _conf,
             "source_type": str(source_type or ""),
+            "flagged":     bool(flagged) if flagged is not None else False,
+            "starred":     bool(starred) if starred is not None else False,
+            "lat":         float(lat) if lat is not None else None,
+            "lon":         float(lon) if lon is not None else None,
+            "location_city":    str(location_city) if location_city else None,
+            "location_region":  str(location_region) if location_region else None,
+            "location_address": str(location_address) if location_address else None,
         })
 
     # ── APPLY SPLITS ──────────────────────────────────────────────────────
