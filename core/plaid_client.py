@@ -27,8 +27,11 @@ All functions accept:
 from __future__ import annotations
 
 import json
+import logging
 import os
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 import pandas as pd
 import plaid

@@ -20,6 +20,7 @@ from core.store import (
     data_file, get_conn, load_config, save_config,
     load_df, save_df, load_splits, save_splits,
     load_budgets, save_budgets,
+    load_trash, save_trash,
 )
 
 router = APIRouter()
@@ -244,13 +245,84 @@ async def delete_transaction(
         raise HTTPException(404, "No data")
     if "txn_id" not in df.columns or not (df["txn_id"] == txn_id).any():
         raise HTTPException(404, f"Transaction {txn_id} not found")
+
+    # Serialize row to trash.json before removing from parquet
+    row = df[df["txn_id"] == txn_id].iloc[0].to_dict()
+    row_serializable = {k: (None if (str(v) in ("nan", "NaT", "None")) else v) for k, v in row.items()}
+    trash = load_trash(current_user)
+    trash.append({"deleted_at": datetime.datetime.utcnow().isoformat(), "row": row_serializable})
+    save_trash(current_user, trash)
+
+    # Remove from main parquet
     df = df[df["txn_id"] != txn_id].reset_index(drop=True)
     save_df(current_user, df)
-    # Also remove any split data for this transaction
+
+    # Remove any split data
     splits = load_splits(current_user)
     if txn_id in splits:
         del splits[txn_id]
         save_splits(current_user, splits)
+    return {"ok": True}
+
+
+@router.get("/api/transactions/trash")
+async def get_trash_items(current_user: str = Depends(get_current_user)) -> dict:
+    items = load_trash(current_user)  # load_trash auto-purges expired entries
+    result = []
+    for it in items:
+        row = it.get("row", {})
+        deleted_at = it.get("deleted_at", "")
+        try:
+            deleted_dt = datetime.datetime.fromisoformat(deleted_at)
+            days_ago   = (datetime.datetime.utcnow() - deleted_dt).days
+            expires_in = max(0, 7 - days_ago)
+        except Exception:
+            days_ago, expires_in = 0, 7
+        result.append({
+            "id":         str(row.get("txn_id", "")),
+            "merchant":   str(row.get("description", "")),
+            "amount":     float(row.get("expense_amount", 0) or 0),
+            "date":       str(row.get("date", ""))[:10],
+            "category":   str(row.get("category", "")),
+            "days_ago":   days_ago,
+            "expires_in": expires_in,
+        })
+    return {"items": result}
+
+
+@router.post("/api/transactions/{txn_id}/restore")
+async def restore_transaction(
+    txn_id: str,
+    current_user: str = Depends(get_current_user),
+) -> dict:
+    trash = load_trash(current_user)
+    item  = next((it for it in trash if str(it.get("row", {}).get("txn_id", "")) == txn_id), None)
+    if not item:
+        raise HTTPException(404, f"Transaction {txn_id} not found in trash")
+
+    df = load_df(current_user)
+    if df is None:
+        raise HTTPException(404, "No transaction data")
+
+    row_dict = item["row"]
+    row_series = pd.Series(row_dict)
+    # Coerce numeric columns
+    for col in ["expense_amount", "income_amount", "lat", "lon"]:
+        if col in row_series and row_series[col] not in (None, "None", "nan", ""):
+            try:
+                row_series[col] = float(row_series[col])
+            except Exception:
+                row_series[col] = None
+    for col in ["approved", "user_edited", "flagged", "starred"]:
+        if col in row_series:
+            row_series[col] = str(row_series.get(col, "")).lower() == "true"
+
+    common_cols = df.columns.intersection(row_series.index)
+    restored = pd.DataFrame([row_series[common_cols]])
+    df = pd.concat([df, restored], ignore_index=True)
+    save_df(current_user, df)
+
+    save_trash(current_user, [it for it in trash if str(it.get("row", {}).get("txn_id", "")) != txn_id])
     return {"ok": True}
 
 

@@ -147,6 +147,35 @@ def save_budgets(username: str, data: dict) -> None:
     f.write_text(json.dumps(data, indent=2))
 
 
+TRASH_DAYS = 7
+
+
+def _trash_file(username: str) -> Path:
+    return user_dir(username) / "trash.json"
+
+
+def load_trash(username: str) -> list[dict]:
+    f = _trash_file(username)
+    if not f.exists():
+        return []
+    try:
+        items = json.loads(f.read_text())
+        # Auto-purge items older than TRASH_DAYS
+        cutoff = (datetime.datetime.utcnow() - datetime.timedelta(days=TRASH_DAYS)).isoformat()
+        return [it for it in items if it.get("deleted_at", "") >= cutoff]
+    except Exception:
+        return []
+
+
+def save_trash(username: str, items: list[dict]) -> None:
+    f = _trash_file(username)
+    f.parent.mkdir(parents=True, exist_ok=True)
+    # Always purge before saving
+    cutoff = (datetime.datetime.utcnow() - datetime.timedelta(days=TRASH_DAYS)).isoformat()
+    fresh = [it for it in items if it.get("deleted_at", "") >= cutoff]
+    f.write_text(json.dumps(fresh, indent=2, default=str))
+
+
 # ---------------------------------------------------------------------------
 # Pre-sync backup  (keeps last 5 snapshots per user)
 # ---------------------------------------------------------------------------

@@ -440,7 +440,7 @@ button { cursor: pointer; font-family: inherit; }
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: var(--gap);
-  align-items: stretch;
+  align-items: start;
 }
 
 /* ─── Summary cards ─────────────────────────────────────────────── */
@@ -1477,8 +1477,8 @@ button { cursor: pointer; font-family: inherit; }
 
 /* ─── Tab fade-in ───────────────────────────────────────────────── */
 @keyframes tab-in {
-  from { opacity: 0; transform: translateY(5px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 .tab-fade { animation: tab-in 0.12s ease-out both; }
 
@@ -1920,6 +1920,24 @@ button { cursor: pointer; font-family: inherit; }
 
 /* Toast */
 .app.dark .toast.success { background: #1a5c38; }
+
+/* Month breakdown row hover */
+.month-row {
+  cursor: pointer;
+  border-radius: 6px;
+  padding: 4px 6px;
+  margin: 0 -6px;
+  border: 1px solid transparent;
+  transition: background 0.12s, border-color 0.12s;
+}
+.month-row:hover {
+  background: color-mix(in srgb, var(--accent) 6%, transparent) !important;
+  border-color: var(--line);
+}
+.month-row.active {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+}
 
 /* Skeleton shimmer — adjust for dark */
 .app.dark .skeleton {

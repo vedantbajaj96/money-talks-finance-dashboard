@@ -249,7 +249,7 @@ const { MONTHS } = window.FIN;
 const {
   OverviewTab, TransactionsTab, FlowTab, CashFlowTab,
   NetWorthTab, AccountsTab, RecurringTab, CategoriesTab, TrendsTab, ChatTab, SettingsTab, AdminTab,
-  ReviewTab, FlaggedTab, FeedbackTab, MonthlyTab, InvestmentsTab, TripsTab,
+  ReviewTab, FlaggedTab, FeedbackTab, MonthlyTab, InvestmentsTab, TripsTab, SharedTab,
   TweaksPanel, TweakSection, TweakRadio, TweakToggle,
   useTweaks,
 } = window;
@@ -296,6 +296,7 @@ const Icon = ({ name, size = 18 }) => {
     monthly:     'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2z',
     investments: 'M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83',
     trips:       'M20 7H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2zM8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2',
+    shared:      'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75',
     review:      'M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11',
   };
   return (
@@ -312,6 +313,7 @@ const TABS = [
   { id: 'monthly',     name: 'Monthly',       icon: 'monthly',    group: 'main' },
   { id: 'review',      name: 'Review',        icon: 'review',     group: 'main' },
   { id: 'trips',       name: 'Trips',         icon: 'trips',      group: 'main' },
+  { id: 'shared',      name: 'Shared',        icon: 'shared',     group: 'main' },
   { id: 'cashflow',    name: 'Cash Flow',     icon: 'cashflow',   group: 'analysis' },
   { id: 'flow',        name: 'Flow',          icon: 'cashflow',   group: 'analysis' },
   { id: 'categories',  name: 'Categories',    icon: 'categories', group: 'analysis' },
@@ -659,6 +661,13 @@ function App() {
     return () => { delete window.showToast; clearTimeout(toastTimerRef.current); };
   }, []);
 
+  // Shared spaces — detect ?join= on load
+  const [pendingJoin, setPendingJoin] = useState(() => {
+    const token = new URLSearchParams(window.location.search).get('join');
+    if (token) window.history.replaceState({}, '', window.location.pathname);
+    return token || null;
+  });
+
   // Sync state — lifted here so AccountsTab can trigger the same sync UI
   const [syncState,    setSyncState]    = useState(null);
   const [syncing,      setSyncing]      = useState(false);
@@ -667,6 +676,8 @@ function App() {
   useEffect(() => {
     apiFetch('/api/auth/me').then(r => r.json()).then(me => {
       if (me?.is_admin) { setIsAdmin(true); setTab('admin'); return; }
+      // If there's a join token, go to shared tab after login
+      if (pendingJoin) { setTab('shared'); return; }
       apiFetch('/api/review').then(r => r.json()).then(d => {
         setTab(d.remaining === 0 ? 'monthly' : 'review');
       }).catch(() => setTab('monthly'));
@@ -789,6 +800,7 @@ function App() {
       case 'monthly':     return <MonthlyTab {...props} />;
       case 'review':      return <ReviewTab refreshFin={refreshFin} setTab={setTab} />;
       case 'trips':       return <TripsTab refreshFin={refreshFin} finVersion={finVersion} />;
+      case 'shared':      return <SharedTab pendingJoin={pendingJoin} clearPendingJoin={() => setPendingJoin(null)} setTab={setTab} />;
       case 'cashflow':    return <CashFlowTab />;
       case 'flow':        return <FlowTab        {...props} />;
       case 'categories':  return <CategoriesTab  {...props} />;
