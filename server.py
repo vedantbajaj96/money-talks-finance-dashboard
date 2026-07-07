@@ -98,7 +98,14 @@ from routes.shared_routes import router as shared_router
 
 BASE_DIR = Path(__file__).parent
 LL_DIR   = BASE_DIR / "moneytalks"
-JSX_FILES = ["tweaks-panel.jsx", "charts.jsx", "tabs.jsx", "app.jsx"]
+JSX_FILES = [
+    "tweaks-panel.jsx", "charts.jsx",
+    "tabs-shared.jsx", "tabs-overview.jsx", "tabs-overview-widgets.jsx",
+    "tabs-transactions.jsx", "tabs-analysis.jsx", "tabs-chat.jsx",
+    "tabs-settings.jsx", "tabs-review.jsx", "tabs-admin.jsx",
+    "tabs-investments.jsx", "tabs-trips.jsx", "tabs-shared-space.jsx",
+    "app.jsx",
+]
 
 # ---------------------------------------------------------------------------
 # JSX pre-compilation
