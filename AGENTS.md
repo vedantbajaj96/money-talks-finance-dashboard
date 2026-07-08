@@ -2,25 +2,41 @@
 
 ## Frontend file map
 
-Each tab is its own file. Read only the file you need — never load tabs.jsx (deleted).
+Each tab is its own file. Read only the file you need — `tabs.jsx` no longer exists.
 
-| File | Components |
+| File | Components / Purpose |
 |---|---|
-| `moneytalks/tabs-shared.jsx` | `SummaryCard`, `TxnList`, `CategoryPicker`, `SearchableSelect`, `SplitModal`, `EditTransactionModal`, `AddTransactionModal`, `DateEditor`, `MerchantDrawer`, `MapPopover`, `BarCol` — shared primitives used across tabs |
+| `moneytalks/tabs-modals.jsx` | `SplitModal`, `EditTransactionModal`, `AddTransactionModal`, `DateEditor`, `BarCol`, `MerchantDrawer`, `MapPopover` |
+| `moneytalks/tabs-shared.jsx` | `SummaryCard`, `TxnList`, `CategoryPicker`, `SearchableSelect` — global setup (React hooks, FIN globals) |
 | `moneytalks/tabs-overview.jsx` | `MonthlyTab`, `MonthVibeBanner`, `useCountUp` |
 | `moneytalks/tabs-overview-widgets.jsx` | `OverviewTab`, `DragCard`, `OVERVIEW_WIDGETS` |
 | `moneytalks/tabs-transactions.jsx` | `TransactionsTab`, `BudgetBars`, `WeeklySpendChart` |
-| `moneytalks/tabs-analysis.jsx` | `SpendingTab`, `IncomeTab`, `FlowTab`, `CashFlowTab`, `NetWorthTab`, `AccountList`, `AccountsTab`, `RecurringTab`, `CategoriesTab`, `TrendsTab`, `SideBySideBars` |
+| `moneytalks/tabs-spending.jsx` | `SpendingTab`, `IncomeTab`, `FlowTab`, `CashFlowTab` |
+| `moneytalks/tabs-wealth.jsx` | `NetWorthTab`, `AccountList`, `AccountsTab`, `RecurringTab`, `CategoriesTab`, `TrendsTab`, `SideBySideBars` |
 | `moneytalks/tabs-chat.jsx` | `ChatTab` |
 | `moneytalks/tabs-settings.jsx` | `SettingsTab`, `PlaidSyncCard`, `SettingsCard`, `SettingsLabel`, `StatusDot`, `CategoriesManagerCard`, `NotificationsCard` |
-| `moneytalks/tabs-review.jsx` | `ReviewTab`, `FlaggedTab`, `FeedbackTab`, `AllDoneCelebration` |
+| `moneytalks/tabs-review.jsx` | `ReviewTab`, `AllDoneCelebration` |
+| `moneytalks/tabs-flagged.jsx` | `FlaggedTab`, `FeedbackTab` |
 | `moneytalks/tabs-admin.jsx` | `AdminTab`, `PerformancePanel` |
 | `moneytalks/tabs-investments.jsx` | `InvestmentsTab`, `AllocationDonut` |
 | `moneytalks/tabs-trips.jsx` | `TripsTab` |
 | `moneytalks/tabs-shared-space.jsx` | `SharedTab`, `SharedMerchantDrawer`, `SharedVibeBanner`, `SpaceCard`, `Portal`, `sharedCatById` |
 | `moneytalks/app.jsx` | `App`, `Sidebar`, `TopBar`, `BottomNav`, routing |
 | `moneytalks/charts.jsx` | Reusable chart components |
-| `moneytalks/styles.css` | All CSS — variables under `:root` at the top |
+
+## CSS file map
+
+Split by concern — read only the file relevant to your change.
+
+| File | What's in it | Lines |
+|---|---|---|
+| `moneytalks/styles-base.css` | CSS variables (`:root`), color palette, typography, spacing tokens | 60 |
+| `moneytalks/styles-nav.css` | App layout, Sidebar, Topbar, Avatar | 268 |
+| `moneytalks/styles-layout.css` | Tab body, card accents, Cards, Grids, Summary cards | 117 |
+| `moneytalks/styles-components.css` | TxnList, Donut, Charts, Bar list, Filter bar, CategoryPicker, Accounts, Recurring, Categories, Trends table, Profile panel | 714 |
+| `moneytalks/styles-mobile.css` | Bottom nav, mobile (≤640px), tablet (641–1024px) responsive overrides | 102 |
+| `moneytalks/styles-tabs.css` | Review tab flow, filter buttons, loading spinner, skeleton shimmer, tab fade-in, month picker, FlowTab toggle, toast | 423 |
+| `moneytalks/styles-dark.css` | All `.app.dark` overrides | 268 |
 
 ## Backend file map
 

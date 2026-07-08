@@ -1,0 +1,117 @@
+/* ─── Page / tab body ───────────────────────────────────────────── */
+.page {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--pad-tab);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(20,24,32,0.12) transparent;
+}
+.page::-webkit-scrollbar { width: 8px; }
+.page::-webkit-scrollbar-thumb {
+  background: rgba(20,24,32,0.1);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  border-radius: 8px;
+}
+
+@keyframes card-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.tab-body {
+  display: flex; flex-direction: column;
+  gap: var(--gap);
+  max-width: 1400px;
+  margin: 0 auto;
+}
+.tab-body > * {
+  animation: card-in 0.26s cubic-bezier(0.22,1,0.36,1) both;
+}
+.tab-body > *:nth-child(1) { animation-delay: 0ms; }
+.tab-body > *:nth-child(2) { animation-delay: 40ms; }
+.tab-body > *:nth-child(3) { animation-delay: 80ms; }
+.tab-body > *:nth-child(4) { animation-delay: 120ms; }
+.tab-body > *:nth-child(5) { animation-delay: 160ms; }
+.tab-body > *:nth-child(6) { animation-delay: 200ms; }
+
+/* ─── Per-tab signature accent ──────────────────────────────────── */
+.page { --tab-accent: transparent; }
+.page.tab-income   { --tab-accent: #3ecf6e;  background: linear-gradient(180deg, rgba(62,207,110,0.05)   0, transparent 160px); }
+.page.tab-spending { --tab-accent: #e05a3a;  background: linear-gradient(180deg, rgba(224,90,58,0.05)    0, transparent 160px); }
+.page.tab-cashflow { --tab-accent: #5ae8d0;  background: linear-gradient(180deg, rgba(90,232,208,0.06)   0, transparent 160px); }
+.page.tab-networth { --tab-accent: #818cf8;  background: linear-gradient(180deg, rgba(129,140,248,0.05)  0, transparent 160px); }
+.page.tab-accounts { --tab-accent: #818cf8;  background: linear-gradient(180deg, rgba(129,140,248,0.05)  0, transparent 160px); }
+.page.tab-recurring{ --tab-accent: #f59e0b;  background: linear-gradient(180deg, rgba(245,158,11,0.05)   0, transparent 160px); }
+.page.tab-trends   { --tab-accent: #3b82f6;  background: linear-gradient(180deg, rgba(59,130,246,0.05)   0, transparent 160px); }
+.page.tab-chat     { --tab-accent: #3b82f6;  background: linear-gradient(180deg, rgba(59,130,246,0.05)   0, transparent 160px); }
+.page.tab-monthly  { --tab-accent: #3ecf6e;  background: linear-gradient(180deg, rgba(62,207,110,0.05)   0, transparent 160px); }
+.page::before {
+  content: '';
+  display: block;
+  height: 3px;
+  margin: calc(-1 * var(--pad-tab)) calc(-1 * var(--pad-tab)) var(--pad-tab);
+  background: linear-gradient(90deg, var(--tab-accent), transparent 60%);
+  opacity: 0.8;
+  transition: background 0.25s;
+}
+
+/* ─── Cards ─────────────────────────────────────────────────────── */
+.card {
+  background: var(--surface);
+  border: 1px solid rgba(20,24,32,0.07);
+  border-radius: var(--radius);
+  padding: var(--pad-card);
+  position: relative;
+  box-shadow: var(--shadow-sm), inset 0 1px 0 rgba(255,255,255,0.9);
+  transition: box-shadow .2s, border-color .2s;
+}
+.card:hover {
+  box-shadow: var(--shadow-md), inset 0 1px 0 rgba(255,255,255,0.9);
+  border-color: rgba(20,24,32,0.12);
+}
+.card-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 18px;
+  gap: 16px;
+}
+.card-head h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--ink-2);
+  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.card-head h3::before {
+  content: '';
+  display: block;
+  width: 3px;
+  height: 12px;
+  border-radius: 2px;
+  background: var(--tab-accent, var(--accent));
+  flex-shrink: 0;
+  opacity: 0.55;
+}
+.muted { color: var(--ink-3); font-size: 12px; }
+
+/* ─── Grids ─────────────────────────────────────────────────────── */
+.grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); gap: var(--gap); align-items: stretch; }
+.grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: var(--gap); align-items: stretch; }
+.grid-4 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: var(--gap); align-items: stretch; }
+/* Overview uses a fixed 3-column grid so rows always align cleanly */
+.grid-overview {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--gap);
+  align-items: start;
+}
+
