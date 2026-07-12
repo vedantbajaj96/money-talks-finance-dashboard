@@ -1,0 +1,1 @@
+import{j as s,T as a}from"./index-Cmb-z6u3.js";import"./react-vendor-C8w-UNLI.js";function e(){return s.jsxs("div",{style:{padding:32,fontFamily:"sans-serif"},children:[s.jsx("h1",{children:"MoneyTalks — Phase 1 ✓"}),s.jsxs("p",{style:{color:"#7a8090",marginTop:8},children:["Data loaded: ",a.length," transactions"]})]})}export{e as default};

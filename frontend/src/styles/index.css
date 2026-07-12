@@ -1,0 +1,5 @@
+/* Phase 2 will copy the full CSS from moneytalks/styles-*.css into this directory.
+   For now, just a reset so the loading screen looks correct. */
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #f6f5f2; }
