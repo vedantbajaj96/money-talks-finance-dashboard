@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import { resolve } from 'path';
@@ -44,6 +44,12 @@ export default defineConfig({
   },
   resolve: {
     // @/ maps to src/ — use in imports: import { apiFetch } from '@/lib/api'
+    alias: { '@': resolve(__dirname, 'src') },
+  },
+  test: {
+    globals: true,
+    environment: 'jsdom',
+    include: ['src/__tests__/**/*.test.ts'],
     alias: { '@': resolve(__dirname, 'src') },
   },
   build: {

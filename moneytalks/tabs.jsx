@@ -8323,17 +8323,28 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
       {/* Expense list */}
       <div className="card">
         <div className="card-head">
-          <h3>Expenses</h3>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, flexWrap: 'wrap' }}>
+            <h3 style={{ margin: 0 }}>Expenses</h3>
+            {/* Active filter chips */}
+            {filterFrom && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, padding: '2px 8px 2px 10px', borderRadius: 20, background: 'color-mix(in srgb, var(--accent) 12%, transparent)', color: 'var(--accent)', border: '1px solid color-mix(in srgb, var(--accent) 25%, transparent)' }}>
+                📅 {filterFrom === filterTo ? filterFrom : `${filterFrom} – ${filterTo}`}
+                <button onClick={() => { setFilterFrom(''); setFilterTo(''); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', fontSize: 13, lineHeight: 1, padding: 0, marginLeft: 2, opacity: 0.7 }}>×</button>
+              </span>
+            )}
+            {filterUser && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, padding: '2px 8px 2px 10px', borderRadius: 20, background: `color-mix(in srgb, ${participantColors[filterUser] || 'var(--ink-3)'} 12%, transparent)`, color: participantColors[filterUser] || 'var(--ink-3)', border: `1px solid color-mix(in srgb, ${participantColors[filterUser] || 'var(--ink-3)'} 25%, transparent)` }}>
+                👤 {(detail.per_user?.find(u => u.user === filterUser)?.display_name) || filterUser}
+                <button onClick={() => setFilterUser('')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: participantColors[filterUser] || 'var(--ink-3)', fontSize: 13, lineHeight: 1, padding: 0, marginLeft: 2, opacity: 0.7 }}>×</button>
+              </span>
+            )}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
             <input type="date" value={filterFrom} onChange={ev => setFilterFrom(ev.target.value)}
               style={{ padding: '4px 8px', border: '1px solid var(--line)', borderRadius: 7, background: 'var(--surface-2)', color: 'var(--ink)', fontFamily: 'inherit', fontSize: 12, outline: 'none' }} />
             <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>–</span>
             <input type="date" value={filterTo} onChange={ev => setFilterTo(ev.target.value)}
               style={{ padding: '4px 8px', border: '1px solid var(--line)', borderRadius: 7, background: 'var(--surface-2)', color: 'var(--ink)', fontFamily: 'inherit', fontSize: 12, outline: 'none' }} />
-            {(filterFrom || filterTo) && (
-              <button onClick={() => { setFilterFrom(''); setFilterTo(''); }}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-3)', fontSize: 16, lineHeight: 1, padding: '0 2px' }} title="Clear filter">×</button>
-            )}
             <button onClick={() => setExpenseModal(true)} style={{ padding: '5px 12px', border: 'none', borderRadius: 8, background: 'var(--accent)', color: '#fff', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, fontSize: 13 }}>+ Add</button>
           </div>
         </div>
@@ -8353,6 +8364,12 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
               {lbl}{sortBy === val ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}
             </button>
           ))}
+          {(filterFrom || filterTo || filterUser) && (
+            <button onClick={() => { setFilterFrom(''); setFilterTo(''); setFilterUser(''); }}
+              style={{ marginLeft: 'auto', padding: '3px 10px', border: '1px solid var(--line)', borderRadius: 6, background: 'none', color: 'var(--ink-3)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 11 }}>
+              Clear all filters
+            </button>
+          )}
         </div>
         {(() => {
           const filtered = expenses
@@ -8370,8 +8387,14 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
               return sortDir === 'asc' ? cmp : -cmp;
             });
           return filtered.length === 0 ? (
-          <div style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '24px 0', fontSize: 14 }}>
-            {expenses.length === 0 ? 'No expenses yet — add one to get started.' : 'No expenses match this date range.'}
+          <div style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '32px 0', fontSize: 14 }}>
+            {expenses.length === 0
+              ? 'No expenses yet — add one to get started.'
+              : filterUser && (filterFrom || filterTo)
+                ? `No expenses from ${detail.per_user?.find(u => u.user === filterUser)?.display_name || filterUser} in this date range.`
+                : filterUser
+                  ? `No expenses from ${detail.per_user?.find(u => u.user === filterUser)?.display_name || filterUser} yet.`
+                  : 'No expenses match this date range.'}
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column' }}>
