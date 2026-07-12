@@ -1,8 +1,9 @@
 // Shared primitives — loaded first; sets up globals used by all other tab files.
-const { useState, useMemo, useEffect, useRef } = React;
-const { ACCOUNTS, CATEGORIES, MONTHS, TRANSACTIONS, RECURRING, NET_WORTH_HISTORY,
+// var (not const) so these become window properties accessible from all separately-loaded scripts.
+var { useState, useMemo, useEffect, useRef, useCallback, useReducer, useContext, createContext } = React;
+var { ACCOUNTS, CATEGORIES, MONTHS, TRANSACTIONS, RECURRING, NET_WORTH_HISTORY,
   txnsForMonth, sumByCategory, monthSummary, fmt, acctById } = window.FIN;
-const { DonutChart, StackedBarChart, AreaChart, Sparkline, BarList } = window;
+var { DonutChart, StackedBarChart, AreaChart, Sparkline, BarList } = window;
 
 // Live categories cache — initialized from bootstrap data, refreshed after edits.
 // CategoryPicker reads this so reorders/renames show immediately without page reload.
@@ -127,7 +128,7 @@ function TxnList({ txns, compact = false, onRecategorize, refreshFin, sortCol: i
   return (
     <>
       {mapTxn && <MapPopover txn={mapTxn} onClose={() => setMapTxn(null)} />}
-      {activeMerchant && <MerchantDrawer merchant={activeMerchant.merchant} category={activeMerchant.category} onClose={() => setActiveMerchant(null)} />}
+      {activeMerchant && ReactDOM.createPortal(<MerchantDrawer merchant={activeMerchant.merchant} category={activeMerchant.category} onClose={() => setActiveMerchant(null)} />, document.body)}
       {!compact && (
         <div style={{
           display: 'grid', gridTemplateColumns: '36px 1fr 56px 96px 20px',
@@ -290,12 +291,18 @@ function CategoryPicker({ value, onChange }) {
   const [q, setQ]             = useState('');
   const [results, setResults] = useState(null);   // null = show _liveCategories
   const [loading, setLoading] = useState(false);
+  const [menuPos, setMenuPos] = useState({ top: 0, left: 0 });
+  const btnRef      = React.useRef(null);
   const debounceRef = React.useRef(null);
   const cat = catById(value);
 
   function handleOpen(e) {
     e.stopPropagation();
     const opening = !open;
+    if (opening && btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect();
+      setMenuPos({ top: r.bottom + 6, left: r.left });
+    }
     setOpen(opening);
     if (opening) { setQ(''); setResults(null); }
   }
@@ -337,14 +344,14 @@ function CategoryPicker({ value, onChange }) {
 
   return (
     <div className="cat-picker">
-      <button className="cat-pill cat-pill-btn" style={{ color: cat.color, borderColor: cat.color + '50' }}
+      <button ref={btnRef} className="cat-pill cat-pill-btn" style={{ color: cat.color, borderColor: cat.color + '50' }}
         onClick={handleOpen}>
         {cat.name} <span className="caret">⌄</span>
       </button>
-      {open && (
+      {open && ReactDOM.createPortal(
         <>
-          <div className="cat-overlay" onClick={() => { setOpen(false); setQ(''); setResults(null); }} />
-          <div className="cat-menu">
+          <div style={{ position: 'fixed', inset: 0, zIndex: 8999 }} onClick={() => { setOpen(false); setQ(''); setResults(null); }} />
+          <div className="cat-menu" style={{ position: 'fixed', top: menuPos.top, left: menuPos.left, zIndex: 9000 }}>
             <div style={{ padding: '6px 8px 4px', borderBottom: '1px solid var(--line)', position: 'relative' }}>
               <input
                 autoFocus
@@ -376,7 +383,8 @@ function CategoryPicker({ value, onChange }) {
               <div style={{ padding: '8px 12px', fontSize: 12, color: 'var(--muted)' }}>No match</div>
             )}
           </div>
-        </>
+        </>,
+        document.body
       )}
     </div>
   );

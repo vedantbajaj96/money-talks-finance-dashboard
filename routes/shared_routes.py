@@ -451,6 +451,23 @@ async def delete_space(space_id: str, current_user: str = Depends(get_current_us
     return {"ok": True}
 
 
+@router.post("/api/shared/{space_id}/leave")
+async def leave_space(space_id: str, current_user: str = Depends(get_current_user)) -> dict:
+    """Participant leaves a shared space (cannot be used by the owner)."""
+    owner, space = _resolve_space(space_id, current_user)
+    if current_user == owner:
+        raise HTTPException(400, "Owner cannot leave — delete the space instead")
+    spaces = _load_spaces(owner)
+    idx = next((i for i, s in enumerate(spaces) if s["id"] == space_id), None)
+    if idx is not None:
+        spaces[idx]["participants"] = [p for p in spaces[idx].get("participants", []) if p != current_user]
+        _save_spaces(owner, spaces)
+    joined = _load_joined(current_user)
+    joined = [j for j in joined if not (j["owner"] == owner and j["space_id"] == space_id)]
+    _save_joined(current_user, joined)
+    return {"ok": True}
+
+
 @router.post("/api/shared/{space_id}/share")
 async def share_space(space_id: str, request: Request, current_user: str = Depends(get_current_user)) -> dict:
     spaces = _load_spaces(current_user)
@@ -587,7 +604,7 @@ async def add_expenses_batch(space_id: str, body: dict[str, Any], current_user: 
 
 @router.patch("/api/shared/{space_id}/expenses/{expense_id}")
 async def patch_expense(space_id: str, expense_id: str, body: dict[str, Any], current_user: str = Depends(get_current_user)) -> dict:
-    """Update mutable fields on a shared expense — currently just `notes`."""
+    """Update mutable fields on a shared expense. Manual expenses also support description/amount/date/category."""
     owner, space = _resolve_space(space_id, current_user)
     expenses = _load_expenses(owner)
     idx = next((i for i, e in enumerate(expenses) if e["id"] == expense_id and e["space_id"] == space_id), None)
@@ -595,6 +612,16 @@ async def patch_expense(space_id: str, expense_id: str, body: dict[str, Any], cu
         raise HTTPException(404, "Expense not found")
     if "notes" in body:
         expenses[idx]["notes"] = (body["notes"] or "").strip()[:500]
+    if expenses[idx].get("type") == "manual":
+        if body.get("description"):
+            expenses[idx]["description"] = str(body["description"]).strip()[:200]
+        if body.get("amount"):
+            expenses[idx]["amount"] = round(float(body["amount"]), 2)
+        if body.get("date"):
+            datetime.date.fromisoformat(body["date"])  # validate format
+            expenses[idx]["date"] = body["date"]
+        if body.get("category"):
+            expenses[idx]["category"] = str(body["category"])
     _save_expenses(owner, expenses)
     return {"ok": True}
 

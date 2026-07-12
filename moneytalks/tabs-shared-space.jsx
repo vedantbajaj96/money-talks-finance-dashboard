@@ -1,3 +1,9 @@
+const SHARED_ICONS = {
+  groceries: '🛒', 'eating-out': '🍽️', transport: '🚗',
+  accommodation: '🏨', entertainment: '🎬', shopping: '🛍️',
+  utilities: '💡', household: '🏠', activities: '🎯', other: '📦',
+};
+
 function sharedCatById(id) {
   return SHARED_CATS.find(c => c.id === id) || { id, name: id, color: '#94a3b8' };
 }
@@ -62,18 +68,21 @@ function SharedMerchantDrawer({ merchant, expenses, participantColors = {}, onCl
         <div style={{ flex: 1, overflowY: 'auto' }}>
           {matching.map(e => {
             const catI = sharedCatById(e.category);
-            const userColor = participantColors[e.user] || catI.color;
+            const uColor = participantColors[e.user] || catI.color;
             return (
-              <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 24px', borderBottom: '1px solid var(--line)' }}>
-                <span className="cat-dot" style={{ background: userColor, flexShrink: 0 }} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, color: 'var(--ink-3)' }}>{e.date}</div>
-                  {e.notes && <div style={{ fontSize: 12, color: 'var(--accent)', fontStyle: 'italic', marginTop: 2 }}>{e.notes}</div>}
+              <div key={e.id} className="txn-row" style={{ gridTemplateColumns: '38px 1fr 56px 80px', padding: '10px 16px' }}>
+                <div className="txn-icon" style={{ background: `${uColor}22`, color: uColor, fontSize: 16 }}>
+                  {SHARED_ICONS[e.category] || '📦'}
                 </div>
-                <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(e.amount)}</div>
-                  <div style={{ fontSize: 11, color: 'var(--ink-4)', marginTop: 1 }}>{e.display_name || e.user}</div>
+                <div className="txn-main">
+                  <div className="txn-merchant">{e.description}</div>
+                  <div className="txn-meta">
+                    <span className="cat-pill" style={{ color: catI.color }}>{catI.name}</span>
+                    {e.notes && <><span className="dot-sep">·</span><span style={{ fontStyle: 'italic', color: 'var(--accent)' }}>{e.notes}</span></>}
+                  </div>
                 </div>
+                <div className="txn-date">{e.date?.slice(5).replace('-', '/')}</div>
+                <div className="txn-amt neg">{fmtMoney(e.amount)}</div>
               </div>
             );
           })}
@@ -83,15 +92,24 @@ function SharedMerchantDrawer({ merchant, expenses, participantColors = {}, onCl
   );
 }
 
-function SharedVibeBanner({ detail, myUsername, myTotal }) {
-  if (!detail || !detail.expenses?.length) return null;
-  const total   = detail.total_spent || 0;
-  const budget  = detail.budget;
-  const others  = (detail.per_user || []).filter(u => u.user !== myUsername);
-  const topOther = [...others].sort((a, b) => b.total - a.total)[0];
-  const myPct    = total > 0 ? (myTotal / total) * 100 : 0;
+function SharedVibeBanner({ detail, myUsername, myTotal, expenses }) {
+  if (!detail) return null;
+  const exps  = expenses || detail.expenses || [];
+  const total = detail.total_spent || 0;
+  const budget = detail.budget;
+  const others = (detail.per_user || []).filter(u => u.user !== myUsername);
+  const myPct  = total > 0 ? (myTotal / total) * 100 : 0;
 
-  let emoji = '', text = '', color = 'var(--accent)';
+  // Compute interesting stats from expenses
+  const merchantCounts = {};
+  exps.forEach(e => { merchantCounts[e.description] = (merchantCounts[e.description] || 0) + 1; });
+  const topMerchant = Object.entries(merchantCounts).sort(([,a],[,b]) => b-a)[0];
+  const biggestExp  = exps.length > 0 ? [...exps].sort((a,b) => b.amount - a.amount)[0] : null;
+  const avgPerExp   = exps.length > 0 ? total / exps.length : 0;
+  const firstDate   = exps.length > 0 ? exps.map(e=>e.date).sort()[0] : null;
+
+  let emoji = '', text = '', color = 'var(--ink-3)';
+
   if (budget && total > budget) {
     emoji = '⚠️'; color = 'var(--terra)';
     text  = `Over budget by ${fmtMoney(total - budget)}.`;
@@ -99,22 +117,32 @@ function SharedVibeBanner({ detail, myUsername, myTotal }) {
     const rem = budget - total;
     emoji = '✓'; color = 'var(--green)';
     text  = `${fmtMoney(rem)} left in budget — ${((rem / budget) * 100).toFixed(0)}% remaining.`;
-  } else if (topOther && myPct < 25 && total > 0) {
-    emoji = '👀'; color = 'var(--ink-3)';
-    text  = `${topOther.display_name || topOther.user} is carrying most of the load so far.`;
+  } else if (exps.length === 0) {
+    emoji = '👋'; color = 'var(--ink-3)';
+    text  = `Add your first expense to start tracking together.`;
+  } else if (topMerchant && topMerchant[1] >= 3) {
+    emoji = '📍'; color = 'var(--accent)';
+    text  = `You keep coming back to ${topMerchant[0]} — ${topMerchant[1]} times in this space.`;
+  } else if (biggestExp && total > 0) {
+    emoji = '💸'; color = 'var(--ink-3)';
+    text  = `Biggest expense: ${biggestExp.description} · ${fmtMoney(biggestExp.amount)} (${((biggestExp.amount / total) * 100).toFixed(0)}% of total).`;
+  } else if (exps.length >= 3) {
+    emoji = '📊'; color = 'var(--ink-3)';
+    text  = `${exps.length} expenses · ${fmtMoney(avgPerExp)} avg each${firstDate ? ` · since ${firstDate.slice(0,7)}` : ''}.`;
   } else if (myPct > 70 && others.length > 0) {
     emoji = '💪'; color = 'var(--accent)';
-    text  = `You're contributing the most to ${detail.name}.`;
-  } else if (detail.expenses?.length >= 10) {
-    emoji = '📊'; color = 'var(--ink-3)';
-    text  = `${detail.expenses.length} expenses tracked · ${fmtMoney(total / detail.expenses.length)} avg per expense.`;
+    text  = `You're contributing the most to ${detail.name} so far.`;
+  } else if (exps.length > 0) {
+    emoji = '🤝'; color = 'var(--ink-3)';
+    text  = `${fmtMoney(total)} tracked together — ${exps.length} expense${exps.length !== 1 ? 's' : ''} so far.`;
   } else {
     return null;
   }
+
   return (
     <div style={{
       display: 'flex', alignItems: 'center', gap: 10,
-      padding: '10px 16px', borderRadius: 12, marginBottom: 0,
+      padding: '10px 16px', borderRadius: 12, marginBottom: 16,
       background: 'color-mix(in srgb, var(--surface) 80%, transparent)',
       border: '1px solid var(--line)', fontSize: 13, color: 'var(--ink)',
     }}>
@@ -127,13 +155,20 @@ function SharedVibeBanner({ detail, myUsername, myTotal }) {
 function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
   const [spaces, setSpaces]           = useState([]);
   const [loading, setLoading]         = useState(true);
-  const [detail, setDetail]           = useState(null);   // {space, expenses, per_user, category_breakdown}
+  const [detail, setDetail]           = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
+
+  // Sub-tab navigation within a space
+  const [detailTab, setDetailTab]     = useState('overview');
+  const [expSearch, setExpSearch]     = useState('');
+  const [menuExpId, setMenuExpId]     = useState(null);
+  const [editExpModal, setEditExpModal] = useState(null); // { id, description, amount, date, category }
+  const [editExpSaving, setEditExpSaving] = useState(false);
 
   // Modals
   const [createOpen, setCreateOpen]   = useState(false);
-  const [shareModal, setShareModal]   = useState(null);   // {url, token}
-  const [joinPrompt, setJoinPrompt]   = useState(null);   // {token, name, owner, type, icon}
+  const [shareModal, setShareModal]   = useState(null);
+  const [joinPrompt, setJoinPrompt]   = useState(null);
   const [expenseModal, setExpenseModal] = useState(false);
   const [joinLoading, setJoinLoading] = useState(false);
   const [copied, setCopied]           = useState(false);
@@ -146,15 +181,13 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
   const [expForm, setExpForm]         = useState({ description: '', amount: '', date: new Date().toISOString().slice(0,10), category: 'other' });
   const [expSaving, setExpSaving]     = useState(false);
   const [txnSearch, setTxnSearch]     = useState('');
-  const [addMode, setAddMode]         = useState('bulk'); // 'manual' | 'txn' | 'bulk'
-  // Bulk add state
+  const [addMode, setAddMode]         = useState('bulk');
   const [bulkCat, setBulkCat]         = useState('');
   const [bulkFrom, setBulkFrom]       = useState('');
   const [bulkTo, setBulkTo]           = useState('');
   const [bulkTag, setBulkTag]         = useState('');
   const [bulkSelected, setBulkSelected] = useState(new Set());
 
-  // Breakdown card view toggle ('category' | 'month') — persisted on the space object server-side
   const [breakdownView, setBreakdownView] = useState('category');
   useEffect(() => {
     if (!detail) return;
@@ -169,14 +202,11 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ breakdown_view: v }),
       });
-    } catch(e) { /* non-critical, ignore */ }
+    } catch(e) {}
   }
 
-  // Merchant drawer for shared expenses
   const [activeMerchantShared, setActiveMerchantShared] = useState(null);
-
-  // Current user (for identifying own expenses)
-  const [me, setMe]                   = useState(null);
+  const [me, setMe] = useState(null);
   useEffect(() => {
     apiFetch('/api/auth/me').then(r => r.json()).then(setMe).catch(() => {});
   }, []);
@@ -192,17 +222,15 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
 
   function loadDetail(space) {
     setDetailLoading(true);
-    const isOwner = space.role === 'owner';
-    const path = isOwner
-      ? `/api/shared/${space.id}`
-      : `/api/shared/${space.id}`;
-    apiFetch(path).then(r => r.json()).then(d => {
+    setDetailTab('overview');
+    setExpSearch('');
+    setMenuExpId(null);
+    apiFetch(`/api/shared/${space.id}`).then(r => r.json()).then(d => {
       setDetail(d);
       setDetailLoading(false);
     }).catch(() => setDetailLoading(false));
   }
 
-  // Handle ?join= URL param passed from App
   useEffect(() => {
     if (!pendingJoin) return;
     apiFetch(`/api/shared/join/${pendingJoin}`).then(r => r.json()).then(d => {
@@ -320,11 +348,40 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
   async function deleteExpense(expenseId) {
     if (!detail) return;
     await apiFetch(`/api/shared/${detail.id}/expenses/${expenseId}`, { method: 'DELETE' });
+    setMenuExpId(null);
     loadDetail(detail);
   }
 
-  // Inline note editing
-  const [editingNote, setEditingNote] = useState(null); // { id, value }
+  async function saveEditedExpense() {
+    if (!detail || !editExpModal) return;
+    setEditExpSaving(true);
+    try {
+      await apiFetch(`/api/shared/${detail.id}/expenses/${editExpModal.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          description: editExpModal.description,
+          amount:      parseFloat(editExpModal.amount),
+          date:        editExpModal.date,
+          category:    editExpModal.category,
+        }),
+      });
+      setEditExpModal(null);
+      loadDetail(detail);
+    } finally {
+      setEditExpSaving(false);
+    }
+  }
+
+  async function leaveSpace() {
+    if (!detail) return;
+    if (!confirm(`Leave "${detail.name}"? You won't be able to see it anymore.`)) return;
+    await apiFetch(`/api/shared/${detail.id}/leave`, { method: 'POST' });
+    setDetail(null);
+    loadSpaces();
+  }
+
+  const [editingNote, setEditingNote] = useState(null);
   async function saveNote(expenseId, value) {
     if (!detail) return;
     await apiFetch(`/api/shared/${detail.id}/expenses/${expenseId}`, {
@@ -336,7 +393,6 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
     loadDetail(detail);
   }
 
-  // Txn search candidates for single ref-add
   const txnCandidates = useMemo(() => {
     if (!txnSearch.trim() || !detail) return [];
     const q = txnSearch.toLowerCase();
@@ -346,7 +402,6 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
       .slice(0, 15);
   }, [txnSearch, detail]);
 
-  // Bulk filter candidates
   const bulkCandidates = useMemo(() => {
     if (!detail) return [];
     const alreadyAdded = new Set((detail.expenses || []).filter(e => e.type === 'ref').map(e => e.txn_id));
@@ -366,10 +421,9 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
   const [filterFrom, setFilterFrom] = useState('');
   const [filterTo, setFilterTo]     = useState('');
   const [filterUser, setFilterUser] = useState('');
-  const [sortBy, setSortBy]         = useState('date');   // 'date' | 'amount' | 'merchant'
+  const [sortBy, setSortBy]         = useState('date');
   const [sortDir, setSortDir]       = useState('desc');
 
-  // Per-user totals computed from currently date-filtered expenses
   const filteredPerUser = useMemo(() => {
     if (!detail?.per_user) return [];
     const allExpenses = detail?.expenses || [];
@@ -384,7 +438,6 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
     return detail.per_user.map(u => ({ ...u, filteredTotal: totals[u.user] || 0 }));
   }, [detail?.per_user, detail?.expenses, filterFrom, filterTo]);
 
-  // Assign consistent colors to participants
   const participantColors = useMemo(() => {
     const palette = ['#10b981', '#f97316', '#6366f1', '#0ea5e9', '#f43f5e', '#eab308', '#8b5cf6', '#14b8a6'];
     const participants = detail?.participants || [];
@@ -419,19 +472,43 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
       .sort((a, b) => b.month.localeCompare(a.month));
   }, [detail, participantColors]);
 
+  // Per-member category breakdown (for Members tab)
+  const memberCategories = useMemo(() => {
+    if (!detail) return {};
+    const result = {};
+    for (const e of detail.expenses || []) {
+      if (!result[e.user]) result[e.user] = {};
+      result[e.user][e.category] = (result[e.user][e.category] || 0) + e.amount;
+    }
+    return result;
+  }, [detail?.expenses]);
+
+  // Spending velocity — current month only
+  const velocityStats = useMemo(() => {
+    if (!detail) return null;
+    const thisMonthKey = new Date().toISOString().slice(0, 7);
+    const thisMonthExps = (detail.expenses || []).filter(e => e.date?.startsWith(thisMonthKey));
+    if (thisMonthExps.length < 3) return null;
+    const totalThisMonth = thisMonthExps.reduce((s, e) => s + e.amount, 0);
+    const daysElapsed = new Date().getDate();
+    const dailyRate = totalThisMonth / daysElapsed;
+    const daysInMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate();
+    const projected = dailyRate * daysInMonth;
+    return { dailyRate, projected, totalThisMonth, count: thisMonthExps.length };
+  }, [detail?.expenses]);
+
   const fmtMonth = m => {
     const [y, mo] = m.split('-');
     return `${'Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec'.split(' ')[+mo - 1]} ${y}`;
   };
 
-  // ── List view ──
+  // ── Space list view ──────────────────────────────────────────────────────────
   if (!detail) {
     const mySpaces     = spaces.filter(s => s.role === 'owner');
     const joinedSpaces = spaces.filter(s => s.role === 'participant');
 
     return (
       <div className="tab-body">
-        {/* Join prompt modal */}
         {joinPrompt && (
           <Portal>
           <div style={{ position: 'fixed', inset: 0, zIndex: 800, background: 'rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -452,7 +529,6 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
           </Portal>
         )}
 
-        {/* Share modal */}
         {shareModal && (
           <Portal>
           <div style={{ position: 'fixed', inset: 0, zIndex: 800, background: 'rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setShareModal(null)}>
@@ -471,7 +547,6 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
           </Portal>
         )}
 
-        {/* Create modal */}
         {createOpen && (
           <Portal>
           <div style={{ position: 'fixed', inset: 0, zIndex: 800, background: 'rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setCreateOpen(false)}>
@@ -559,7 +634,7 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   {mySpaces.map(space => (
                     <SpaceCard key={space.id} space={space} isOwner
-                      onOpen={() => { loadDetail(space); }}
+                      onOpen={() => loadDetail(space)}
                       onShare={() => shareSpace(space.id)}
                       onDelete={() => deleteSpace(space.id)} />
                   ))}
@@ -572,7 +647,7 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   {joinedSpaces.map(space => (
                     <SpaceCard key={space.id} space={space} isOwner={false}
-                      onOpen={() => { loadDetail(space); }} />
+                      onOpen={() => loadDetail(space)} />
                   ))}
                 </div>
               </div>
@@ -583,12 +658,33 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
     );
   }
 
-  // ── Detail view ──
-  const isOwner     = detail.role === 'owner';
-  const budget      = detail.budget;
-  const budgetPct   = budget ? Math.min((detail.total_spent / budget) * 100, 100) : null;
-  const overBudget  = budget && detail.total_spent > budget;
-  const expenses    = detail.expenses || [];
+  // ── Detail view ──────────────────────────────────────────────────────────────
+  const isOwner    = detail.role === 'owner';
+  const budget     = detail.budget;
+  const budgetPct  = budget ? Math.min((detail.total_spent / budget) * 100, 100) : null;
+  const overBudget = budget && detail.total_spent > budget;
+  const expenses   = detail.expenses || [];
+
+  // Build filtered + sorted expense list (used in Expenses tab)
+  const filteredExpenses = expenses
+    .filter(e => {
+      if (filterFrom && e.date < filterFrom) return false;
+      if (filterTo   && e.date > filterTo)   return false;
+      if (filterUser && e.user !== filterUser) return false;
+      if (expSearch.trim() && !`${e.description || ''} ${e.notes || ''}`.toLowerCase().includes(expSearch.toLowerCase())) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      let cmp = 0;
+      if (sortBy === 'amount')   cmp = a.amount - b.amount;
+      else if (sortBy === 'merchant') cmp = (a.description || '').localeCompare(b.description || '');
+      else cmp = (a.date || '').localeCompare(b.date || '');
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+
+  const filteredTotal = filteredExpenses.reduce((s, e) => s + e.amount, 0);
+
+  const hasAnyFilter = filterFrom || filterTo || filterUser || expSearch.trim();
 
   return (
     <div className="tab-body">
@@ -598,7 +694,6 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
         <div style={{ position: 'fixed', inset: 0, zIndex: 800, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setExpenseModal(false)}>
           <div className="card" style={{ width: 400, margin: 0, maxHeight: '80vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
             <h3 style={{ marginBottom: 14 }}>Add expense</h3>
-            {/* Mode toggle */}
             <div style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
               {[['bulk','⚡ Bulk add'], ['txn','🔍 Search'], ['manual','✏️ Manual']].map(([m, lbl]) => (
                 <button key={m} onClick={() => setAddMode(m)} style={{
@@ -611,7 +706,6 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
 
             {addMode === 'bulk' ? (
               <div>
-                {/* Filters */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
                   <div style={{ display: 'flex', gap: 8 }}>
                     <div style={{ flex: 1 }}>
@@ -644,8 +738,6 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
                     </div>
                   </div>
                 </div>
-
-                {/* Select all / count */}
                 {bulkCandidates.length > 0 && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, paddingBottom: 8, borderBottom: '1px solid var(--line)' }}>
                     <input type="checkbox"
@@ -662,8 +754,6 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
                     )}
                   </div>
                 )}
-
-                {/* Transaction list with checkboxes */}
                 <div style={{ maxHeight: 280, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 3 }}>
                   {bulkCandidates.length === 0 ? (
                     <div style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: '20px 0' }}>
@@ -687,7 +777,6 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
                     );
                   })}
                 </div>
-
                 <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
                   <button onClick={() => setExpenseModal(false)} style={{ flex: 1, padding: '9px 0', border: '1px solid var(--line)', borderRadius: 8, background: 'none', cursor: 'pointer', color: 'var(--ink-3)', fontFamily: 'inherit' }}>Cancel</button>
                   <button onClick={addBulk} disabled={expSaving || bulkSelected.size === 0}
@@ -769,297 +858,6 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
         <SharedMerchantDrawer merchant={activeMerchantShared} expenses={expenses} participantColors={participantColors} onClose={() => setActiveMerchantShared(null)} />
       )}
 
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 20 }}>
-        <button onClick={() => setDetail(null)} style={{ background: 'none', border: '1px solid var(--line)', borderRadius: 8, padding: '6px 12px', cursor: 'pointer', color: 'var(--ink-3)', fontFamily: 'inherit', fontSize: 13 }}>← Back</button>
-        <span style={{ fontSize: 28 }}>{detail.icon}</span>
-        <div>
-          <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--ink)', marginBottom: 2 }}>{detail.name}</h2>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <span style={{ fontSize: 12, color: 'var(--ink-3)', background: 'var(--surface-2)', borderRadius: 6, padding: '1px 8px' }}>{detail.type}</span>
-            {detail.start_date && <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>{detail.start_date} → {detail.end_date || '…'}</span>}
-          </div>
-        </div>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-          {isOwner && <button onClick={() => shareSpace(detail.id)} style={{ padding: '7px 14px', border: '1px solid var(--line)', borderRadius: 8, background: 'none', cursor: 'pointer', color: 'var(--ink-3)', fontFamily: 'inherit', fontSize: 13 }}>🔗 Share</button>}
-          <button onClick={() => setExpenseModal(true)} style={{ padding: '7px 14px', border: 'none', borderRadius: 8, background: 'var(--accent)', color: '#fff', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, fontSize: 13 }}>+ Expense</button>
-        </div>
-      </div>
-
-      {/* Summary cards */}
-      <div className="grid-4" style={{ marginBottom: 16 }}>
-        <SummaryCard label="Total spent" n={detail.total_spent || 0}
-          sub={`${expenses.length} expense${expenses.length !== 1 ? 's' : ''}`} />
-        <SummaryCard label="Your share" n={myTotal} accent="var(--accent)"
-          sub={detail.total_spent > 0 ? `${((myTotal / detail.total_spent) * 100).toFixed(0)}% of total` : null} />
-        <SummaryCard label="Others" n={otherTotal}
-          sub={detail.per_user?.length > 1 ? `${detail.per_user.length - 1} other${detail.per_user.length > 2 ? 's' : ''}` : null} />
-        {budget ? (
-          <SummaryCard label="Budget" n={budget} accent={overBudget ? 'var(--terra)' : 'var(--ink)'}
-            sub={overBudget ? `${fmtMoney(detail.total_spent - budget)} over` : `${fmtMoney(budget - detail.total_spent)} left`} />
-        ) : (
-          <SummaryCard label="Months active" value={String(monthBreakdown.length || '—')} accent="var(--ink)"
-            sub={monthBreakdown.length > 0 ? `since ${fmtMonth(monthBreakdown[monthBreakdown.length - 1]?.month || '')}` : null} />
-        )}
-      </div>
-
-      {/* Per-user + breakdown side-by-side */}
-      {(detail.per_user?.length > 0 || expenses.length > 0) && (
-        <div className="grid-2" style={{ marginBottom: 16 }}>
-          {filteredPerUser.length > 0 && (
-            <div className="card">
-              <div className="card-head">
-                <h3>By person</h3>
-                {filterUser && <button onClick={() => setFilterUser('')} style={{ fontSize: 11, padding: '2px 8px', border: '1px solid var(--line)', borderRadius: 6, background: 'none', cursor: 'pointer', color: 'var(--ink-3)', fontFamily: 'inherit' }}>Clear</button>}
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                {filteredPerUser.map((u) => {
-                  const filteredTotal = u.filteredTotal || 0;
-                  const periodTotal = filteredPerUser.reduce((s, x) => s + (x.filteredTotal || 0), 0);
-                  const pct = periodTotal > 0 ? (filteredTotal / periodTotal) * 100 : 0;
-                  const isMe = u.user === me?.username;
-                  const uColor = participantColors[u.user];
-                  const isSelected = filterUser === u.user;
-                  return (
-                    <div key={u.user}
-                      onClick={() => setFilterUser(isSelected ? '' : u.user)}
-                      className={`month-row${isSelected ? ' active' : ''}`}
-                      style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 6px', margin: '0 -6px', borderBottom: '1px solid var(--line)', cursor: 'pointer' }}>
-                      <span className="cat-dot" style={{ background: uColor, flexShrink: 0 }} />
-                      <span style={{ flex: 1, fontSize: 14, color: isSelected ? uColor : 'var(--ink)', fontWeight: isSelected ? 600 : 400 }}>{u.display_name || u.user}{isMe ? ' (you)' : ''}</span>
-                      <div style={{ width: 120, height: 6, background: 'var(--line)', borderRadius: 3, overflow: 'hidden' }}>
-                        <div style={{ height: '100%', width: `${pct}%`, borderRadius: 3, background: uColor }} />
-                      </div>
-                      <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', minWidth: 70, textAlign: 'right' }}>{fmtMoney(filteredTotal)}</span>
-                      <span style={{ fontSize: 12, color: 'var(--ink-3)', minWidth: 36, textAlign: 'right' }}>{pct.toFixed(0)}%</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-          <div className="card">
-            <div className="card-head">
-              <h3>{breakdownView === 'month' ? 'By month' : 'By category'}</h3>
-              <div style={{ display: 'flex', gap: 4 }}>
-                {[['category', 'Category'], ['month', 'Month']].map(([v, lbl]) => (
-                  <button key={v} onClick={() => setAndSaveBreakdownView(v)} style={{
-                    padding: '3px 10px', border: '1px solid var(--line)', borderRadius: 6,
-                    background: breakdownView === v ? 'var(--accent)' : 'none',
-                    color: breakdownView === v ? '#fff' : 'var(--ink-3)',
-                    cursor: 'pointer', fontFamily: 'inherit', fontSize: 11, fontWeight: 600,
-                  }}>{lbl}</button>
-                ))}
-              </div>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {breakdownView === 'month' ? (
-                monthBreakdown.length === 0
-                  ? <div style={{ color: 'var(--ink-3)', fontSize: 13 }}>No expenses yet</div>
-                  : monthBreakdown.slice(0, 8).map(mb => {
-                      const maxAmt = monthBreakdown[0]?.amount || 1;
-                      const pct = (mb.amount / maxAmt) * 100;
-                      const isActive = filterFrom === `${mb.month}-01`;
-                      return (
-                        <div key={mb.month}
-                          onClick={() => {
-                            if (isActive) { setFilterFrom(''); setFilterTo(''); }
-                            else {
-                              const [y, mo] = mb.month.split('-');
-                              const last = new Date(+y, +mo, 0).getDate();
-                              setFilterFrom(`${mb.month}-01`);
-                              setFilterTo(`${mb.month}-${String(last).padStart(2,'0')}`);
-                            }
-                          }}
-                          className={`month-row${isActive ? ' active' : ''}`}
-                          style={{}}>
-
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                            <span style={{ flex: 1, fontSize: 14, color: isActive ? 'var(--accent)' : 'var(--ink)', fontWeight: isActive ? 600 : 400 }}>{fmtMonth(mb.month)}</span>
-                            {/* Segmented bar */}
-                            <div style={{ width: 120, height: 6, background: 'var(--line)', borderRadius: 3, overflow: 'hidden', display: 'flex' }}>
-                              {mb.byUser.map((u, i) => (
-                                <div key={u.user} title={`${u.displayName}: ${fmtMoney(u.amount)}`}
-                                  style={{ height: '100%', width: `${(u.amount / mb.amount) * pct}%`, background: u.color,
-                                    borderRadius: i === 0 ? '3px 0 0 3px' : (i === mb.byUser.length-1 ? '0 3px 3px 0' : 0) }} />
-                              ))}
-                            </div>
-                            <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', minWidth: 70, textAlign: 'right' }}>{fmtMoney(mb.amount)}</span>
-                            <span style={{ fontSize: 12, color: 'var(--ink-3)', minWidth: 36, textAlign: 'right' }}>{pct.toFixed(0)}%</span>
-                          </div>
-                          {/* Per-user micro labels */}
-                          {mb.byUser.length > 1 && (
-                            <div style={{ display: 'flex', gap: 10, marginTop: 2 }}>
-                              {mb.byUser.map(u => (
-                                <span key={u.user} style={{ fontSize: 11, color: u.color }}>
-                                  {u.displayName.split(' ')[0]} {fmtMoney(u.amount)}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })
-              ) : (
-                detail.category_breakdown?.length === 0
-                  ? <div style={{ color: 'var(--ink-3)', fontSize: 13 }}>No expenses yet</div>
-                  : (detail.category_breakdown || []).slice(0, 6).map(cb => {
-                      const catI = sharedCatById(cb.category);
-                      const pct  = detail.total_spent > 0 ? (cb.amount / detail.total_spent) * 100 : 0;
-                      return (
-                        <div key={cb.category} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0', borderBottom: '1px solid var(--line)' }}>
-                          <span className="cat-dot" style={{ background: catI.color, flexShrink: 0 }} />
-                          <span style={{ flex: 1, fontSize: 14, color: 'var(--ink)' }}>{catI.name}</span>
-                          <div style={{ width: 120, height: 6, background: 'var(--line)', borderRadius: 3, overflow: 'hidden' }}>
-                            <div style={{ height: '100%', width: `${pct}%`, borderRadius: 3, background: catI.color }} />
-                          </div>
-                          <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', minWidth: 70, textAlign: 'right' }}>{fmtMoney(cb.amount)}</span>
-                          <span style={{ fontSize: 12, color: 'var(--ink-3)', minWidth: 36, textAlign: 'right' }}>{pct.toFixed(0)}%</span>
-                        </div>
-                      );
-                    })
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Expense list */}
-      <div className="card">
-        <div className="card-head">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, flexWrap: 'wrap' }}>
-            <h3 style={{ margin: 0 }}>Expenses</h3>
-            {/* Active filter chips */}
-            {filterFrom && (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, padding: '2px 8px 2px 10px', borderRadius: 20, background: 'color-mix(in srgb, var(--accent) 12%, transparent)', color: 'var(--accent)', border: '1px solid color-mix(in srgb, var(--accent) 25%, transparent)' }}>
-                📅 {filterFrom === filterTo ? filterFrom : `${filterFrom} – ${filterTo}`}
-                <button onClick={() => { setFilterFrom(''); setFilterTo(''); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', fontSize: 13, lineHeight: 1, padding: 0, marginLeft: 2, opacity: 0.7 }}>×</button>
-              </span>
-            )}
-            {filterUser && (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, padding: '2px 8px 2px 10px', borderRadius: 20, background: `color-mix(in srgb, ${participantColors[filterUser] || 'var(--ink-3)'} 12%, transparent)`, color: participantColors[filterUser] || 'var(--ink-3)', border: `1px solid color-mix(in srgb, ${participantColors[filterUser] || 'var(--ink-3)'} 25%, transparent)` }}>
-                👤 {(detail.per_user?.find(u => u.user === filterUser)?.display_name) || filterUser}
-                <button onClick={() => setFilterUser('')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: participantColors[filterUser] || 'var(--ink-3)', fontSize: 13, lineHeight: 1, padding: 0, marginLeft: 2, opacity: 0.7 }}>×</button>
-              </span>
-            )}
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-            <input type="date" value={filterFrom} onChange={ev => setFilterFrom(ev.target.value)}
-              style={{ padding: '4px 8px', border: '1px solid var(--line)', borderRadius: 7, background: 'var(--surface-2)', color: 'var(--ink)', fontFamily: 'inherit', fontSize: 12, outline: 'none' }} />
-            <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>–</span>
-            <input type="date" value={filterTo} onChange={ev => setFilterTo(ev.target.value)}
-              style={{ padding: '4px 8px', border: '1px solid var(--line)', borderRadius: 7, background: 'var(--surface-2)', color: 'var(--ink)', fontFamily: 'inherit', fontSize: 12, outline: 'none' }} />
-            <button onClick={() => setExpenseModal(true)} style={{ padding: '5px 12px', border: 'none', borderRadius: 8, background: 'var(--accent)', color: '#fff', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, fontSize: 13 }}>+ Add</button>
-          </div>
-        </div>
-        {/* Sort controls */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingBottom: 10, borderBottom: '1px solid var(--line)', marginBottom: 4 }}>
-          <span style={{ fontSize: 12, color: 'var(--ink-3)', marginRight: 2 }}>Sort:</span>
-          {[['date','Date'], ['amount','Amount'], ['merchant','Merchant']].map(([val, lbl]) => (
-            <button key={val} onClick={() => {
-              if (sortBy === val) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
-              else { setSortBy(val); setSortDir(val === 'merchant' ? 'asc' : 'desc'); }
-            }} style={{
-              padding: '3px 10px', border: '1px solid var(--line)', borderRadius: 6,
-              background: sortBy === val ? 'var(--accent)' : 'none',
-              color: sortBy === val ? '#fff' : 'var(--ink-3)',
-              cursor: 'pointer', fontFamily: 'inherit', fontSize: 11, fontWeight: 600,
-            }}>
-              {lbl}{sortBy === val ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}
-            </button>
-          ))}
-          {(filterFrom || filterTo || filterUser) && (
-            <button onClick={() => { setFilterFrom(''); setFilterTo(''); setFilterUser(''); }}
-              style={{ marginLeft: 'auto', padding: '3px 10px', border: '1px solid var(--line)', borderRadius: 6, background: 'none', color: 'var(--ink-3)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 11 }}>
-              Clear all filters
-            </button>
-          )}
-        </div>
-        {(() => {
-          const filtered = expenses
-            .filter(e => {
-              if (filterFrom && e.date < filterFrom) return false;
-              if (filterTo   && e.date > filterTo)   return false;
-              if (filterUser && e.user !== filterUser) return false;
-              return true;
-            })
-            .sort((a, b) => {
-              let cmp = 0;
-              if (sortBy === 'amount')   cmp = a.amount - b.amount;
-              else if (sortBy === 'merchant') cmp = (a.description || '').localeCompare(b.description || '');
-              else cmp = (a.date || '').localeCompare(b.date || '');
-              return sortDir === 'asc' ? cmp : -cmp;
-            });
-          return filtered.length === 0 ? (
-          <div style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '32px 0', fontSize: 14 }}>
-            {expenses.length === 0
-              ? 'No expenses yet — add one to get started.'
-              : filterUser && (filterFrom || filterTo)
-                ? `No expenses from ${detail.per_user?.find(u => u.user === filterUser)?.display_name || filterUser} in this date range.`
-                : filterUser
-                  ? `No expenses from ${detail.per_user?.find(u => u.user === filterUser)?.display_name || filterUser} yet.`
-                  : 'No expenses match this date range.'}
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
-            {filtered.map(e => {
-              const catI = sharedCatById(e.category);
-              const isMe = e.user === me?.username;
-              const isEditingThis = editingNote?.id === e.id;
-              return (
-                <div key={e.id} style={{ padding: '10px 0', borderBottom: '1px solid var(--line)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <span className="cat-dot" style={{ background: catI.color, flexShrink: 0 }} />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div onClick={() => setActiveMerchantShared(e.description)} style={{ fontSize: 14, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer', textDecoration: 'underline dotted', textUnderlineOffset: 2, textDecorationColor: 'var(--line-2)' }}>{e.description}</div>
-                      <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 1, display: 'flex', alignItems: 'center', gap: 0, overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                        <span style={{ flexShrink: 0 }}>{catI.name} · {e.date}</span>
-                        {e.notes && !isEditingThis && (
-                          <span onClick={ev => { ev.stopPropagation(); setEditingNote({ id: e.id, value: e.notes }); }}
-                            style={{ color: 'var(--accent)', fontStyle: 'italic', cursor: 'text', overflow: 'hidden', textOverflow: 'ellipsis', marginLeft: 4 }}>
-                            · {e.notes}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <button onClick={() => setEditingNote(isEditingThis ? null : { id: e.id, value: e.notes || '' })}
-                      title={e.notes ? 'Edit note' : 'Add note'}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px', color: e.notes ? 'var(--accent)' : 'var(--ink-4)', fontSize: 14, lineHeight: 1, flexShrink: 0 }}>
-                      💬
-                    </button>
-                    <div title={e.display_name || e.user} style={{ width: 26, height: 26, borderRadius: '50%', background: participantColors[e.user] || 'var(--ink-3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: '#fff', flexShrink: 0 }}>
-                      {(e.display_name || e.user).slice(0,2).toUpperCase()}
-                    </div>
-                    <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', minWidth: 72, textAlign: 'right' }}>{fmtMoney(e.amount)}</span>
-                    {(isMe || isOwner) && (
-                      <button onClick={() => deleteExpense(e.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-4)', fontSize: 16, padding: '0 4px', lineHeight: 1 }} title="Delete">×</button>
-                    )}
-                  </div>
-                  {isEditingThis && (
-                    <div style={{ marginLeft: 20, marginTop: 6, display: 'flex', gap: 6 }}>
-                      <input
-                        autoFocus
-                        value={editingNote.value}
-                        onChange={ev => setEditingNote(n => ({ ...n, value: ev.target.value }))}
-                        onKeyDown={ev => { if (ev.key === 'Enter') saveNote(e.id, editingNote.value); if (ev.key === 'Escape') setEditingNote(null); }}
-                        placeholder="Add a note…"
-                        maxLength={500}
-                        style={{ flex: 1, padding: '5px 10px', border: '1px solid var(--accent)', borderRadius: 7, background: 'var(--surface-2)', color: 'var(--ink)', fontFamily: 'inherit', fontSize: 13, outline: 'none' }}
-                      />
-                      <button onClick={() => saveNote(e.id, editingNote.value)}
-                        style={{ padding: '5px 12px', border: 'none', borderRadius: 7, background: 'var(--accent)', color: '#fff', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, fontWeight: 600 }}>Save</button>
-                      <button onClick={() => setEditingNote(null)}
-                        style={{ padding: '5px 10px', border: '1px solid var(--line)', borderRadius: 7, background: 'none', cursor: 'pointer', color: 'var(--ink-3)', fontFamily: 'inherit', fontSize: 12 }}>Cancel</button>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        );
-        })()}
-      </div>
-
       {/* Share modal in detail view */}
       {shareModal && (
         <Portal>
@@ -1078,30 +876,662 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
         </div>
         </Portal>
       )}
+
+      {/* Edit expense modal */}
+      {editExpModal && (
+        <Portal>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 800, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setEditExpModal(null)}>
+          <div className="card" style={{ width: 380, margin: 0 }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ marginBottom: 16 }}>Edit expense</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div>
+                <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>Description</label>
+                <input value={editExpModal.description} onChange={e => setEditExpModal(m => ({ ...m, description: e.target.value }))}
+                  style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--surface-2)', color: 'var(--ink)', fontFamily: 'inherit', fontSize: 14, outline: 'none', boxSizing: 'border-box' }} />
+              </div>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>Amount ($)</label>
+                  <input type="number" value={editExpModal.amount} onChange={e => setEditExpModal(m => ({ ...m, amount: e.target.value }))}
+                    style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--surface-2)', color: 'var(--ink)', fontFamily: 'inherit', fontSize: 14, outline: 'none', boxSizing: 'border-box' }} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>Date</label>
+                  <input type="date" value={editExpModal.date} onChange={e => setEditExpModal(m => ({ ...m, date: e.target.value }))}
+                    style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--surface-2)', color: 'var(--ink)', fontFamily: 'inherit', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+                </div>
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>Category</label>
+                <select value={editExpModal.category} onChange={e => setEditExpModal(m => ({ ...m, category: e.target.value }))}
+                  style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--surface-2)', color: 'var(--ink)', fontFamily: 'inherit', fontSize: 14, outline: 'none', boxSizing: 'border-box' }}>
+                  {SHARED_CATS.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
+              <button onClick={() => setEditExpModal(null)} style={{ flex: 1, padding: '10px 0', border: '1px solid var(--line)', borderRadius: 10, background: 'none', cursor: 'pointer', color: 'var(--ink-3)', fontFamily: 'inherit' }}>Cancel</button>
+              <button onClick={saveEditedExpense} disabled={editExpSaving || !editExpModal.description || !editExpModal.amount}
+                style={{ flex: 1, padding: '10px 0', border: 'none', borderRadius: 10, background: 'var(--accent)', color: '#fff', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
+                {editExpSaving ? 'Saving…' : 'Save changes'}
+              </button>
+            </div>
+          </div>
+        </div>
+        </Portal>
+      )}
+
+      {/* ── Header ── */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16 }}>
+        <button onClick={() => setDetail(null)} style={{ background: 'none', border: '1px solid var(--line)', borderRadius: 8, padding: '6px 12px', cursor: 'pointer', color: 'var(--ink-3)', fontFamily: 'inherit', fontSize: 13 }}>← Back</button>
+        <span style={{ fontSize: 28 }}>{detail.icon}</span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--ink)', marginBottom: 2 }}>{detail.name}</h2>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <span style={{ fontSize: 12, color: 'var(--ink-3)', background: 'var(--surface-2)', borderRadius: 6, padding: '1px 8px' }}>{detail.type}</span>
+            {detail.start_date && <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>{detail.start_date} → {detail.end_date || '…'}</span>}
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+          {isOwner && <button onClick={() => shareSpace(detail.id)} style={{ padding: '7px 14px', border: '1px solid var(--line)', borderRadius: 8, background: 'none', cursor: 'pointer', color: 'var(--ink-3)', fontFamily: 'inherit', fontSize: 13 }}>🔗 Share</button>}
+          {!isOwner && <button onClick={leaveSpace} style={{ padding: '7px 14px', border: '1px solid var(--line)', borderRadius: 8, background: 'none', cursor: 'pointer', color: 'var(--terra)', fontFamily: 'inherit', fontSize: 13 }}>Leave</button>}
+          <button onClick={() => setExpenseModal(true)} style={{ padding: '7px 14px', border: 'none', borderRadius: 8, background: 'var(--accent)', color: '#fff', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, fontSize: 13 }}>+ Expense</button>
+        </div>
+      </div>
+
+      {/* ── Sub-tab switcher ── */}
+      <div style={{ display: 'flex', gap: 2, marginBottom: 20, background: 'var(--surface-2)', borderRadius: 10, padding: 3 }}>
+        {[
+          ['overview', 'Overview'],
+          ['expenses', `Expenses${expenses.length ? ` (${expenses.length})` : ''}`],
+          ['members', `Members${detail.per_user?.length ? ` (${detail.per_user.length})` : ''}`],
+        ].map(([tab, label]) => (
+          <button key={tab} onClick={() => setDetailTab(tab)} style={{
+            flex: 1, padding: '8px 0', border: 'none', borderRadius: 8,
+            background: detailTab === tab ? 'var(--surface)' : 'none',
+            color: detailTab === tab ? 'var(--ink)' : 'var(--ink-3)',
+            cursor: 'pointer', fontFamily: 'inherit', fontSize: 13,
+            fontWeight: detailTab === tab ? 600 : 400,
+            boxShadow: detailTab === tab ? 'var(--shadow-sm)' : 'none',
+            transition: 'all .15s',
+          }}>{label}</button>
+        ))}
+      </div>
+
+      {/* ── Overview tab ── */}
+      {detailTab === 'overview' && (
+        <div>
+          {/* M/M delta headline */}
+          {(() => {
+            const cur = monthBreakdown[0];
+            const prev = monthBreakdown[1];
+            if (!cur || !prev || prev.amount === 0) return null;
+            const delta = cur.amount - prev.amount;
+            const pct = Math.abs((delta / prev.amount) * 100).toFixed(0);
+            const arrow = delta >= 0 ? '↑' : '↓';
+            const color = delta >= 0 ? 'var(--terra)' : 'var(--green)';
+            return (
+              <div style={{ fontSize: 13, color: 'var(--ink-3)', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span>Together this month:</span>
+                <span style={{ fontWeight: 700, color: 'var(--ink)', fontFamily: 'var(--font-mono)' }}>{fmtMoney(cur.amount)}</span>
+                <span style={{ color, fontWeight: 600 }}>{arrow} {pct}% vs {fmtMonth(prev.month)}</span>
+              </div>
+            );
+          })()}
+
+          {/* Summary cards */}
+          <div className="grid-4" style={{ marginBottom: 16 }}>
+            <SummaryCard label="Total spent" n={detail.total_spent || 0}
+              sub={`${expenses.length} expense${expenses.length !== 1 ? 's' : ''}`} />
+            <SummaryCard label="Your share" n={myTotal} accent="var(--accent)"
+              sub={detail.total_spent > 0 ? `${((myTotal / detail.total_spent) * 100).toFixed(0)}% of total` : null} />
+            <SummaryCard label="Others" n={otherTotal}
+              sub={detail.per_user?.length > 1 ? `${detail.per_user.length - 1} other${detail.per_user.length > 2 ? 's' : ''}` : null} />
+            {budget ? (
+              <SummaryCard label="Budget" n={budget} accent={overBudget ? 'var(--terra)' : 'var(--ink)'}
+                sub={overBudget ? `${fmtMoney(detail.total_spent - budget)} over` : `${fmtMoney(budget - detail.total_spent)} left`} />
+            ) : (
+              <SummaryCard label="Months active" value={String(monthBreakdown.length || '—')} accent="var(--ink)"
+                sub={monthBreakdown.length > 0 ? `since ${fmtMonth(monthBreakdown[monthBreakdown.length - 1]?.month || '')}` : null} />
+            )}
+          </div>
+
+          <SharedVibeBanner detail={detail} myUsername={me?.username} myTotal={myTotal} expenses={expenses} />
+
+          {/* Spending velocity */}
+          {velocityStats && (
+            <div style={{ fontSize: 13, color: 'var(--ink-3)', marginBottom: 14, padding: '8px 14px', background: 'var(--surface-2)', borderRadius: 10, display: 'flex', gap: 8, alignItems: 'center' }}>
+              <span>📈</span>
+              <span><b style={{ color: 'var(--ink)' }}>{fmtMoney(velocityStats.dailyRate)}/day</b> together this month · on pace for <b style={{ color: 'var(--ink)' }}>{fmtMoney(velocityStats.projected)}</b></span>
+            </div>
+          )}
+
+          {/* Budget progress bar */}
+          {budget && (
+            <div className="card" style={{ marginBottom: 16 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>Budget progress</span>
+                <span style={{ fontSize: 13, color: overBudget ? 'var(--terra)' : 'var(--ink-3)' }}>
+                  {fmtMoney(detail.total_spent || 0)} / {fmtMoney(budget)}
+                </span>
+              </div>
+              <div style={{ height: 8, background: 'var(--line)', borderRadius: 4, overflow: 'hidden' }}>
+                <div style={{ height: '100%', width: `${Math.min(budgetPct, 100)}%`, borderRadius: 4, background: overBudget ? 'var(--terra)' : 'var(--accent)', transition: 'width .3s' }} />
+              </div>
+            </div>
+          )}
+
+          {/* Per-person + breakdown */}
+          {(detail.per_user?.length > 0 || expenses.length > 0) && (
+            <div className="grid-2">
+              {filteredPerUser.length > 0 && (
+                <div className="card">
+                  <div className="card-head">
+                    <h3>By person</h3>
+                    {filterUser && <button onClick={() => setFilterUser('')} style={{ fontSize: 11, padding: '2px 8px', border: '1px solid var(--line)', borderRadius: 6, background: 'none', cursor: 'pointer', color: 'var(--ink-3)', fontFamily: 'inherit' }}>Clear</button>}
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    {filteredPerUser.map(u => {
+                      const filteredTotal = u.filteredTotal || 0;
+                      const periodTotal = filteredPerUser.reduce((s, x) => s + (x.filteredTotal || 0), 0);
+                      const pct = periodTotal > 0 ? (filteredTotal / periodTotal) * 100 : 0;
+                      const isMe = u.user === me?.username;
+                      const uColor = participantColors[u.user];
+                      const isSelected = filterUser === u.user;
+                      return (
+                        <div key={u.user}
+                          onClick={() => { setFilterUser(isSelected ? '' : u.user); setDetailTab('expenses'); }}
+                          className={`month-row${isSelected ? ' active' : ''}`}
+                          style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 6px', margin: '0 -6px', borderBottom: '1px solid var(--line)', cursor: 'pointer' }}>
+                          <div style={{ width: 28, height: 28, borderRadius: '50%', background: uColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: '#fff', flexShrink: 0 }}>
+                            {(u.display_name || u.user).slice(0,2).toUpperCase()}
+                          </div>
+                          <span style={{ flex: 1, fontSize: 14, color: isSelected ? uColor : 'var(--ink)', fontWeight: isSelected ? 600 : 400 }}>{u.display_name || u.user}{isMe ? ' (you)' : ''}</span>
+                          <div style={{ width: 100, height: 5, background: 'var(--line)', borderRadius: 3, overflow: 'hidden' }}>
+                            <div style={{ height: '100%', width: `${pct}%`, borderRadius: 3, background: uColor }} />
+                          </div>
+                          <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', minWidth: 70, textAlign: 'right', fontFamily: 'var(--font-mono)', fontFeatureSettings: '"tnum"' }}>{fmtMoney(filteredTotal)}</span>
+                          <span style={{ fontSize: 12, color: 'var(--ink-3)', minWidth: 32, textAlign: 'right' }}>{pct.toFixed(0)}%</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div style={{ marginTop: 10, fontSize: 12, color: 'var(--ink-4)', textAlign: 'center' }}>Click a person to filter expenses</div>
+                </div>
+              )}
+              <div className="card">
+                <div className="card-head">
+                  <h3>{breakdownView === 'month' ? 'By month' : 'By category'}</h3>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    {[['category', 'Category'], ['month', 'Month']].map(([v, lbl]) => (
+                      <button key={v} onClick={() => setAndSaveBreakdownView(v)} style={{
+                        padding: '3px 10px', border: '1px solid var(--line)', borderRadius: 6,
+                        background: breakdownView === v ? 'var(--accent)' : 'none',
+                        color: breakdownView === v ? '#fff' : 'var(--ink-3)',
+                        cursor: 'pointer', fontFamily: 'inherit', fontSize: 11, fontWeight: 600,
+                      }}>{lbl}</button>
+                    ))}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {breakdownView === 'month' ? (
+                    monthBreakdown.length === 0
+                      ? <div style={{ color: 'var(--ink-3)', fontSize: 13 }}>No expenses yet</div>
+                      : monthBreakdown.slice(0, 8).map((mb, i) => {
+                          const maxAmt = monthBreakdown[0]?.amount || 1;
+                          const pct = (mb.amount / maxAmt) * 100;
+                          const isActive = filterFrom === `${mb.month}-01`;
+                          const prevMb = monthBreakdown[i + 1];
+                          const moDelta = prevMb && prevMb.amount > 0
+                            ? ((mb.amount - prevMb.amount) / prevMb.amount) * 100
+                            : null;
+                          return (
+                            <div key={mb.month}
+                              onClick={() => {
+                                if (isActive) { setFilterFrom(''); setFilterTo(''); }
+                                else {
+                                  const [y, mo] = mb.month.split('-');
+                                  const last = new Date(+y, +mo, 0).getDate();
+                                  setFilterFrom(`${mb.month}-01`);
+                                  setFilterTo(`${mb.month}-${String(last).padStart(2,'0')}`);
+                                  setDetailTab('expenses');
+                                }
+                              }}
+                              className={`month-row${isActive ? ' active' : ''}`}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                <span style={{ flex: 1, fontSize: 14, color: isActive ? 'var(--accent)' : 'var(--ink)', fontWeight: isActive ? 600 : 400 }}>{fmtMonth(mb.month)}</span>
+                                <div style={{ width: 100, height: 5, background: 'var(--line)', borderRadius: 3, overflow: 'hidden', display: 'flex' }}>
+                                  {mb.byUser.map((u, i) => (
+                                    <div key={u.user} title={`${u.displayName}: ${fmtMoney(u.amount)}`}
+                                      style={{ height: '100%', width: `${(u.amount / mb.amount) * pct}%`, background: u.color,
+                                        borderRadius: i === 0 ? '3px 0 0 3px' : (i === mb.byUser.length-1 ? '0 3px 3px 0' : 0) }} />
+                                  ))}
+                                </div>
+                                <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', minWidth: 70, textAlign: 'right', fontFamily: 'var(--font-mono)', fontFeatureSettings: '"tnum"' }}>{fmtMoney(mb.amount)}</span>
+                                {moDelta !== null
+                                  ? <span style={{ fontSize: 11, fontWeight: 600, minWidth: 40, textAlign: 'right', color: moDelta >= 0 ? 'var(--terra)' : 'var(--green)' }}>{moDelta >= 0 ? '↑' : '↓'}{Math.abs(moDelta).toFixed(0)}%</span>
+                                  : <span style={{ minWidth: 40 }} />
+                                }
+                              </div>
+                              {mb.byUser.length > 1 && (
+                                <div style={{ display: 'flex', gap: 10, marginTop: 2 }}>
+                                  {mb.byUser.map(u => (
+                                    <span key={u.user} style={{ fontSize: 11, color: u.color }}>
+                                      {u.displayName.split(' ')[0]} {fmtMoney(u.amount)}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })
+                  ) : (
+                    detail.category_breakdown?.length === 0
+                      ? <div style={{ color: 'var(--ink-3)', fontSize: 13 }}>No expenses yet</div>
+                      : (detail.category_breakdown || []).slice(0, 6).map(cb => {
+                          const catI = sharedCatById(cb.category);
+                          const pct  = detail.total_spent > 0 ? (cb.amount / detail.total_spent) * 100 : 0;
+                          return (
+                            <div key={cb.category} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0', borderBottom: '1px solid var(--line)' }}>
+                              <span style={{ fontSize: 16 }}>{SHARED_ICONS[cb.category] || '📦'}</span>
+                              <span style={{ flex: 1, fontSize: 14, color: 'var(--ink)' }}>{catI.name}</span>
+                              <div style={{ width: 100, height: 5, background: 'var(--line)', borderRadius: 3, overflow: 'hidden' }}>
+                                <div style={{ height: '100%', width: `${pct}%`, borderRadius: 3, background: catI.color }} />
+                              </div>
+                              <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', minWidth: 70, textAlign: 'right', fontFamily: 'var(--font-mono)', fontFeatureSettings: '"tnum"' }}>{fmtMoney(cb.amount)}</span>
+                              <span style={{ fontSize: 12, color: 'var(--ink-3)', minWidth: 32, textAlign: 'right' }}>{pct.toFixed(0)}%</span>
+                            </div>
+                          );
+                        })
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Recent activity strip */}
+          {expenses.length > 0 && (() => {
+            const recent = [...expenses].sort((a,b) => b.date.localeCompare(a.date)).slice(0, 5);
+            return (
+              <div className="card" style={{ marginTop: 16 }}>
+                <div className="card-head" style={{ marginBottom: 8 }}>
+                  <h3>Recent</h3>
+                  <button onClick={() => setDetailTab('expenses')} style={{ fontSize: 12, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>See all →</button>
+                </div>
+                <div className="txn-list">
+                  {recent.map(e => {
+                    const catI = sharedCatById(e.category);
+                    const uColor = participantColors[e.user] || '#94a3b8';
+                    return (
+                      <div key={e.id} className="txn-row" style={{ gridTemplateColumns: '30px 1fr 28px 56px 80px' }}>
+                        <div className="txn-icon" style={{ background: `${uColor}22`, color: uColor, fontSize: 14, width: 30, height: 30 }}>
+                          {SHARED_ICONS[e.category] || '📦'}
+                        </div>
+                        <div className="txn-main">
+                          <div className="txn-merchant" style={{ fontSize: 13 }}>{e.description}</div>
+                          <div className="txn-meta">
+                            <span className="cat-pill" style={{ color: catI.color }}>{catI.name}</span>
+                          </div>
+                        </div>
+                        <div title={e.display_name || e.user} style={{ width: 24, height: 24, borderRadius: '50%', background: uColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 8, fontWeight: 700, color: '#fff', flexShrink: 0 }}>
+                          {(e.display_name || e.user).slice(0,2).toUpperCase()}
+                        </div>
+                        <div className="txn-date">{e.date?.slice(5).replace('-', '/')}</div>
+                        <div className="txn-amt neg">{fmtMoney(e.amount)}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      )}
+
+      {/* ── Expenses tab ── */}
+      {detailTab === 'expenses' && (
+        <div className="card">
+          {/* Filter bar — matches .filter-bar pattern from TransactionsTab */}
+          <div className="filter-bar">
+            <div className="search-input">
+              <span className="search-icon">⌕</span>
+              <input
+                placeholder="Search expenses…"
+                value={expSearch}
+                onChange={e => setExpSearch(e.target.value)}
+              />
+            </div>
+            {detail.per_user?.length > 1 && (
+              <select value={filterUser} onChange={e => setFilterUser(e.target.value)}
+                style={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 'var(--radius-sm)', padding: '0 30px 0 12px', height: 36, color: 'var(--ink)', fontSize: 13, fontFamily: 'inherit', outline: 'none', appearance: 'none', boxShadow: 'var(--shadow-sm)' }}>
+                <option value="">All people</option>
+                {(detail.per_user || []).map(u => (
+                  <option key={u.user} value={u.user}>{u.display_name || u.user}</option>
+                ))}
+              </select>
+            )}
+            <input type="date" value={filterFrom} onChange={e => setFilterFrom(e.target.value)}
+              title="From date"
+              style={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 'var(--radius-sm)', padding: '0 10px', height: 36, color: filterFrom ? 'var(--ink)' : 'var(--ink-4)', fontSize: 12, fontFamily: 'inherit', outline: 'none', boxShadow: 'var(--shadow-sm)' }} />
+            <input type="date" value={filterTo} onChange={e => setFilterTo(e.target.value)}
+              title="To date"
+              style={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 'var(--radius-sm)', padding: '0 10px', height: 36, color: filterTo ? 'var(--ink)' : 'var(--ink-4)', fontSize: 12, fontFamily: 'inherit', outline: 'none', boxShadow: 'var(--shadow-sm)' }} />
+            <div className="filter-stats">
+              <span><b>{filteredExpenses.length}</b> expenses</span>
+              <span className="neg">{fmtMoney(filteredTotal)}</span>
+            </div>
+            <button onClick={() => setExpenseModal(true)} style={{
+              padding: '6px 14px', borderRadius: 8, border: '1px solid var(--accent)',
+              background: 'none', color: 'var(--accent)', cursor: 'pointer',
+              fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap',
+            }}>+ Add</button>
+          </div>
+
+          {/* Active filter chips */}
+          {hasAnyFilter && (
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10, alignItems: 'center' }}>
+              {filterUser && (
+                <span onClick={() => setFilterUser('')} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 20, background: `color-mix(in srgb, ${participantColors[filterUser] || 'var(--ink-3)'} 12%, transparent)`, color: participantColors[filterUser] || 'var(--ink-3)', border: `1px solid color-mix(in srgb, ${participantColors[filterUser] || 'var(--ink-3)'} 25%, transparent)`, cursor: 'pointer' }}>
+                  <div style={{ width: 14, height: 14, borderRadius: '50%', background: participantColors[filterUser] || '#94a3b8', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 8, fontWeight: 700, color: '#fff' }}>
+                    {((detail.per_user?.find(u => u.user === filterUser)?.display_name) || filterUser).slice(0,2).toUpperCase()}
+                  </div>
+                  {(detail.per_user?.find(u => u.user === filterUser)?.display_name) || filterUser} ×
+                </span>
+              )}
+              {filterFrom && (
+                <span onClick={() => { setFilterFrom(''); setFilterTo(''); }} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 20, background: 'color-mix(in srgb, var(--accent) 12%, transparent)', color: 'var(--accent)', border: '1px solid color-mix(in srgb, var(--accent) 25%, transparent)', cursor: 'pointer' }}>
+                  📅 {filterFrom === filterTo ? filterFrom : `${filterFrom} – ${filterTo}`} ×
+                </span>
+              )}
+              {expSearch.trim() && (
+                <span onClick={() => setExpSearch('')} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 20, background: 'color-mix(in srgb, var(--ink-3) 10%, transparent)', color: 'var(--ink-3)', border: '1px solid var(--line)', cursor: 'pointer' }}>
+                  "{expSearch}" ×
+                </span>
+              )}
+              <button onClick={() => { setFilterUser(''); setFilterFrom(''); setFilterTo(''); setExpSearch(''); }}
+                style={{ fontSize: 11, padding: '3px 10px', border: '1px solid var(--line)', borderRadius: 20, background: 'none', color: 'var(--ink-4)', cursor: 'pointer', fontFamily: 'inherit' }}>
+                Clear all
+              </button>
+            </div>
+          )}
+
+          {/* Column headers — matching txn-list header style */}
+          <div style={{
+            display: 'grid', gridTemplateColumns: '38px 1fr 32px 56px 90px 20px',
+            gap: 10, padding: '6px 4px 5px',
+            borderBottom: '2px solid var(--line)',
+            fontSize: 11, fontWeight: 600, color: 'var(--muted)',
+            textTransform: 'uppercase', letterSpacing: '0.04em', userSelect: 'none',
+          }}>
+            <div />
+            <div>Description</div>
+            <div />
+            <div style={{ cursor: 'pointer' }} onClick={() => { if (sortBy === 'date') setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortBy('date'); setSortDir('desc'); } }}>
+              Date {sortBy === 'date' ? (sortDir === 'desc' ? '↓' : '↑') : <span style={{ opacity: 0.25 }}>↕</span>}
+            </div>
+            <div style={{ cursor: 'pointer', textAlign: 'right' }} onClick={() => { if (sortBy === 'amount') setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortBy('amount'); setSortDir('desc'); } }}>
+              {sortBy === 'amount' ? (sortDir === 'desc' ? '↓' : '↑') : <span style={{ opacity: 0.25 }}>↕</span>} Amount
+            </div>
+            <div />
+          </div>
+
+          {/* Expense rows — matching txn-row pattern */}
+          {filteredExpenses.length === 0 ? (
+            <div style={{ textAlign: 'center', color: 'var(--ink-3)', padding: '32px 0', fontSize: 14 }}>
+              {expenses.length === 0
+                ? 'No expenses yet — add one to get started.'
+                : hasAnyFilter
+                  ? 'No expenses match your filters.'
+                  : 'No expenses yet.'}
+            </div>
+          ) : (
+            <div className="txn-list">
+              {filteredExpenses.map(e => {
+                const catI = sharedCatById(e.category);
+                const uColor = participantColors[e.user] || '#94a3b8';
+                const isMe = e.user === me?.username;
+                const isOwnerUser = detail.role === 'owner';
+                const isEditingThis = editingNote?.id === e.id;
+                const isMenuOpen = menuExpId === e.id;
+                return (
+                  <div key={e.id} className="txn-row" style={{ gridTemplateColumns: '38px 1fr 32px 56px 90px 20px' }}>
+                    {/* Category icon, colored by person */}
+                    <div className="txn-icon" style={{ background: `${uColor}22`, color: uColor, fontSize: 18 }}>
+                      {SHARED_ICONS[e.category] || '📦'}
+                    </div>
+                    {/* Main content */}
+                    <div className="txn-main">
+                      <div className="txn-merchant">
+                        <span
+                          onClick={() => setActiveMerchantShared(e.description)}
+                          style={{ cursor: 'pointer', textDecoration: 'underline dotted', textUnderlineOffset: 2, textDecorationColor: 'var(--line-2)' }}
+                        >{e.description}</span>
+                        {e.notes && !isEditingThis && (
+                          <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 6, fontWeight: 400, fontStyle: 'italic' }}>{e.notes}</span>
+                        )}
+                      </div>
+                      <div className="txn-meta">
+                        <span className="cat-pill" style={{ color: catI.color }}>{catI.name}</span>
+                      </div>
+                      {isEditingThis && (
+                        <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                          <input
+                            autoFocus
+                            value={editingNote.value}
+                            onChange={ev => setEditingNote(n => ({ ...n, value: ev.target.value }))}
+                            onKeyDown={ev => { if (ev.key === 'Enter') saveNote(e.id, editingNote.value); if (ev.key === 'Escape') setEditingNote(null); }}
+                            placeholder="Add a note…"
+                            maxLength={500}
+                            style={{ flex: 1, padding: '5px 10px', border: '1px solid var(--accent)', borderRadius: 7, background: 'var(--surface-2)', color: 'var(--ink)', fontFamily: 'inherit', fontSize: 13, outline: 'none' }}
+                          />
+                          <button onClick={() => saveNote(e.id, editingNote.value)}
+                            style={{ padding: '5px 12px', border: 'none', borderRadius: 7, background: 'var(--accent)', color: '#fff', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, fontWeight: 600 }}>Save</button>
+                          <button onClick={() => setEditingNote(null)}
+                            style={{ padding: '5px 10px', border: '1px solid var(--line)', borderRadius: 7, background: 'none', cursor: 'pointer', color: 'var(--ink-3)', fontFamily: 'inherit', fontSize: 12 }}>Cancel</button>
+                        </div>
+                      )}
+                    </div>
+                    {/* Person avatar */}
+                    <div title={e.display_name || e.user} style={{ width: 28, height: 28, borderRadius: '50%', background: uColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: '#fff', flexShrink: 0 }}>
+                      {(e.display_name || e.user).slice(0,2).toUpperCase()}
+                    </div>
+                    {/* Date */}
+                    <div className="txn-date">{e.date?.slice(5).replace('-', '/')}</div>
+                    {/* Amount */}
+                    <div className="txn-amt neg">{fmtMoney(e.amount)}</div>
+                    {/* Actions menu */}
+                    <div style={{ position: 'relative', display: 'flex', justifyContent: 'center' }}>
+                      <button
+                        className="txn-menu-btn"
+                        onClick={ev => { ev.stopPropagation(); setMenuExpId(isMenuOpen ? null : e.id); }}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', fontSize: 15, padding: '0 2px', lineHeight: 1, width: 20 }}
+                      >⋮</button>
+                      {isMenuOpen && (
+                        <div style={{
+                          position: 'absolute', right: 0, top: '100%', zIndex: 300,
+                          background: 'var(--surface)', border: '1px solid var(--line)',
+                          borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.18)',
+                          minWidth: 140, overflow: 'hidden',
+                        }} onClick={ev => ev.stopPropagation()}>
+                          {[
+                            {
+                              label: e.notes ? '✏️ Edit note' : '💬 Add note',
+                              action: () => { setEditingNote({ id: e.id, value: e.notes || '' }); setMenuExpId(null); },
+                            },
+                            ...(!e.txn_id ? [{
+                              label: '✏️ Edit expense',
+                              action: () => { setEditExpModal({ id: e.id, description: e.description, amount: e.amount, date: e.date, category: e.category || 'other' }); setMenuExpId(null); },
+                            }] : []),
+                            ...(isMe || isOwnerUser ? [{
+                              label: 'Delete',
+                              action: () => deleteExpense(e.id),
+                              danger: true,
+                            }] : []),
+                          ].map(item => (
+                            <button key={item.label}
+                              onClick={item.action}
+                              style={{
+                                display: 'block', width: '100%', textAlign: 'left',
+                                padding: '9px 14px', border: 'none', background: 'none',
+                                cursor: 'pointer', fontFamily: 'inherit', fontSize: 13,
+                                color: item.danger ? 'var(--terra)' : 'var(--ink)',
+                              }}
+                              onMouseEnter={ev => ev.currentTarget.style.background = 'var(--surface-2)'}
+                              onMouseLeave={ev => ev.currentTarget.style.background = 'none'}
+                            >{item.label}</button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Members tab ── */}
+      {detailTab === 'members' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {(detail.per_user || []).length === 0 ? (
+            <div className="card" style={{ textAlign: 'center', padding: '40px 0', color: 'var(--ink-3)', fontSize: 14 }}>
+              No members yet — share this space to invite others.
+            </div>
+          ) : (detail.per_user || []).map(u => {
+            const uColor = participantColors[u.user] || '#94a3b8';
+            const isMe = u.user === me?.username;
+            const pct = detail.total_spent > 0 ? (u.total / detail.total_spent) * 100 : 0;
+            const userCats = memberCategories[u.user] || {};
+            const topCats = Object.entries(userCats)
+              .sort(([,a],[,b]) => b - a)
+              .slice(0, 4)
+              .map(([catId, amt]) => ({ ...sharedCatById(catId), amt }));
+            const userExpenseCount = expenses.filter(e => e.user === u.user).length;
+
+            return (
+              <div key={u.user} className="card" style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
+                {/* Avatar */}
+                <div style={{ width: 52, height: 52, borderRadius: '50%', background: uColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 700, color: '#fff', flexShrink: 0 }}>
+                  {(u.display_name || u.user).slice(0,2).toUpperCase()}
+                </div>
+                {/* Info */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                    <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>{u.display_name || u.user}</span>
+                    {isMe && <span style={{ fontSize: 11, fontWeight: 600, padding: '1px 7px', borderRadius: 8, background: `${uColor}22`, color: uColor }}>you</span>}
+                    <span style={{ fontSize: 12, color: 'var(--ink-4)', marginLeft: 'auto' }}>{userExpenseCount} expense{userExpenseCount !== 1 ? 's' : ''}</span>
+                  </div>
+                  {/* Contribution bar */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                    <div style={{ flex: 1, height: 6, background: 'var(--line)', borderRadius: 3, overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${pct}%`, background: uColor, borderRadius: 3, transition: 'width .3s' }} />
+                    </div>
+                    <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink)', fontFamily: 'var(--font-mono)', fontFeatureSettings: '"tnum"', minWidth: 70, textAlign: 'right' }}>{fmtMoney(u.total)}</span>
+                    <span style={{ fontSize: 12, color: 'var(--ink-3)', minWidth: 36, textAlign: 'right' }}>{pct.toFixed(0)}%</span>
+                  </div>
+                  {/* Top categories */}
+                  {topCats.length > 0 && (
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      {topCats.map(c => (
+                        <span key={c.id} className="cat-pill" style={{ color: c.color }}>
+                          {SHARED_ICONS[c.id] || '📦'} {c.name} {fmtMoney(c.amt)}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                {/* View their expenses button */}
+                <button
+                  onClick={() => { setFilterUser(u.user); setDetailTab('expenses'); }}
+                  style={{ padding: '6px 12px', border: '1px solid var(--line)', borderRadius: 8, background: 'none', cursor: 'pointer', color: 'var(--ink-3)', fontFamily: 'inherit', fontSize: 12, flexShrink: 0 }}
+                >View →</button>
+              </div>
+            );
+          })}
+
+          {/* Settlement helper for 2-person spaces */}
+          {(detail.per_user || []).length === 2 && detail.total_spent > 0 && (() => {
+            const [p1, p2] = detail.per_user;
+            const diff = Math.abs(p1.total - p2.total) / 2;
+            if (diff < 0.01) return null;
+            const payer = p1.total > p2.total ? p2 : p1;
+            const payee = p1.total > p2.total ? p1 : p2;
+            return (
+              <div className="card" style={{ background: 'color-mix(in srgb, var(--accent) 6%, var(--surface))', border: '1px solid color-mix(in srgb, var(--accent) 20%, transparent)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ fontSize: 20 }}>⚖️</span>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>
+                      {payer.display_name || payer.user} owes {payee.display_name || payee.user}
+                      <span style={{ color: 'var(--accent)', marginLeft: 6 }}>{fmtMoney(diff)}</span>
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 2 }}>
+                      to split costs evenly ({fmtMoney(detail.total_spent / 2)} each)
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      )}
     </div>
   );
 }
 
 function SpaceCard({ space, isOwner, onOpen, onShare, onDelete }) {
+  const palette = ['#10b981', '#f97316', '#6366f1', '#0ea5e9', '#f43f5e', '#eab308', '#8b5cf6', '#14b8a6'];
+  const participants = space.participants || [];
+  const budget = space.budget;
+  const budgetPct = budget && space.total_spent ? Math.min((space.total_spent / budget) * 100, 100) : null;
+  const overBudget = budget && space.total_spent > budget;
+
   return (
     <div className="card" style={{ cursor: 'pointer', userSelect: 'none' }} onClick={onOpen}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         <span style={{ fontSize: 26, flexShrink: 0 }}>{space.icon}</span>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
             <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)' }}>{space.name}</span>
             <span style={{ fontSize: 11, color: 'var(--ink-3)', background: 'var(--surface-2)', borderRadius: 4, padding: '1px 6px' }}>{space.type}</span>
-            {!isOwner && <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>by {space.owner_display_name || space.participants?.[0]}</span>}
+            {!isOwner && <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>by {space.owner_display_name || participants[0]}</span>}
           </div>
-          <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-            <span style={{ fontSize: 13, color: 'var(--ink-3)' }}>
-              {space.participants?.length > 1 ? `${space.participants.length} people` : 'just you'}
-            </span>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            {/* Stacked participant avatars */}
+            {participants.length > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center' }}>
+                {participants.slice(0, 4).map((p, i) => (
+                  <div key={p} title={p} style={{
+                    width: 20, height: 20, borderRadius: '50%',
+                    background: palette[i % palette.length],
+                    border: '2px solid var(--surface)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 8, fontWeight: 700, color: '#fff',
+                    marginLeft: i > 0 ? -6 : 0, position: 'relative', zIndex: participants.length - i,
+                  }}>
+                    {p.slice(0,2).toUpperCase()}
+                  </div>
+                ))}
+                <span style={{ fontSize: 12, color: 'var(--ink-3)', marginLeft: participants.length > 1 ? 8 : 4 }}>
+                  {participants.length > 1 ? `${participants.length} people` : 'just you'}
+                </span>
+              </div>
+            )}
             {space.last_activity && <span style={{ fontSize: 12, color: 'var(--ink-4)' }}>{space.last_activity}</span>}
           </div>
+          {/* Budget progress */}
+          {budgetPct !== null && (
+            <div style={{ marginTop: 7 }}>
+              <div style={{ height: 3, background: 'var(--line)', borderRadius: 2, overflow: 'hidden' }}>
+                <div style={{ height: '100%', width: `${budgetPct}%`, background: overBudget ? 'var(--terra)' : 'var(--accent)', borderRadius: 2 }} />
+              </div>
+            </div>
+          )}
         </div>
         <div style={{ textAlign: 'right', flexShrink: 0 }}>
-          <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)' }}>${(space.total_spent || 0).toFixed(2)}</div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)', fontFamily: 'var(--font-mono)', fontFeatureSettings: '"tnum"' }}>${(space.total_spent || 0).toFixed(2)}</div>
+          {budget && <div style={{ fontSize: 11, color: overBudget ? 'var(--terra)' : 'var(--ink-3)' }}>of ${budget.toFixed(0)}</div>}
         </div>
         {isOwner && (
           <div style={{ display: 'flex', gap: 6 }} onClick={e => e.stopPropagation()}>
@@ -1113,4 +1543,3 @@ function SpaceCard({ space, isOwner, onOpen, onShare, onDelete }) {
     </div>
   );
 }
-

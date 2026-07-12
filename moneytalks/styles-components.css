@@ -307,12 +307,9 @@
 
 /* ─── Category picker dropdown ──────────────────────────────────── */
 .cat-picker { position: relative; }
-.cat-overlay { position: fixed; inset: 0; z-index: 20; }
+.cat-overlay { position: fixed; inset: 0; z-index: 8999; }
 .cat-menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  z-index: 21;
+  z-index: 9000;
   background: var(--surface);
   border: 1px solid var(--line-2);
   border-radius: var(--radius-sm);
