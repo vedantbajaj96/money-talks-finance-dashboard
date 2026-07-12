@@ -1,5 +1,8 @@
-/* Phase 2 will copy the full CSS from moneytalks/styles-*.css into this directory.
-   For now, just a reset so the loading screen looks correct. */
-
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-body { background: #f6f5f2; }
+/* Import order matches original moneytalks/index.html link order */
+@import './styles-base.css';
+@import './styles-nav.css';
+@import './styles-layout.css';
+@import './styles-components.css';
+@import './styles-mobile.css';
+@import './styles-tabs.css';
+@import './styles-dark.css';
