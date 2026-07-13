@@ -3,7 +3,7 @@ server.py — FastAPI backend for the MoneyTalks dashboard.
 
 How it fits together
 --------------------
-The React frontend (moneytalks/) loads once and calls /api/fin to get all data.
+The React frontend (frontend/dist/) loads once and calls /api/fin to get all data.
 Everything else is mutation: uploading CSVs, editing transactions, syncing Plaid.
 
 Data flow:
@@ -23,7 +23,8 @@ Per-user data:
   data/{username}/config.json           — API keys (Plaid, Claude, Gemini)
   data/{username}/plaid_items.json      — Plaid linked institutions
 
-Run:
+Build frontend before running in production:
+    cd frontend && npm run build
     python3 server.py
 """
 
@@ -32,7 +33,6 @@ from __future__ import annotations
 import datetime
 import logging
 import logging.handlers
-import subprocess
 import sys
 import traceback
 import warnings
@@ -97,51 +97,8 @@ from routes.shared_routes import router as shared_router
 # ---------------------------------------------------------------------------
 
 BASE_DIR = Path(__file__).parent
-LL_DIR   = BASE_DIR / "moneytalks"
-JSX_FILES = [
-    "tweaks-panel.jsx", "charts.jsx",
-    "tabs-modals.jsx", "tabs-shared.jsx",
-    "tabs-overview.jsx", "tabs-overview-widgets.jsx",
-    "tabs-transactions.jsx", "tabs-spending.jsx", "tabs-wealth.jsx",
-    "tabs-chat.jsx", "tabs-settings.jsx",
-    "tabs-review.jsx", "tabs-flagged.jsx",
-    "tabs-admin.jsx", "tabs-investments.jsx",
-    "tabs-trips.jsx", "tabs-shared-space.jsx",
-    "app.jsx",
-]
-
-# ---------------------------------------------------------------------------
-# JSX pre-compilation
-# ---------------------------------------------------------------------------
-
-def _compile_jsx(jsx_path: Path) -> None:
-    js_path = jsx_path.with_suffix(".js.compiled")
-    script = f"""
-const babel = require('@babel/core'), fs = require('fs');
-const code = babel.transformSync(fs.readFileSync({repr(str(jsx_path))}, 'utf8'), {{presets: ['@babel/preset-react']}}).code;
-fs.writeFileSync({repr(str(js_path))}, code);
-"""
-    result = subprocess.run(["node", "-e", script], capture_output=True, text=True, cwd=str(LL_DIR))
-    if result.returncode != 0:
-        raise RuntimeError(result.stderr[:400])
-
-
-def _ensure_compiled(name: str) -> Path:
-    jsx_path = LL_DIR / name
-    js_path  = LL_DIR / name.replace(".jsx", ".js.compiled")
-    if not js_path.exists() or jsx_path.stat().st_mtime > js_path.stat().st_mtime:
-        print(f"  Compiling {name}...", flush=True)
-        _compile_jsx(jsx_path)
-    return js_path
-
-
-print("Compiling JSX...", flush=True)
-for _f in JSX_FILES:
-    try:
-        _ensure_compiled(_f)
-    except Exception as _e:
-        print(f"  WARNING {_f}: {_e}", flush=True)
-print("JSX ready.", flush=True)
+DIST_DIR = BASE_DIR / "frontend" / "dist"   # Vite production build output
+LOGIN_HTML = BASE_DIR / "moneytalks" / "login.html"
 
 # ---------------------------------------------------------------------------
 # App + routers
@@ -196,39 +153,34 @@ app.include_router(shared_router)
 
 @app.get("/login")
 def serve_login() -> FileResponse:
-    return FileResponse(LL_DIR / "login.html")
+    return FileResponse(LOGIN_HTML)
 
 
 @app.get("/{filename:path}")
 def serve_frontend(filename: str = "", request: Request = None) -> Response:
-    # API paths should never fall through to the SPA — means the route wasn't matched
     if filename.startswith("api/"):
         from fastapi.responses import JSONResponse
         return JSONResponse({"detail": "Not found"}, status_code=404)
 
-    path = LL_DIR / filename if filename else LL_DIR / "index.html"
+    path = DIST_DIR / filename if filename else DIST_DIR / "index.html"
 
-    is_asset = path.suffix in (".js", ".jsx", ".css", ".png", ".ico", ".svg", ".woff", ".woff2")
+    # Assets have content-hashed filenames — no auth check needed, safe to cache
+    is_asset = path.suffix in (".js", ".css", ".png", ".ico", ".svg", ".woff", ".woff2", ".webmanifest")
     if not is_asset:
         token   = request.cookies.get(SESSION_COOKIE) if request else None
         session = _sessions.get(token) if token else None
         if not session or datetime.datetime.utcnow() > session.get("expires", datetime.datetime.min):
             return RedirectResponse("/login")
 
-    if path.suffix == ".jsx" and path.name in JSX_FILES:
-        try:
-            compiled = _ensure_compiled(path.name)
-            resp = FileResponse(compiled, media_type="application/javascript")
-            resp.headers["Cache-Control"] = "no-store"
-            return resp
-        except Exception as e:
-            print(f"Compile error for {path.name}: {e}")
-
+    # SPA fallback: any unknown path serves index.html so client-side routing works
     if not path.exists() or not path.is_file():
-        path = LL_DIR / "index.html"
+        path = DIST_DIR / "index.html"
 
     resp = FileResponse(path)
-    if path.suffix in (".js", ".jsx", ".css") or not path.suffix:
+    if path.suffix in (".js", ".css"):
+        # Vite outputs content-hashed asset filenames → safe to cache forever
+        resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    else:
         resp.headers["Cache-Control"] = "no-store"
     return resp
 
