@@ -4,7 +4,7 @@ output "public_ip" {
 }
 
 output "ssh_command" {
-  value       = "ssh ubuntu@${oci_core_instance.main.public_ip}"
+  value       = "ssh opc@${oci_core_instance.main.public_ip}"
   description = "SSH command for initial connection"
 }
 

@@ -28,6 +28,11 @@ variable "availability_domain" {
   default     = 0
 }
 
+variable "fault_domain" {
+  description = "Fault domain (1, 2, or 3). Try all three if you get 'out of capacity'."
+  default     = 1
+}
+
 variable "ssh_public_key" {
   description = "SSH public key content (paste the full key, e.g. contents of ~/.ssh/id_ed25519.pub)"
 }
@@ -57,4 +62,9 @@ variable "plaid_secret" {
 variable "docker_image" {
   description = "Docker image to pull on the server"
   default     = "vedantbajaj96/moneytalks:latest"
+}
+
+variable "instance_shape" {
+  description = "Instance shape — E2.1.Micro (AMD, Always Free) or A1.Flex (ARM, Always Free with more resources)"
+  default     = "VM.Standard.E2.1.Micro"
 }

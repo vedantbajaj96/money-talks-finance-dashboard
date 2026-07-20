@@ -2,33 +2,26 @@ data "oci_identity_availability_domains" "ads" {
   compartment_id = var.tenancy_ocid
 }
 
-# Ubuntu 22.04 for ARM (A1 Flex shape)
-data "oci_core_images" "ubuntu_arm" {
+# Oracle Linux 9 for AMD (E2.1.Micro — Always Free)
+data "oci_core_images" "oracle_linux_amd" {
   compartment_id           = var.compartment_ocid
-  operating_system         = "Canonical Ubuntu"
-  operating_system_version = "22.04"
-  shape                    = "VM.Standard.A1.Flex"
+  operating_system         = "Oracle Linux"
+  operating_system_version = "9"
+  shape                    = "VM.Standard.E2.1.Micro"
   sort_by                  = "TIMECREATED"
   sort_order               = "DESC"
   state                    = "AVAILABLE"
 }
 
 resource "oci_core_instance" "main" {
-  compartment_id = var.compartment_ocid
-  # Try AD index 0 first. If you get "out of capacity", change var.availability_domain to 1 or 2.
+  compartment_id      = var.compartment_ocid
   availability_domain = data.oci_identity_availability_domains.ads.availability_domains[var.availability_domain].name
   display_name        = "moneytalks"
-  shape               = "VM.Standard.A1.Flex"
-
-  shape_config {
-    # 2 OCPUs + 12 GB leaves room for future apps (free tier: 4 OCPU / 24 GB total)
-    ocpus         = 2
-    memory_in_gbs = 12
-  }
+  shape               = "VM.Standard.E2.1.Micro"
 
   source_details {
     source_type             = "image"
-    source_id               = data.oci_core_images.ubuntu_arm.images[0].id
+    source_id               = data.oci_core_images.oracle_linux_amd.images[0].id
     boot_volume_size_in_gbs = 50
   }
 
