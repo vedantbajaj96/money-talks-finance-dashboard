@@ -82,7 +82,7 @@ async def upload_csv(
 
 
 @router.post("/api/repair")
-async def repair_data(current_user: str = Depends(get_current_user)) -> dict:
+def repair_data(current_user: str = Depends(get_current_user)) -> dict:
     df = load_df(current_user)
     if df is None:
         raise HTTPException(404, "No data")

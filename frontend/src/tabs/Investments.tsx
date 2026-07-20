@@ -3,6 +3,7 @@ import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { TRANSACTIONS, CATEGORIES, ACCOUNTS, MONTHS, RECURRING, NET_WORTH_HISTORY } from '@/lib/fin';
 import { fmtMoney, fmtMoney2, fmtAbbr, fmt, catById, acctById, txnsForMonth, sumByCategory, monthSummary } from '@/lib/helpers';
 import { apiFetch } from '@/lib/api';
+import { TabHero } from '@/components';
 
 const ASSET_COLORS = {
   'Equities':    '#5ec98a',
@@ -415,6 +416,19 @@ function InvestmentsTab() {
 
   return (
     <div style={{ padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: 24 }}>
+
+      <TabHero
+        value={totalValue}
+        format={fmtMoney}
+        label="Investment Portfolio"
+        sublabel="total portfolio value"
+        positive={totalGain == null ? undefined : totalGain >= 0}
+        stats={[
+          { val: totalGain != null ? `${totalGain >= 0 ? '+' : '−'}${fmtMoney(Math.abs(totalGain))}` : '—', key: 'Unrealized gain' },
+          { val: fmtMoney(ytdContribs), key: `${new Date().getFullYear()} contributions` },
+          { val: String(holdings.length), key: 'Positions' },
+        ]}
+      />
 
       {invData.errors?.length > 0 && (
         <div style={{

@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { apiFetch } from '@/lib/api';
 import { fmtMoney, fmt, catById } from '@/lib/helpers';
+import { TabHero } from '@/components';
 
 function FlaggedTab() {
   const [data, setData]       = useState(null);
@@ -119,6 +120,19 @@ function FlaggedTab() {
 
   return (
     <div style={{ maxWidth: 820, margin: '0 auto', padding: '28px 24px' }}>
+
+      <TabHero
+        value={activePairs.length + flaggedList.length}
+        format={(n) => Math.round(n).toString()}
+        label="Needs Attention"
+        sublabel={activePairs.length + flaggedList.length === 0 ? 'no issues found' : `${activePairs.length} possible duplicate${activePairs.length !== 1 ? 's' : ''} · ${flaggedList.length} flagged`}
+        positive={activePairs.length + flaggedList.length === 0}
+        stats={[
+          { val: String(activePairs.length), key: 'Duplicates' },
+          { val: String(flaggedList.length), key: 'Flagged' },
+          { val: String(highCount), key: 'High confidence' },
+        ]}
+      />
 
       {/* Header */}
       <div style={{ marginBottom: 20 }}>

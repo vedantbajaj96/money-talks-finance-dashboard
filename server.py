@@ -30,7 +30,6 @@ Build frontend before running in production:
 
 from __future__ import annotations
 
-import datetime
 import logging
 import logging.handlers
 import sys
@@ -74,12 +73,11 @@ sys.excepthook = _excepthook
 
 import uvicorn
 from fastapi import FastAPI, Request, Response
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from core import limiter
-from core.auth import SESSION_COOKIE, _sessions
 from routes.auth_routes import router as auth_router
 from routes.categories_routes import router as categories_router
 from routes.chat_routes import router as chat_router
@@ -91,6 +89,7 @@ from routes.upload_routes import router as upload_router
 from routes.portfolio_routes import router as portfolio_router
 from routes.trips_routes import router as trips_router
 from routes.shared_routes import router as shared_router
+from routes.verify_routes import router as verify_router
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -98,7 +97,6 @@ from routes.shared_routes import router as shared_router
 
 BASE_DIR = Path(__file__).parent
 DIST_DIR = BASE_DIR / "frontend" / "dist"   # Vite production build output
-LOGIN_HTML = BASE_DIR / "moneytalks" / "login.html"
 
 # ---------------------------------------------------------------------------
 # App + routers
@@ -146,15 +144,11 @@ app.include_router(feedback_router)
 app.include_router(portfolio_router)
 app.include_router(trips_router)
 app.include_router(shared_router)
+app.include_router(verify_router)
 
 # ---------------------------------------------------------------------------
 # Serve the React frontend — must be last so /api/* routes take priority.
 # ---------------------------------------------------------------------------
-
-@app.get("/login")
-def serve_login() -> FileResponse:
-    return FileResponse(LOGIN_HTML)
-
 
 @app.get("/{filename:path}")
 def serve_frontend(filename: str = "", request: Request = None) -> Response:
@@ -163,14 +157,6 @@ def serve_frontend(filename: str = "", request: Request = None) -> Response:
         return JSONResponse({"detail": "Not found"}, status_code=404)
 
     path = DIST_DIR / filename if filename else DIST_DIR / "index.html"
-
-    # Assets have content-hashed filenames — no auth check needed, safe to cache
-    is_asset = path.suffix in (".js", ".css", ".png", ".ico", ".svg", ".woff", ".woff2", ".webmanifest")
-    if not is_asset:
-        token   = request.cookies.get(SESSION_COOKIE) if request else None
-        session = _sessions.get(token) if token else None
-        if not session or datetime.datetime.utcnow() > session.get("expires", datetime.datetime.min):
-            return RedirectResponse("/login")
 
     # SPA fallback: any unknown path serves index.html so client-side routing works
     if not path.exists() or not path.is_file():

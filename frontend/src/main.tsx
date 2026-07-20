@@ -6,6 +6,7 @@ import React, { lazy, Suspense } from 'react';
 import ReactDOM from 'react-dom/client';
 import { _populate } from '@/lib/fin';
 import '@/styles/index.css';
+import LoginPage from '@/pages/LoginPage';
 
 const App = lazy(() => import('@/App'));
 
@@ -70,7 +71,13 @@ async function bootstrap() {
   let data;
   try {
     const res = await fetch('/api/fin');
-    if (res.status === 401) { window.location.href = '/login'; return; }
+    if (res.status === 401) {
+      document.getElementById('root')!.innerHTML = '';
+      ReactDOM.createRoot(document.getElementById('root')!).render(
+        <React.StrictMode><LoginPage onSuccess={() => bootstrap()} /></React.StrictMode>
+      );
+      return;
+    }
     data = await res.json();
     clearInterval(timer);
   } catch {

@@ -1,8 +1,10 @@
 // App shell — ported from moneytalks/app.jsx
 import React, { Component, useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
-import { MONTHS, _populate } from '@/lib/fin';
+import { MONTHS, TRANSACTIONS, _populate } from '@/lib/fin';
 import { apiFetch } from '@/lib/api';
 import { useTweaks, TweaksPanel, TweakSection, TweakToggle, TweakRadio } from '@/components/TweaksPanel';
+import TabSkeleton from '@/components/TabSkeleton';
+import VerifyModal from '@/components/modals/VerifyModal';
 
 // ── Lazy tab imports ─────────────────────────────────────────────
 const MonthlyTab    = lazy(() => import('@/tabs/Overview'));
@@ -256,6 +258,7 @@ const TWEAK_DEFAULTS = {
   monoNumbers: true,
   sidebarLayout: 'labeled',
   darkMode: false,
+  monthlyReminder: true,
 };
 
 const ACCENT_PRESETS: Record<string, { accent: string; accent2: string; terra: string }> = {
@@ -587,6 +590,117 @@ function BottomNav({ active, onChange }: { active: string | null; onChange: (t: 
   );
 }
 
+// ── Upload reminder banner ────────────────────────────────────────
+function UploadReminder({ onUpload, finVersion, enabled }: { onUpload: () => void; finVersion: number; enabled: boolean }) {
+  const now         = new Date();
+  const day         = now.getDate();
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const inWindow    = day >= daysInMonth - 4 || day <= 3;
+
+  // Month the reminder refers to (current month if near end, previous if early next month)
+  const refDate   = day <= 3
+    ? new Date(now.getFullYear(), now.getMonth() - 1, 1)
+    : new Date(now.getFullYear(), now.getMonth(), 1);
+  const monthKey  = `${refDate.getFullYear()}-${String(refDate.getMonth() + 1).padStart(2, '0')}`;
+  const monthName = refDate.toLocaleString('default', { month: 'long', year: 'numeric' });
+  const storageKey = `mt_upload_reminder_${monthKey}`;
+
+  const [dismissed, setDismissed] = useState(() => localStorage.getItem(storageKey) === '1');
+
+  useEffect(() => { setDismissed(localStorage.getItem(storageKey) === '1'); }, [storageKey, finVersion]);
+
+  if (!enabled || !inWindow || dismissed) return null;
+
+  // Find accounts with possible duplicates flagged during sync
+  const dupAccounts = [...new Set(
+    TRANSACTIONS
+      .filter(t => (t as any).notes?.includes('Possible duplicate'))
+      .map(t => (t as any).account as string)
+      .filter(Boolean)
+  )];
+
+  if (dupAccounts.length === 0) return null;
+
+  const accountList = dupAccounts.length === 1
+    ? dupAccounts[0]
+    : dupAccounts.slice(0, -1).join(', ') + ' and ' + dupAccounts[dupAccounts.length - 1];
+
+  function dismiss() {
+    localStorage.setItem(storageKey, '1');
+    setDismissed(true);
+  }
+
+  return (
+    <div className="upload-reminder">
+      <div className="upload-reminder-icon">📋</div>
+      <div className="upload-reminder-body">
+        <div className="upload-reminder-title">Possible duplicates in {monthName}</div>
+        <div className="upload-reminder-sub">
+          Upload a statement for <strong>{accountList}</strong> to verify and resolve them.
+        </div>
+      </div>
+      <div className="upload-reminder-actions">
+        <button className="upload-reminder-btn-primary" onClick={onUpload}>Upload</button>
+        <button className="upload-reminder-btn-dismiss" onClick={dismiss}>Dismiss</button>
+      </div>
+    </div>
+  );
+}
+
+// ── Install banner ───────────────────────────────────────────────
+function InstallBanner() {
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [dismissed, setDismissed] = useState(() => localStorage.getItem('mt_install_dismissed') === '1');
+
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent)
+    && !/(CriOS|FxiOS|OPiOS)/.test(navigator.userAgent);
+  const isStandalone = (navigator as any).standalone === true
+    || window.matchMedia('(display-mode: standalone)').matches;
+
+  useEffect(() => {
+    const handler = (e: Event) => { e.preventDefault(); setDeferredPrompt(e); };
+    window.addEventListener('beforeinstallprompt', handler as EventListener);
+    return () => window.removeEventListener('beforeinstallprompt', handler as EventListener);
+  }, []);
+
+  function dismiss() {
+    localStorage.setItem('mt_install_dismissed', '1');
+    setDismissed(true);
+  }
+
+  async function install() {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await (deferredPrompt as any).userChoice;
+    if (outcome === 'accepted') { setDeferredPrompt(null); dismiss(); }
+  }
+
+  if (dismissed || isStandalone) return null;
+  if (!deferredPrompt && !isIOS) return null;
+
+  return (
+    <div className="upload-reminder">
+      <div className="upload-reminder-icon">📱</div>
+      <div className="upload-reminder-body">
+        <div className="upload-reminder-title">Add to Home Screen</div>
+        <div className="upload-reminder-sub">
+          {isIOS
+            ? <>Tap <strong>Share ↑</strong> then <strong>Add to Home Screen</strong></>
+            : 'Install MoneyTalks for quick access — works offline too'}
+        </div>
+      </div>
+      <div className="upload-reminder-actions">
+        {deferredPrompt && (
+          <button className="upload-reminder-btn-primary" onClick={install}>Install</button>
+        )}
+        <button className="upload-reminder-btn-dismiss" onClick={dismiss}>
+          {deferredPrompt ? 'Not now' : '✕'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Error Boundary ────────────────────────────────────────────────
 class ErrorBoundary extends Component<{ children: React.ReactNode }, { error: Error | null }> {
   constructor(props: any) {
@@ -602,14 +716,12 @@ class ErrorBoundary extends Component<{ children: React.ReactNode }, { error: Er
   render() {
     if (this.state.error) {
       return (
-        <div style={{ padding: '2rem', color: 'var(--text-muted)' }}>
-          <p style={{ fontWeight: 600, color: '#ef4444', marginBottom: 8 }}>
-            Something went wrong in this tab.
-          </p>
-          <pre style={{ fontSize: 12, whiteSpace: 'pre-wrap', marginBottom: 16 }}>
-            {this.state.error.message}
-          </pre>
-          <button className="btn-primary" onClick={() => this.setState({ error: null })}>
+        <div className="error-state">
+          <div className="error-state-icon">⚠</div>
+          <div className="error-state-title">Something went wrong</div>
+          <div className="error-state-msg">{this.state.error.message}</div>
+          <button className="btn-primary" style={{ marginTop: 8 }}
+            onClick={() => this.setState({ error: null })}>
             Try again
           </button>
         </div>
@@ -628,6 +740,7 @@ export default function App() {
   const [search, setSearch]     = useState('');
   const [txnOverrides, setTxnOverrides] = useState<Record<string, string>>({});
   const [finVersion, setFinVersion]     = useState(0);
+  const [showVerify, setShowVerify]     = useState(false);
   const [toast, setToast]               = useState<{ msg: string; type: string; id: number } | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const toastIdRef    = useRef(0);
@@ -838,10 +951,13 @@ export default function App() {
                 syncState={syncState} syncing={syncing} syncProgress={syncProgress}
                 manualSync={manualSync} isAdmin={isAdmin}
                 darkMode={t.darkMode} onToggleDark={() => setTweak('darkMode', !t.darkMode)} />
+        <InstallBanner />
+        <UploadReminder onUpload={() => setShowVerify(true)} finVersion={finVersion} enabled={t.monthlyReminder} />
+        {showVerify && <VerifyModal onClose={() => setShowVerify(false)} />}
         <div className={`page${tab ? ` tab-${tab}` : ''}`}>
           <ErrorBoundary key={tab}>
             <div key={tab} className="tab-fade">
-              <Suspense fallback={null}>
+              <Suspense fallback={<TabSkeleton />}>
                 {renderTab()}
               </Suspense>
             </div>
@@ -877,6 +993,8 @@ export default function App() {
             onChange={(v) => setTweak('sidebarLayout', v)} />
           <TweakToggle label="Mono numbers" value={t.monoNumbers}
             onChange={(v) => setTweak('monoNumbers', v)} />
+          <TweakToggle label="Monthly reminders" value={t.monthlyReminder}
+            onChange={(v) => setTweak('monthlyReminder', v)} />
         </TweakSection>
       </TweaksPanel>
     </div>

@@ -19,7 +19,7 @@ router = APIRouter()
 
 
 @router.post("/api/plaid/link-token")
-async def plaid_link_token(current_user: str = Depends(get_current_user)) -> dict:
+def plaid_link_token(current_user: str = Depends(get_current_user)) -> dict:
     cfg = load_config(current_user)
     if not cfg.get("plaid_client_id") or not cfg.get("plaid_secret"):
         raise HTTPException(400, "Plaid keys not configured — add them in Settings")
@@ -31,7 +31,7 @@ async def plaid_link_token(current_user: str = Depends(get_current_user)) -> dic
 
 
 @router.post("/api/plaid/exchange")
-async def plaid_exchange(body: dict[str, Any], current_user: str = Depends(get_current_user)) -> dict:
+def plaid_exchange(body: dict[str, Any], current_user: str = Depends(get_current_user)) -> dict:
     try:
         from core.plaid_client import exchange_and_save
         exchange_and_save(
@@ -60,7 +60,7 @@ def plaid_accounts(current_user: str = Depends(get_current_user)) -> dict:
 
 
 @router.post("/api/plaid/sync")
-async def plaid_sync(body: dict[str, Any] = {}, current_user: str = Depends(get_current_user)) -> dict:
+def plaid_sync(body: dict[str, Any] = {}, current_user: str = Depends(get_current_user)) -> dict:
     try:
         from core.plaid_client import sync_all_transactions, refresh_all, _load_items, _save_items
         from categorizer.rules import categorize_transactions
@@ -177,6 +177,8 @@ async def plaid_sync(body: dict[str, Any] = {}, current_user: str = Depends(get_
         cfg2 = load_config(current_user)
         cfg2["last_sync"] = datetime.datetime.utcnow().isoformat() + "Z"
         save_config(current_user, cfg2)
+        from core.plaid_client import invalidate_balance_cache
+        invalidate_balance_cache(data_dir)
         t_total = time.monotonic()
         logger.info("[sync:%s] total sync time: %.1fs", current_user, t_total - t0)
         return {"ok": True, "stats": stats, "errors": errors, "last_sync": cfg2["last_sync"]}
@@ -243,7 +245,7 @@ def get_investments(current_user: str = Depends(get_current_user)) -> dict:
 
 
 @router.post("/api/plaid/backfill-locations")
-async def plaid_backfill_locations(current_user: str = Depends(get_current_user)) -> dict:
+def plaid_backfill_locations(current_user: str = Depends(get_current_user)) -> dict:
     """Re-fetch full transaction history to populate lat/lon/city for existing rows."""
     cfg = load_config(current_user)
     if not cfg.get("plaid_client_id") or not cfg.get("plaid_secret"):
@@ -263,7 +265,7 @@ async def plaid_backfill_locations(current_user: str = Depends(get_current_user)
 
 
 @router.delete("/api/plaid/accounts/{item_id}")
-async def plaid_remove_account(item_id: str, current_user: str = Depends(get_current_user)) -> dict:
+def plaid_remove_account(item_id: str, current_user: str = Depends(get_current_user)) -> dict:
     try:
         from core.plaid_client import remove_account
         remove_account(item_id, data_dir=str(user_dir(current_user)))

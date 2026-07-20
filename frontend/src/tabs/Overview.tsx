@@ -5,6 +5,38 @@ import { fmtMoney, fmtAbbr, txnsForMonth, sumByCategory, monthSummary } from '@/
 import { SummaryCard, TxnList } from '@/components';
 import { DonutChart, AreaChart, Sparkline } from '@/components/charts';
 
+function MonthHero({ summary, monthLabel }) {
+  const netVal = useCountUp(summary?.net ?? 0);
+  if (!summary || summary.income === 0) return null;
+  const isPositive = summary.net >= 0;
+  const savingsRate = summary.income > 0 ? (summary.net / summary.income) * 100 : 0;
+  return (
+    <div className="month-hero">
+      <div className="hero-eyebrow">{monthLabel} · Monthly Summary</div>
+      <div className={`hero-net ${isPositive ? 'positive' : 'negative'}`}>
+        {isPositive ? '' : '–'}{fmtMoney(Math.abs(netVal))}
+      </div>
+      <div className="hero-sublabel">{isPositive ? 'net saved this month' : 'spent over income this month'}</div>
+      <div className="hero-stats">
+        <div className="hero-stat">
+          <span className="hero-stat-val">{fmtMoney(summary.income)}</span>
+          <span className="hero-stat-key">Income</span>
+        </div>
+        <div className="hero-stat-divider" />
+        <div className="hero-stat">
+          <span className="hero-stat-val">{fmtMoney(summary.expenses)}</span>
+          <span className="hero-stat-key">Expenses</span>
+        </div>
+        <div className="hero-stat-divider" />
+        <div className="hero-stat">
+          <span className="hero-stat-val">{savingsRate.toFixed(0)}%</span>
+          <span className="hero-stat-key">Saved</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MonthVibeBanner({ summary, prev }) {
   if (!summary || summary.income === 0) return null;
   const savingsRate = summary.income > 0 ? (summary.net / summary.income) * 100 : 0;
@@ -115,8 +147,11 @@ function MonthlyTab({ monthKey, txnOverrides, setTxnOverrides, refreshFin }) {
     } catch(e) {}
   };
 
+  const monthLabel = MONTHS.find(m => m.key === monthKey)?.label ?? monthKey;
+
   return (
     <div className="tab-body">
+      <MonthHero summary={summary} monthLabel={monthLabel} />
       <div className="grid-4">
         <div onClick={() => setSelectedCat(c => c === 'income' ? null : 'income')}
           style={{ cursor: 'pointer', outline: selectedCat === 'income' ? '2px solid var(--green)' : 'none', borderRadius: 16 }}>

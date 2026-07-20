@@ -256,7 +256,7 @@ def list_spaces(current_user: str = Depends(get_current_user)) -> dict:
 
 
 @router.post("/api/shared")
-async def create_space(body: dict[str, Any], current_user: str = Depends(get_current_user)) -> dict:
+def create_space(body: dict[str, Any], current_user: str = Depends(get_current_user)) -> dict:
     name       = (body.get("name") or "").strip()
     space_type = (body.get("type") or "event").strip()
     icon       = (body.get("icon") or "📦").strip()
@@ -328,7 +328,7 @@ def preview_join(token: str, current_user: str = Depends(get_current_user)) -> d
 
 
 @router.post("/api/shared/join/{token}")
-async def join_space(token: str, current_user: str = Depends(get_current_user)) -> dict:
+def join_space(token: str, current_user: str = Depends(get_current_user)) -> dict:
     tokens = _load_tokens()
     entry  = tokens.get(token)
     if not entry:
@@ -415,7 +415,7 @@ def get_space(space_id: str, current_user: str = Depends(get_current_user)) -> d
 
 
 @router.patch("/api/shared/{space_id}")
-async def update_space(space_id: str, body: dict[str, Any], current_user: str = Depends(get_current_user)) -> dict:
+def update_space(space_id: str, body: dict[str, Any], current_user: str = Depends(get_current_user)) -> dict:
     spaces = _load_spaces(current_user)
     idx    = next((i for i, s in enumerate(spaces) if s["id"] == space_id), None)
     if idx is None:
@@ -428,7 +428,7 @@ async def update_space(space_id: str, body: dict[str, Any], current_user: str = 
 
 
 @router.delete("/api/shared/{space_id}")
-async def delete_space(space_id: str, current_user: str = Depends(get_current_user)) -> dict:
+def delete_space(space_id: str, current_user: str = Depends(get_current_user)) -> dict:
     spaces = _load_spaces(current_user)
     original_len = len(spaces)
     spaces = [s for s in spaces if s["id"] != space_id]
@@ -452,7 +452,7 @@ async def delete_space(space_id: str, current_user: str = Depends(get_current_us
 
 
 @router.post("/api/shared/{space_id}/leave")
-async def leave_space(space_id: str, current_user: str = Depends(get_current_user)) -> dict:
+def leave_space(space_id: str, current_user: str = Depends(get_current_user)) -> dict:
     """Participant leaves a shared space (cannot be used by the owner)."""
     owner, space = _resolve_space(space_id, current_user)
     if current_user == owner:
@@ -469,7 +469,7 @@ async def leave_space(space_id: str, current_user: str = Depends(get_current_use
 
 
 @router.post("/api/shared/{space_id}/share")
-async def share_space(space_id: str, request: Request, current_user: str = Depends(get_current_user)) -> dict:
+def share_space(space_id: str, request: Request, current_user: str = Depends(get_current_user)) -> dict:
     spaces = _load_spaces(current_user)
     idx    = next((i for i, s in enumerate(spaces) if s["id"] == space_id), None)
     if idx is None:
@@ -492,7 +492,7 @@ async def share_space(space_id: str, request: Request, current_user: str = Depen
 
 
 @router.post("/api/shared/{space_id}/expenses")
-async def add_expense(space_id: str, body: dict[str, Any], current_user: str = Depends(get_current_user)) -> dict:
+def add_expense(space_id: str, body: dict[str, Any], current_user: str = Depends(get_current_user)) -> dict:
     owner, space = _resolve_space(space_id, current_user)
 
     txn_id = (body.get("txn_id") or "").strip()
@@ -557,7 +557,7 @@ async def add_expense(space_id: str, body: dict[str, Any], current_user: str = D
 
 
 @router.post("/api/shared/{space_id}/expenses/batch")
-async def add_expenses_batch(space_id: str, body: dict[str, Any], current_user: str = Depends(get_current_user)) -> dict:
+def add_expenses_batch(space_id: str, body: dict[str, Any], current_user: str = Depends(get_current_user)) -> dict:
     """Add multiple transactions as ref-type expenses in one request."""
     owner, space = _resolve_space(space_id, current_user)
     txn_ids = body.get("txn_ids") or []
@@ -603,7 +603,7 @@ async def add_expenses_batch(space_id: str, body: dict[str, Any], current_user: 
 
 
 @router.patch("/api/shared/{space_id}/expenses/{expense_id}")
-async def patch_expense(space_id: str, expense_id: str, body: dict[str, Any], current_user: str = Depends(get_current_user)) -> dict:
+def patch_expense(space_id: str, expense_id: str, body: dict[str, Any], current_user: str = Depends(get_current_user)) -> dict:
     """Update mutable fields on a shared expense. Manual expenses also support description/amount/date/category."""
     owner, space = _resolve_space(space_id, current_user)
     expenses = _load_expenses(owner)
@@ -627,7 +627,7 @@ async def patch_expense(space_id: str, expense_id: str, body: dict[str, Any], cu
 
 
 @router.delete("/api/shared/{space_id}/expenses/{expense_id}")
-async def delete_expense(space_id: str, expense_id: str, current_user: str = Depends(get_current_user)) -> dict:
+def delete_expense(space_id: str, expense_id: str, current_user: str = Depends(get_current_user)) -> dict:
     owner, space = _resolve_space(space_id, current_user)
 
     expenses = _load_expenses(owner)

@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { apiFetch } from '@/lib/api';
 import { fmtMoney2, fmt, catById } from '@/lib/helpers';
-import { CategoryPicker } from '@/components';
+import { CategoryPicker, TabHero } from '@/components';
 
 function AllDoneCelebration({ total, streak, setTab }) {
   const [show, setShow] = useState(false);
@@ -320,6 +320,19 @@ function ReviewTab({ refreshFin, setTab }) {
 
   return (
     <div className="tab-body review-tab-body">
+
+      <TabHero
+        value={allDone ? total : remaining}
+        format={(n) => Math.round(n).toString()}
+        label="Review Queue"
+        sublabel={allDone ? 'all transactions reviewed' : `transactions pending categorization`}
+        positive={allDone}
+        stats={[
+          { val: `${pct}%`, key: 'Complete' },
+          { val: String(approved), key: 'Approved' },
+          { val: String(groups.length), key: 'Groups' },
+        ]}
+      />
 
       {/* ── Progress header ─────────────────────────────────────────── */}
       <div className="review-progress-header">

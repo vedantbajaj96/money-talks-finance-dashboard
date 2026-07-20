@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { apiFetch } from '@/lib/api';
 import { fmtMoney, fmtMoney2, fmtAbbr, fmt, catById, acctById, txnsForMonth, sumByCategory, monthSummary } from '@/lib/helpers';
 import { TRANSACTIONS, CATEGORIES, ACCOUNTS, MONTHS, RECURRING, NET_WORTH_HISTORY } from '@/lib/fin';
-import { SummaryCard, TxnList } from '@/components';
+import { SummaryCard, TxnList, TabHero } from '@/components';
 import { AreaChart, StackedBarChart, BarList } from '@/components/charts';
 import { AccountList, RecurringTab } from './Wealth';
 import { BudgetBars, WeeklySpendChart } from './Transactions';
@@ -90,12 +90,25 @@ function CategoriesTab({ monthKey, finVersion }) {
     }),
   }));
 
+  const catMonthLabel = MONTHS.find((m) => m.key === monthKey)?.label ?? monthKey;
+
   return (
     <div className="tab-body">
+      <TabHero
+        value={total}
+        format={fmtMoney}
+        label={`Categories · ${catMonthLabel}`}
+        sublabel="total spend across all categories"
+        positive={false}
+        stats={[
+          { val: String(breakdown.length), key: 'Categories' },
+          { val: breakdown[0]?.name ?? '—', key: 'Top category' },
+        ]}
+      />
       <div className="card">
         <div className="card-head">
           <h3>Category breakdown</h3>
-          <span className="muted">{fmtMoney(total)} total · {MONTHS.find((m) => m.key === monthKey).label}</span>
+          <span className="muted">{fmtMoney(total)} total · {catMonthLabel}</span>
         </div>
         <div className="cat-grid">
           {breakdown.map((b) => (
@@ -151,6 +164,13 @@ function TrendsTab({ setTab, setMonthKey }) {
     return { ...m, ...s, savingsRate: s.income > 0 ? (s.net / s.income) * 100 : 0 };
   });
 
+  const activeMonths = data.filter(d => d.income > 0);
+  const avgSavingsRate = activeMonths.length > 0
+    ? activeMonths.reduce((s, d) => s + d.savingsRate, 0) / activeMonths.length
+    : 0;
+  const totalIncome6mo   = data.reduce((s, d) => s + d.income, 0);
+  const totalExpenses6mo = data.reduce((s, d) => s + d.expenses, 0);
+
   const incExpData = data.map((d) => ({
     label: d.short,
     segments: [
@@ -164,6 +184,18 @@ function TrendsTab({ setTab, setMonthKey }) {
 
   return (
     <div className="tab-body">
+      <TabHero
+        value={avgSavingsRate}
+        format={(n) => `${n.toFixed(0)}%`}
+        label={`Trends · Last ${MONTHS.length} Months`}
+        sublabel="average savings rate"
+        positive={avgSavingsRate >= 0}
+        stats={[
+          { val: fmtMoney(totalIncome6mo),   key: 'Total income' },
+          { val: fmtMoney(totalExpenses6mo), key: 'Total expenses' },
+          { val: String(activeMonths.length), key: 'Active months' },
+        ]}
+      />
       <div className="card">
         <div className="card-head">
           <h3>Income vs expenses</h3>

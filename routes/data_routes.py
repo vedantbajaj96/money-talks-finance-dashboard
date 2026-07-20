@@ -79,7 +79,7 @@ def get_config(request: Request, current_user: str = Depends(get_current_user)) 
 
 
 @router.post("/api/config")
-async def update_config(body: dict[str, Any], current_user: str = Depends(get_current_user)) -> dict:
+def update_config(body: dict[str, Any], current_user: str = Depends(get_current_user)) -> dict:
     cfg = load_config(current_user)
     allowed = {"anthropic_api_key", "gemini_api_key", "preferred_provider",
                "plaid_client_id", "plaid_secret", "plaid_environment",
@@ -99,7 +99,7 @@ async def update_config(body: dict[str, Any], current_user: str = Depends(get_cu
 # ---------------------------------------------------------------------------
 
 @router.post("/api/query")
-async def run_query(body: dict[str, Any], current_user: str = Depends(get_current_user)) -> dict:
+def run_query(body: dict[str, Any], current_user: str = Depends(get_current_user)) -> dict:
     sql = body.get("sql", "").strip()
     if not sql.upper().startswith("SELECT"):
         raise HTTPException(400, "Only SELECT queries are allowed")
@@ -132,7 +132,7 @@ def semantic_transaction_search(
 # ---------------------------------------------------------------------------
 
 @router.patch("/api/transactions/{txn_id}")
-async def update_transaction(
+def update_transaction(
     txn_id: str,
     body: dict[str, Any],
     current_user: str = Depends(get_current_user),
@@ -236,7 +236,7 @@ async def update_transaction(
 
 
 @router.delete("/api/transactions/{txn_id}")
-async def delete_transaction(
+def delete_transaction(
     txn_id: str,
     current_user: str = Depends(get_current_user),
 ) -> dict:
@@ -266,7 +266,7 @@ async def delete_transaction(
 
 
 @router.get("/api/transactions/trash")
-async def get_trash_items(current_user: str = Depends(get_current_user)) -> dict:
+def get_trash_items(current_user: str = Depends(get_current_user)) -> dict:
     items = load_trash(current_user)  # load_trash auto-purges expired entries
     result = []
     for it in items:
@@ -291,7 +291,7 @@ async def get_trash_items(current_user: str = Depends(get_current_user)) -> dict
 
 
 @router.post("/api/transactions/{txn_id}/restore")
-async def restore_transaction(
+def restore_transaction(
     txn_id: str,
     current_user: str = Depends(get_current_user),
 ) -> dict:
@@ -327,7 +327,7 @@ async def restore_transaction(
 
 
 @router.post("/api/transactions/{txn_id}/split")
-async def split_transaction(
+def split_transaction(
     txn_id: str,
     body: dict[str, Any],
     current_user: str = Depends(get_current_user),
@@ -374,7 +374,7 @@ async def split_transaction(
 
 
 @router.post("/api/transactions")
-async def add_transaction(
+def add_transaction(
     body: dict[str, Any],
     current_user: str = Depends(get_current_user),
 ) -> dict:
@@ -444,7 +444,7 @@ async def add_transaction(
 
 
 @router.delete("/api/transactions/{txn_id}/split")
-async def unsplit_transaction(
+def unsplit_transaction(
     txn_id: str,
     current_user: str = Depends(get_current_user),
 ) -> dict:
@@ -653,7 +653,7 @@ def get_review_batch(current_user: str = Depends(get_current_user)) -> dict:
 
 
 @router.post("/api/review/approve")
-async def approve_batch(body: dict[str, Any], current_user: str = Depends(get_current_user)) -> dict:
+def approve_batch(body: dict[str, Any], current_user: str = Depends(get_current_user)) -> dict:
     txn_ids   = body.get("ids", [])
     overrides = body.get("overrides", {})
 
@@ -881,7 +881,7 @@ def get_budgets(current_user: str = Depends(get_current_user)) -> dict:
 
 
 @router.put("/api/budgets")
-async def update_budgets(body: dict[str, Any], current_user: str = Depends(get_current_user)) -> dict:
+def update_budgets(body: dict[str, Any], current_user: str = Depends(get_current_user)) -> dict:
     # body: { category_id: amount_or_null, ... }  null removes the budget
     budgets = load_budgets(current_user)
     for cat_id, amount in body.items():

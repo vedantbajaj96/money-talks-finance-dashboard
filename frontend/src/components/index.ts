@@ -3,3 +3,4 @@ export { default as SummaryCard } from './SummaryCard';
 export { default as TxnList } from './TxnList';
 export { default as CategoryPicker } from './CategoryPicker';
 export { default as SearchableSelect } from './SearchableSelect';
+export { default as TabHero } from './TabHero';

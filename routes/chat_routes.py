@@ -80,7 +80,7 @@ def _llm_call(messages: list[dict], system: str, cfg: dict, max_tokens: int = 51
 
 
 @router.post("/api/chat")
-async def chat(body: dict[str, Any], current_user: str = Depends(get_current_user)) -> dict:
+def chat(body: dict[str, Any], current_user: str = Depends(get_current_user)) -> dict:
     messages = body.get("messages", [])
     cfg      = load_config(current_user)
 

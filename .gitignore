@@ -42,3 +42,13 @@ Design Ideas/
 # Eval outputs (contain real transaction data)
 evals/*.xlsx
 evals/*.csv
+
+# Terraform secrets — never commit actual values
+terraform/terraform.tfvars
+terraform/.terraform/
+terraform/.terraform.lock.hcl
+terraform/terraform.tfstate
+terraform/terraform.tfstate.backup
+
+# Vite build output — generated, not committed
+frontend/dist/

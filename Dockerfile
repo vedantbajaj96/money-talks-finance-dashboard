@@ -1,48 +1,33 @@
-# ── Stage 1: compile JSX (Node only needed at build time) ──────────
-FROM node:20-alpine3.20 AS jsx-builder
+# Stage 1: Build Vite frontend (Node only needed at build time)
+FROM node:20-alpine AS frontend-builder
 WORKDIR /build
-COPY moneytalks/package*.json ./
+COPY frontend/package*.json ./
 RUN npm ci
-COPY moneytalks/ ./
-RUN node -e " \
-const babel = require('@babel/core'), fs = require('fs'); \
-['tweaks-panel.jsx','charts.jsx','tabs.jsx','app.jsx'].forEach(f => { \
-  const code = babel.transformSync(fs.readFileSync(f,'utf8'), \
-    {presets:['@babel/preset-react']}).code; \
-  fs.writeFileSync(f.replace('.jsx','.js.compiled'), code); \
-}); \
-"
+COPY frontend/ ./
+RUN npm run build
 
-# ── Stage 2: Python runtime ────────────────────────────────────────
+# Stage 2: Python runtime
 FROM python:3.12-slim
 WORKDIR /app
 
-# Create non-root user for runtime security
 RUN groupadd -g 1000 appuser && useradd -d /app -u 1000 -g appuser -s /sbin/nologin appuser
 
-# Install system deps: git for deploy pull, docker-cli to control host Docker
-RUN apt-get update && apt-get install -y --no-install-recommends git docker.io && \
+RUN apt-get update && apt-get install -y --no-install-recommends git && \
     rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
 COPY --chown=appuser:appuser . .
 
-# Copy pre-compiled JSX from builder (avoids needing Node at runtime)
-COPY --chown=appuser:appuser --from=jsx-builder /build/*.js.compiled ./moneytalks/
+# Overwrite with the freshly-built frontend
+COPY --chown=appuser:appuser --from=frontend-builder /build/dist ./frontend/dist
 
 RUN chown -R appuser:appuser /app
-
-# Switch to non-root user
 USER appuser
 
-# data/ is mounted as a volume — don't bake user data into the image
 VOLUME /app/data
-
 EXPOSE 8502
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
   CMD python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:8502').read()" || exit 1
 CMD ["python3", "server.py"]

@@ -3,7 +3,7 @@ import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { TRANSACTIONS, CATEGORIES, ACCOUNTS, MONTHS, RECURRING, NET_WORTH_HISTORY } from '@/lib/fin';
 import { fmtMoney, fmtMoney2, fmtAbbr, fmt, catById, acctById, txnsForMonth, sumByCategory, monthSummary } from '@/lib/helpers';
 import { apiFetch } from '@/lib/api';
-import { SummaryCard } from '@/components';
+import { SummaryCard, TabHero } from '@/components';
 import { AreaChart } from '@/components/charts';
 
 // ═══════════════════════════════════════════════════════════════════
@@ -29,15 +29,30 @@ function NetWorthTab() {
     : null;
   const netTrend = prevNet && prevNet !== 0 ? ((net - prevNet) / Math.abs(prevNet)) * 100 : null;
 
+  const assetCount = ACCOUNTS.filter((a) => a.balance > 0).length;
+  const liabCount  = ACCOUNTS.filter((a) => a.balance < 0).length;
+
   return (
     <div className="tab-body">
+      <TabHero
+        value={net}
+        format={fmtMoney}
+        label="Net Worth"
+        sublabel={net >= 0 ? 'total assets minus liabilities' : 'liabilities exceed assets'}
+        positive={net >= 0}
+        stats={[
+          { val: fmtMoney(assets),      key: 'Assets' },
+          { val: fmtMoney(liabilities), key: 'Liabilities' },
+          { val: `${assetCount + liabCount}`,  key: 'Accounts' },
+        ]}
+      />
       <div className="grid-3">
         <SummaryCard label="Net worth" n={net} accent="var(--accent2)"
           trend={netTrend} />
         <SummaryCard label="Total assets" n={assets} accent="var(--green)"
-          sub={`${ACCOUNTS.filter((a) => a.balance > 0).length} accounts`} />
+          sub={`${assetCount} accounts`} />
         <SummaryCard label="Total liabilities" n={liabilities} accent="var(--terra)"
-          sub={`${ACCOUNTS.filter((a) => a.balance < 0).length} cards`} />
+          sub={`${liabCount} cards`} />
       </div>
 
       <div className="card">
@@ -270,8 +285,8 @@ function AccountsTab({ onSync, syncing }) {
 function RecurringTab() {
   const subs = RECURRING.filter((r) => r.category === 'subs');
   const bills = RECURRING.filter((r) => r.category !== 'subs');
-  const monthlyTotal = RECURRING.reduce((s, r) => s + r.amount, 0);
-  const subsTotal = subs.reduce((s, r) => s + r.amount, 0);
+  const monthlyTotal = RECURRING.reduce((s, r) => s + r.est_monthly, 0);
+  const subsTotal = subs.reduce((s, r) => s + r.est_monthly, 0);
 
   const FREQ_COLORS = {
     Weekly: '#f97316', 'Bi-weekly': '#fbbf24', Monthly: '#5ec98a',
@@ -332,6 +347,18 @@ function RecurringTab() {
 
   return (
     <div className="tab-body">
+      <TabHero
+        value={monthlyTotal}
+        format={fmtMoney}
+        label="Recurring Charges"
+        sublabel="estimated monthly recurring cost"
+        positive={false}
+        stats={[
+          { val: fmtMoney(subsTotal),        key: 'Subscriptions' },
+          { val: fmtMoney(monthlyTotal * 12), key: 'Annual' },
+          { val: String(RECURRING.length),    key: 'Tracked' },
+        ]}
+      />
       <div className="grid-3">
         <SummaryCard label="Monthly recurring" n={monthlyTotal} accent="var(--accent)" />
         <SummaryCard label="Subscriptions" n={subsTotal} accent="#a78bfa"

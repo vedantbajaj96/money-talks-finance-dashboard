@@ -31,7 +31,7 @@ def search_categories(q: str = "", current_user: str = Depends(get_current_user)
 
 
 @router.post("/api/categories")
-async def create_category(body: dict[str, Any], current_user: str = Depends(get_current_user)) -> dict:
+def create_category(body: dict[str, Any], current_user: str = Depends(get_current_user)) -> dict:
     name = (body.get("name") or "").strip()
     if not name:
         raise HTTPException(400, "name required")
@@ -57,7 +57,7 @@ async def create_category(body: dict[str, Any], current_user: str = Depends(get_
 
 
 @router.patch("/api/categories/{cat_id}")
-async def update_category(cat_id: str, body: dict[str, Any], current_user: str = Depends(get_current_user)) -> dict:
+def update_category(cat_id: str, body: dict[str, Any], current_user: str = Depends(get_current_user)) -> dict:
     cfg = load_config(current_user)
     if cat_id in CAT_META:
         overrides = cfg.get("category_overrides") or {}
@@ -81,7 +81,7 @@ async def update_category(cat_id: str, body: dict[str, Any], current_user: str =
 
 
 @router.post("/api/categories/reorder")
-async def reorder_categories(body: dict[str, Any], current_user: str = Depends(get_current_user)) -> dict:
+def reorder_categories(body: dict[str, Any], current_user: str = Depends(get_current_user)) -> dict:
     order = body.get("order") or []
     cfg   = load_config(current_user)
     cfg["category_order"] = order
@@ -90,7 +90,7 @@ async def reorder_categories(body: dict[str, Any], current_user: str = Depends(g
 
 
 @router.delete("/api/categories/{cat_id}")
-async def delete_category(cat_id: str, current_user: str = Depends(get_current_user)) -> dict:
+def delete_category(cat_id: str, current_user: str = Depends(get_current_user)) -> dict:
     df    = load_df(current_user)
     count = 0
     if df is not None and not df.empty:

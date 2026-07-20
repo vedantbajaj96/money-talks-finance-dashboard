@@ -3,7 +3,7 @@ import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { TRANSACTIONS, CATEGORIES, ACCOUNTS, MONTHS, RECURRING, NET_WORTH_HISTORY } from '@/lib/fin';
 import { fmtMoney, fmtMoney2, fmtAbbr, fmt, catById, acctById, txnsForMonth, sumByCategory, monthSummary } from '@/lib/helpers';
 import { apiFetch } from '@/lib/api';
-import { SummaryCard, TxnList, SearchableSelect } from '@/components';
+import { SummaryCard, TxnList, SearchableSelect, TabHero } from '@/components';
 import { AddTransactionModal } from '@/components/modals';
 
 function TransactionsTab({ monthKey, txnOverrides, setTxnOverrides, search: globalSearch = '', setSearch: setGlobalSearch, refreshFin, finVersion }) {
@@ -141,8 +141,21 @@ function TransactionsTab({ monthKey, txnOverrides, setTxnOverrides, search: glob
     } catch(e) { /* optimistic, ignore */ }
   };
 
+  const monthLabel = isGlobalSearch ? 'All Time' : (MONTHS.find((m) => m.key === monthKey)?.label ?? monthKey);
+
   return (
     <div className="tab-body">
+      <TabHero
+        value={totalOut}
+        format={fmtMoney}
+        label={`Transactions · ${monthLabel}`}
+        sublabel="total spent"
+        positive={false}
+        stats={[
+          { val: fmtMoney(totalIn),         key: 'Income' },
+          { val: String(nonTransfer.length), key: 'Transactions' },
+        ]}
+      />
       <div className="card">
         {isGlobalSearch && (
           <div style={{

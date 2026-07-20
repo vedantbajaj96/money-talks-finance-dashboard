@@ -4,7 +4,8 @@ import { createPortal } from 'react-dom';
 import { TRANSACTIONS, CATEGORIES, ACCOUNTS, MONTHS, RECURRING, NET_WORTH_HISTORY } from '@/lib/fin';
 import { fmtMoney, fmtMoney2, fmtAbbr, fmt, catById, acctById, txnsForMonth, sumByCategory, monthSummary } from '@/lib/helpers';
 import { apiFetch } from '@/lib/api';
-import { SummaryCard } from '@/components';
+import { SummaryCard, TabHero } from '@/components';
+import { DonutChart, StackedBarChart } from '@/components/charts';
 import { SHARED_CATS, SPACE_ICONS } from './Trips';
 import { BarCol } from '@/components/modals';
 
@@ -262,6 +263,7 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
   const [bulkTag, setBulkTag]         = useState('');
   const [bulkSelected, setBulkSelected] = useState(new Set());
 
+  const [detailSelectedCat, setDetailSelectedCat] = useState(null);
   const [breakdownView, setBreakdownView] = useState('category');
   useEffect(() => {
     if (!detail) return;
@@ -571,6 +573,18 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
     return { dailyRate, projected, totalThisMonth, count: thisMonthExps.length };
   }, [detail?.expenses]);
 
+  const dailyBreakdown = useMemo(() => {
+    if (!detail) return [];
+    const map = {};
+    (detail.expenses || []).forEach(e => {
+      const d = (e.date || '').slice(0, 10);
+      if (d) map[d] = (map[d] || 0) + e.amount;
+    });
+    return Object.entries(map)
+      .map(([date, amount]) => ({ date, amount }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }, [detail?.expenses]);
+
   const fmtMonth = m => {
     const [y, mo] = m.split('-');
     return `${'Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec'.split(' ')[+mo - 1]} ${y}`;
@@ -580,9 +594,24 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
   if (!detail) {
     const mySpaces     = spaces.filter(s => s.role === 'owner');
     const joinedSpaces = spaces.filter(s => s.role === 'participant');
+    const totalSharedSpent = spaces.reduce((s, sp) => s + (sp.total_spent || 0), 0);
 
     return (
       <div className="tab-body">
+        {!loading && spaces.length > 0 && (
+          <TabHero
+            value={totalSharedSpent}
+            format={fmtMoney}
+            label="Shared Expenses"
+            sublabel={`tracked across ${spaces.length} space${spaces.length !== 1 ? 's' : ''}`}
+            positive={false}
+            stats={[
+              { val: String(spaces.length), key: 'Spaces' },
+              { val: String(mySpaces.length), key: 'Created by me' },
+              { val: String(joinedSpaces.length), key: 'Joined' },
+            ]}
+          />
+        )}
         {joinPrompt && (
           <Portal>
           <div style={{ position: 'fixed', inset: 0, zIndex: 800, background: 'rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -624,7 +653,7 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
         {createOpen && (
           <Portal>
           <div style={{ position: 'fixed', inset: 0, zIndex: 800, background: 'rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setCreateOpen(false)}>
-            <div className="card" style={{ width: 380, margin: 0 }} onClick={e => e.stopPropagation()}>
+            <div className="card" style={{ width: 420, margin: 0, maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
               <h3 style={{ marginBottom: 16 }}>New shared space</h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <div>
@@ -633,15 +662,32 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
                     placeholder="e.g. Groceries, Tokyo Trip…" style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--surface-2)', color: 'var(--ink)', fontFamily: 'inherit', fontSize: 14, outline: 'none', boxSizing: 'border-box' }} />
                 </div>
                 <div>
-                  <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>Type</label>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    {[['event','🎉 Event'], ['recurring','🔁 Recurring'], ['trip','✈️ Trip']].map(([val, lbl]) => (
-                      <button key={val} onClick={() => setCreateForm(f => ({...f, type: val}))} style={{
-                        flex: 1, padding: '8px 0', border: `1px solid ${createForm.type === val ? 'var(--accent)' : 'var(--line)'}`,
-                        borderRadius: 8, background: createForm.type === val ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'none',
-                        color: createForm.type === val ? 'var(--accent)' : 'var(--ink-3)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13,
-                      }}>{lbl}</button>
-                    ))}
+                  <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 6 }}>What kind of space is this?</label>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {([
+                      { val: 'recurring', emoji: '🔁', name: 'Recurring', desc: 'Ongoing shared expenses you track month-over-month', examples: 'Groceries · Eating out · Utilities' },
+                      { val: 'trip',      emoji: '✈️', name: 'Trip',      desc: 'Travel with a start and end date', examples: 'Tokyo trip · Weekend getaway · Road trip' },
+                      { val: 'event',     emoji: '🎉', name: 'Event',     desc: 'One-off gathering or occasion', examples: 'Birthday dinner · Group outing · Party' },
+                    ] as const).map(({ val, emoji, name, desc, examples }) => {
+                      const sel = createForm.type === val;
+                      return (
+                        <button key={val} onClick={() => setCreateForm(f => ({...f, type: val}))} style={{
+                          display: 'flex', alignItems: 'flex-start', gap: 12, padding: '12px 14px',
+                          border: `1.5px solid ${sel ? 'var(--accent)' : 'var(--line)'}`,
+                          borderRadius: 10,
+                          background: sel ? 'color-mix(in srgb, var(--accent) 8%, var(--surface-2))' : 'var(--surface-2)',
+                          cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', width: '100%',
+                        }}>
+                          <span style={{ fontSize: 22, lineHeight: 1, flexShrink: 0, marginTop: 1 }}>{emoji}</span>
+                          <div>
+                            <div style={{ fontSize: 14, fontWeight: 600, color: sel ? 'var(--accent)' : 'var(--ink)', marginBottom: 2 }}>{name}</div>
+                            <div style={{ fontSize: 12, color: 'var(--ink-2)', marginBottom: 3 }}>{desc}</div>
+                            <div style={{ fontSize: 11, color: 'var(--ink-3)' }}>{examples}</div>
+                          </div>
+                          {sel && <span style={{ marginLeft: 'auto', flexShrink: 0, color: 'var(--accent)', fontSize: 16, alignSelf: 'center' }}>✓</span>}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
                 <div>
@@ -655,7 +701,7 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
                     ))}
                   </div>
                 </div>
-                {(createForm.type === 'trip') && (
+                {(createForm.type === 'trip' || createForm.type === 'event') && (
                   <div style={{ display: 'flex', gap: 8 }}>
                     <div style={{ flex: 1 }}>
                       <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>Start date</label>
@@ -1033,234 +1079,304 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
       </div>
 
       {/* ── Overview tab ── */}
-      {detailTab === 'overview' && (
-        <div>
-          {/* M/M delta headline */}
-          {(() => {
-            const cur = monthBreakdown[0];
-            const prev = monthBreakdown[1];
-            if (!cur || !prev || prev.amount === 0) return null;
-            const delta = cur.amount - prev.amount;
-            const pct = Math.abs((delta / prev.amount) * 100).toFixed(0);
-            const arrow = delta >= 0 ? '↑' : '↓';
-            const color = delta >= 0 ? 'var(--terra)' : 'var(--green)';
-            return (
-              <div style={{ fontSize: 13, color: 'var(--ink-3)', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span>Together this month:</span>
-                <span style={{ fontWeight: 700, color: 'var(--ink)', fontFamily: 'var(--font-mono)' }}>{fmtMoney(cur.amount)}</span>
-                <span style={{ color, fontWeight: 600 }}>{arrow} {pct}% vs {fmtMonth(prev.month)}</span>
-              </div>
-            );
-          })()}
+      {detailTab === 'overview' && (() => {
+        const isRecurring = detail.type === 'recurring';
 
-          {/* Summary cards */}
-          <div className="grid-4" style={{ marginBottom: 16 }}>
-            <SummaryCard label="Total spent" n={detail.total_spent || 0}
-              sub={`${expenses.length} expense${expenses.length !== 1 ? 's' : ''}`} />
-            <SummaryCard label="Your share" n={myTotal} accent="var(--accent)"
-              sub={detail.total_spent > 0 ? `${((myTotal / detail.total_spent) * 100).toFixed(0)}% of total` : null} />
-            <SummaryCard label="Others" n={otherTotal}
-              sub={detail.per_user?.length > 1 ? `${detail.per_user.length - 1} other${detail.per_user.length > 2 ? 's' : ''}` : null} />
-            {budget ? (
-              <SummaryCard label="Budget" n={budget} accent={overBudget ? 'var(--terra)' : 'var(--ink)'}
-                sub={overBudget ? `${fmtMoney(detail.total_spent - budget)} over` : `${fmtMoney(budget - detail.total_spent)} left`} />
-            ) : (
-              <SummaryCard label="Months active" value={String(monthBreakdown.length || '—')} accent="var(--ink)"
-                sub={monthBreakdown.length > 0 ? `since ${fmtMonth(monthBreakdown[monthBreakdown.length - 1]?.month || '')}` : null} />
+        // Category breakdown for trips/events
+        const catBreakdown = (detail.category_breakdown || []).map(cb => ({
+          cat: cb.category,
+          name: sharedCatById(cb.category).name,
+          color: sharedCatById(cb.category).color,
+          amount: cb.amount,
+        }));
+
+        // Monthly stacked chart for recurring
+        const monthlyChartData = [...monthBreakdown].reverse().slice(-8).map(mb => ({
+          label: fmtMonth(mb.month).slice(0, 3),
+          segments: (detail.per_user || []).map(u => {
+            const found = mb.byUser.find(bu => bu.user === u.user);
+            return { key: u.user, name: u.display_name || u.user, value: found?.amount || 0, color: participantColors[u.user] || '#94a3b8' };
+          }),
+        }));
+
+        const tripDays = detail.start_date && detail.end_date
+          ? Math.max(1, Math.round((new Date(detail.end_date) - new Date(detail.start_date)) / 86400000) + 1)
+          : null;
+        const avgPerMonth = monthBreakdown.length > 0
+          ? monthBreakdown.reduce((s, m) => s + m.amount, 0) / monthBreakdown.length
+          : 0;
+        const maxDailySpend = dailyBreakdown.length ? Math.max(...dailyBreakdown.map(d => d.amount)) : 1;
+
+        const RecentStrip = () => {
+          if (!expenses.length) return null;
+          const recent = [...expenses].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5);
+          return (
+            <div className="card">
+              <div className="card-head" style={{ marginBottom: 8 }}>
+                <h3>Recent</h3>
+                <button onClick={() => setDetailTab('expenses')} style={{ fontSize: 12, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>See all →</button>
+              </div>
+              <div className="txn-list">
+                {recent.map(e => {
+                  const catI = sharedCatById(e.category);
+                  const uColor = participantColors[e.user] || '#94a3b8';
+                  return (
+                    <div key={e.id} className="txn-row" style={{ gridTemplateColumns: '30px 1fr 28px 56px 80px' }}>
+                      <div className="txn-icon" style={{ background: `${uColor}22`, color: uColor, fontSize: 14, width: 30, height: 30 }}>
+                        {SHARED_ICONS[e.category] || '📦'}
+                      </div>
+                      <div className="txn-main">
+                        <div className="txn-merchant" style={{ fontSize: 13 }}>{e.description}</div>
+                        <div className="txn-meta">
+                          <span className="cat-pill" style={{ color: catI.color }}>{catI.name}</span>
+                        </div>
+                      </div>
+                      <div title={e.display_name || e.user} style={{ width: 24, height: 24, borderRadius: '50%', background: uColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 8, fontWeight: 700, color: '#fff', flexShrink: 0 }}>
+                        {(e.display_name || e.user).slice(0, 2).toUpperCase()}
+                      </div>
+                      <div className="txn-date">{e.date?.slice(5).replace('-', '/')}</div>
+                      <div className="txn-amt neg">{fmtMoney(e.amount)}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        };
+
+        return (
+          <div>
+            {/* M/M delta headline */}
+            {monthBreakdown.length >= 2 && (() => {
+              const cur = monthBreakdown[0];
+              const prev = monthBreakdown[1];
+              if (!cur || !prev || prev.amount === 0) return null;
+              const delta = cur.amount - prev.amount;
+              const pct = Math.abs((delta / prev.amount) * 100).toFixed(0);
+              return (
+                <div style={{ fontSize: 13, color: 'var(--ink-3)', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span>{isRecurring ? 'Together this month:' : 'This trip so far:'}</span>
+                  <span style={{ fontWeight: 700, color: 'var(--ink)', fontFamily: 'var(--font-mono)' }}>{fmtMoney(cur.amount)}</span>
+                  <span style={{ color: delta >= 0 ? 'var(--terra)' : 'var(--green)', fontWeight: 600 }}>
+                    {delta >= 0 ? '↑' : '↓'} {pct}% vs {fmtMonth(prev.month)}
+                  </span>
+                </div>
+              );
+            })()}
+
+            {/* Summary cards */}
+            <div className="grid-4" style={{ marginBottom: 16 }}>
+              <SummaryCard label="Total spent" n={detail.total_spent || 0}
+                sub={`${expenses.length} expense${expenses.length !== 1 ? 's' : ''}`} />
+              <SummaryCard label="Your share" n={myTotal} accent="var(--accent)"
+                sub={detail.total_spent > 0 ? `${((myTotal / detail.total_spent) * 100).toFixed(0)}% of total` : null} />
+              <SummaryCard label={detail.per_user?.length === 2
+                ? ((detail.per_user.find(u => u.user !== me?.username)?.display_name) || 'Others')
+                : 'Others'} n={otherTotal}
+                sub={detail.per_user?.length > 1 ? `${detail.per_user.length - 1} other${detail.per_user.length > 2 ? 's' : ''}` : null} />
+              {budget ? (
+                <SummaryCard label="Budget" n={budget} accent={overBudget ? 'var(--terra)' : 'var(--ink)'}
+                  sub={overBudget ? `${fmtMoney(detail.total_spent - budget)} over` : `${fmtMoney(budget - detail.total_spent)} left`} />
+              ) : isRecurring ? (
+                <SummaryCard label="Avg / month" n={avgPerMonth} accent="var(--ink)"
+                  sub={`over ${monthBreakdown.length} month${monthBreakdown.length !== 1 ? 's' : ''}`} />
+              ) : (
+                <SummaryCard label="Daily avg"
+                  n={(detail.total_spent || 0) / Math.max(tripDays || dailyBreakdown.length || 1, 1)}
+                  accent="var(--ink)"
+                  sub={tripDays ? `${tripDays} day trip` : `${dailyBreakdown.length} days`} />
+              )}
+            </div>
+
+            <SharedVibeBanner detail={detail} myUsername={me?.username} myTotal={myTotal} expenses={expenses} />
+
+            {/* Budget progress */}
+            {budget && (
+              <div className="card" style={{ marginBottom: 16 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>Budget progress</span>
+                  <span style={{ fontSize: 13, color: overBudget ? 'var(--terra)' : 'var(--ink-3)' }}>
+                    {fmtMoney(detail.total_spent || 0)} / {fmtMoney(budget)}
+                  </span>
+                </div>
+                <div style={{ height: 8, background: 'var(--line)', borderRadius: 4, overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${Math.min(budgetPct, 100)}%`, borderRadius: 4, background: overBudget ? 'var(--terra)' : 'var(--accent)', transition: 'width .3s' }} />
+                </div>
+              </div>
+            )}
+
+            {/* ── RECURRING: monthly chart + table ── */}
+            {isRecurring && (
+              <>
+                {velocityStats && (
+                  <div style={{ fontSize: 13, color: 'var(--ink-3)', marginBottom: 14, padding: '8px 14px', background: 'var(--surface-2)', borderRadius: 10, display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <span>📈</span>
+                    <span><b style={{ color: 'var(--ink)' }}>{fmtMoney(velocityStats.dailyRate)}/day</b> together this month · on pace for <b style={{ color: 'var(--ink)' }}>{fmtMoney(velocityStats.projected)}</b></span>
+                  </div>
+                )}
+
+                {monthlyChartData.length > 0 && (
+                  <div className="card">
+                    <div className="card-head">
+                      <h3>Monthly spending</h3>
+                      <div className="legend-inline">
+                        {(detail.per_user || []).map(u => (
+                          <span key={u.user}><i style={{ background: participantColors[u.user] || '#94a3b8' }} />{u.display_name || u.user}</span>
+                        ))}
+                      </div>
+                    </div>
+                    <StackedBarChart data={monthlyChartData} height={220} formatter={fmtAbbr} />
+                  </div>
+                )}
+
+                {monthBreakdown.length > 0 && (
+                  <div className="card">
+                    <div className="card-head"><h3>Month by month</h3></div>
+                    <table className="trend-table">
+                      <thead>
+                        <tr>
+                          <th>Month</th>
+                          {(detail.per_user || []).map(u => (
+                            <th key={u.user} style={{ textAlign: 'right' }}>{u.display_name || u.user}</th>
+                          ))}
+                          <th style={{ textAlign: 'right' }}>Combined</th>
+                          <th style={{ textAlign: 'right' }}>MoM</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {monthBreakdown.slice(0, 10).map((mb, i) => {
+                          const prev = monthBreakdown[i + 1];
+                          const moDelta = prev && prev.amount > 0
+                            ? ((mb.amount - prev.amount) / prev.amount) * 100
+                            : null;
+                          const isCurrentMonth = mb.month === new Date().toISOString().slice(0, 7);
+                          return (
+                            <tr key={mb.month}
+                              onClick={() => {
+                                const [y, mo] = mb.month.split('-');
+                                const last = new Date(+y, +mo, 0).getDate();
+                                setFilterFrom(`${mb.month}-01`);
+                                setFilterTo(`${mb.month}-${String(last).padStart(2, '0')}`);
+                                setDetailTab('expenses');
+                              }}
+                              style={{ cursor: 'pointer', fontWeight: isCurrentMonth ? 600 : undefined }}>
+                              <td style={{ fontWeight: 500 }}>{fmtMonth(mb.month)}{isCurrentMonth ? ' ·' : ''}</td>
+                              {(detail.per_user || []).map(u => {
+                                const found = mb.byUser.find(bu => bu.user === u.user);
+                                return (
+                                  <td key={u.user} style={{ textAlign: 'right', color: found ? participantColors[u.user] || 'var(--ink)' : 'var(--ink-4)' }}>
+                                    {found ? fmtMoney(found.amount) : '—'}
+                                  </td>
+                                );
+                              })}
+                              <td style={{ textAlign: 'right', fontWeight: 600 }}>{fmtMoney(mb.amount)}</td>
+                              <td style={{ textAlign: 'right', fontWeight: moDelta != null ? 600 : 400, color: moDelta == null ? 'var(--ink-4)' : moDelta >= 0 ? 'var(--terra)' : 'var(--green)' }}>
+                                {moDelta == null ? '—' : `${moDelta >= 0 ? '↑' : '↓'}${Math.abs(moDelta).toFixed(0)}%`}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                <RecentStrip />
+              </>
+            )}
+
+            {/* ── TRIP/EVENT: category donut + daily bars + per-person ── */}
+            {!isRecurring && (
+              <>
+                {/* Category donut — the main view for trips */}
+                {catBreakdown.length > 0 && (
+                  <div className="card">
+                    <div className="card-head"><h3>Spending by category</h3></div>
+                    <div className="donut-row">
+                      <DonutChart
+                        data={catBreakdown}
+                        size={180}
+                        thickness={22}
+                        formatter={fmtMoney}
+                        selectedCat={detailSelectedCat}
+                        onSliceClick={s => setDetailSelectedCat(c => c === s.cat ? null : s.cat)}
+                      />
+                      <div className="donut-legend">
+                        {catBreakdown.map(b => (
+                          <div key={b.cat} className="legend-row"
+                            style={{ cursor: 'pointer', opacity: detailSelectedCat && detailSelectedCat !== b.cat ? 0.4 : 1, transition: 'opacity .15s' }}
+                            onClick={() => setDetailSelectedCat(c => c === b.cat ? null : b.cat)}>
+                            <span className="cat-dot" style={{ background: b.color }} />
+                            <span className="legend-name">{SHARED_ICONS[b.cat] || '📦'} {b.name}</span>
+                            <span className="legend-amt">{fmtMoney(b.amount)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Daily spending bars */}
+                {dailyBreakdown.length > 1 && (
+                  <div className="card">
+                    <div className="card-head">
+                      <h3>Daily spending</h3>
+                      <span className="muted">{fmtMoney((detail.total_spent || 0) / Math.max(dailyBreakdown.length, 1))} avg/day</span>
+                    </div>
+                    <div style={{ overflowX: 'auto', padding: '0 4px 8px' }}>
+                      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 5, height: 120, minWidth: dailyBreakdown.length * 42 }}>
+                        {dailyBreakdown.map(d => (
+                          <div key={d.date} style={{ flex: 1, minWidth: 34, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                            <div style={{ fontSize: 9, color: 'var(--ink-3)', textAlign: 'center' }}>{fmtAbbr(d.amount)}</div>
+                            <div style={{ width: '100%', borderRadius: 4, minHeight: 4, height: `${Math.max(4, Math.round((d.amount / maxDailySpend) * 80))}px`, background: 'var(--accent)', opacity: 0.85 }} />
+                            <div style={{ fontSize: 9, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>{d.date.slice(5)}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Per-person for trips */}
+                {filteredPerUser.length > 0 && (
+                  <div className="card">
+                    <div className="card-head">
+                      <h3>By person</h3>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      {filteredPerUser.map(u => {
+                        const uTotal = u.filteredTotal || 0;
+                        const periodTotal = filteredPerUser.reduce((s, x) => s + (x.filteredTotal || 0), 0);
+                        const pct = periodTotal > 0 ? (uTotal / periodTotal) * 100 : 0;
+                        const isMe = u.user === me?.username;
+                        const uColor = participantColors[u.user];
+                        return (
+                          <div key={u.user}
+                            onClick={() => { setFilterUser(u.user); setDetailTab('expenses'); }}
+                            className="month-row"
+                            style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 6px', margin: '0 -6px', borderBottom: '1px solid var(--line)', cursor: 'pointer' }}>
+                            <div style={{ width: 28, height: 28, borderRadius: '50%', background: uColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: '#fff', flexShrink: 0 }}>
+                              {(u.display_name || u.user).slice(0, 2).toUpperCase()}
+                            </div>
+                            <span style={{ flex: 1, fontSize: 14, color: 'var(--ink)' }}>{u.display_name || u.user}{isMe ? ' (you)' : ''}</span>
+                            <div style={{ width: 100, height: 5, background: 'var(--line)', borderRadius: 3, overflow: 'hidden' }}>
+                              <div style={{ height: '100%', width: `${pct}%`, borderRadius: 3, background: uColor }} />
+                            </div>
+                            <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', minWidth: 70, textAlign: 'right', fontFamily: 'var(--font-mono)', fontFeatureSettings: '"tnum"' }}>{fmtMoney(uTotal)}</span>
+                            <span style={{ fontSize: 12, color: 'var(--ink-3)', minWidth: 32, textAlign: 'right' }}>{pct.toFixed(0)}%</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                <RecentStrip />
+              </>
             )}
           </div>
-
-          <SharedVibeBanner detail={detail} myUsername={me?.username} myTotal={myTotal} expenses={expenses} />
-
-          {/* Spending velocity */}
-          {velocityStats && (
-            <div style={{ fontSize: 13, color: 'var(--ink-3)', marginBottom: 14, padding: '8px 14px', background: 'var(--surface-2)', borderRadius: 10, display: 'flex', gap: 8, alignItems: 'center' }}>
-              <span>📈</span>
-              <span><b style={{ color: 'var(--ink)' }}>{fmtMoney(velocityStats.dailyRate)}/day</b> together this month · on pace for <b style={{ color: 'var(--ink)' }}>{fmtMoney(velocityStats.projected)}</b></span>
-            </div>
-          )}
-
-          {/* Budget progress bar */}
-          {budget && (
-            <div className="card" style={{ marginBottom: 16 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>Budget progress</span>
-                <span style={{ fontSize: 13, color: overBudget ? 'var(--terra)' : 'var(--ink-3)' }}>
-                  {fmtMoney(detail.total_spent || 0)} / {fmtMoney(budget)}
-                </span>
-              </div>
-              <div style={{ height: 8, background: 'var(--line)', borderRadius: 4, overflow: 'hidden' }}>
-                <div style={{ height: '100%', width: `${Math.min(budgetPct, 100)}%`, borderRadius: 4, background: overBudget ? 'var(--terra)' : 'var(--accent)', transition: 'width .3s' }} />
-              </div>
-            </div>
-          )}
-
-          {/* Per-person + breakdown */}
-          {(detail.per_user?.length > 0 || expenses.length > 0) && (
-            <div className="grid-2">
-              {filteredPerUser.length > 0 && (
-                <div className="card">
-                  <div className="card-head">
-                    <h3>By person</h3>
-                    {filterUser && <button onClick={() => setFilterUser('')} style={{ fontSize: 11, padding: '2px 8px', border: '1px solid var(--line)', borderRadius: 6, background: 'none', cursor: 'pointer', color: 'var(--ink-3)', fontFamily: 'inherit' }}>Clear</button>}
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column' }}>
-                    {filteredPerUser.map(u => {
-                      const filteredTotal = u.filteredTotal || 0;
-                      const periodTotal = filteredPerUser.reduce((s, x) => s + (x.filteredTotal || 0), 0);
-                      const pct = periodTotal > 0 ? (filteredTotal / periodTotal) * 100 : 0;
-                      const isMe = u.user === me?.username;
-                      const uColor = participantColors[u.user];
-                      const isSelected = filterUser === u.user;
-                      return (
-                        <div key={u.user}
-                          onClick={() => { setFilterUser(isSelected ? '' : u.user); setDetailTab('expenses'); }}
-                          className={`month-row${isSelected ? ' active' : ''}`}
-                          style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 6px', margin: '0 -6px', borderBottom: '1px solid var(--line)', cursor: 'pointer' }}>
-                          <div style={{ width: 28, height: 28, borderRadius: '50%', background: uColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: '#fff', flexShrink: 0 }}>
-                            {(u.display_name || u.user).slice(0,2).toUpperCase()}
-                          </div>
-                          <span style={{ flex: 1, fontSize: 14, color: isSelected ? uColor : 'var(--ink)', fontWeight: isSelected ? 600 : 400 }}>{u.display_name || u.user}{isMe ? ' (you)' : ''}</span>
-                          <div style={{ width: 100, height: 5, background: 'var(--line)', borderRadius: 3, overflow: 'hidden' }}>
-                            <div style={{ height: '100%', width: `${pct}%`, borderRadius: 3, background: uColor }} />
-                          </div>
-                          <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', minWidth: 70, textAlign: 'right', fontFamily: 'var(--font-mono)', fontFeatureSettings: '"tnum"' }}>{fmtMoney(filteredTotal)}</span>
-                          <span style={{ fontSize: 12, color: 'var(--ink-3)', minWidth: 32, textAlign: 'right' }}>{pct.toFixed(0)}%</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <div style={{ marginTop: 10, fontSize: 12, color: 'var(--ink-4)', textAlign: 'center' }}>Click a person to filter expenses</div>
-                </div>
-              )}
-              <div className="card">
-                <div className="card-head">
-                  <h3>{breakdownView === 'month' ? 'By month' : 'By category'}</h3>
-                  <div style={{ display: 'flex', gap: 4 }}>
-                    {[['category', 'Category'], ['month', 'Month']].map(([v, lbl]) => (
-                      <button key={v} onClick={() => setAndSaveBreakdownView(v)} style={{
-                        padding: '3px 10px', border: '1px solid var(--line)', borderRadius: 6,
-                        background: breakdownView === v ? 'var(--accent)' : 'none',
-                        color: breakdownView === v ? '#fff' : 'var(--ink-3)',
-                        cursor: 'pointer', fontFamily: 'inherit', fontSize: 11, fontWeight: 600,
-                      }}>{lbl}</button>
-                    ))}
-                  </div>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {breakdownView === 'month' ? (
-                    monthBreakdown.length === 0
-                      ? <div style={{ color: 'var(--ink-3)', fontSize: 13 }}>No expenses yet</div>
-                      : monthBreakdown.slice(0, 8).map((mb, i) => {
-                          const maxAmt = monthBreakdown[0]?.amount || 1;
-                          const pct = (mb.amount / maxAmt) * 100;
-                          const isActive = filterFrom === `${mb.month}-01`;
-                          const prevMb = monthBreakdown[i + 1];
-                          const moDelta = prevMb && prevMb.amount > 0
-                            ? ((mb.amount - prevMb.amount) / prevMb.amount) * 100
-                            : null;
-                          return (
-                            <div key={mb.month}
-                              onClick={() => {
-                                if (isActive) { setFilterFrom(''); setFilterTo(''); }
-                                else {
-                                  const [y, mo] = mb.month.split('-');
-                                  const last = new Date(+y, +mo, 0).getDate();
-                                  setFilterFrom(`${mb.month}-01`);
-                                  setFilterTo(`${mb.month}-${String(last).padStart(2,'0')}`);
-                                  setDetailTab('expenses');
-                                }
-                              }}
-                              className={`month-row${isActive ? ' active' : ''}`}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                <span style={{ flex: 1, fontSize: 14, color: isActive ? 'var(--accent)' : 'var(--ink)', fontWeight: isActive ? 600 : 400 }}>{fmtMonth(mb.month)}</span>
-                                <div style={{ width: 100, height: 5, background: 'var(--line)', borderRadius: 3, overflow: 'hidden', display: 'flex' }}>
-                                  {mb.byUser.map((u, i) => (
-                                    <div key={u.user} title={`${u.displayName}: ${fmtMoney(u.amount)}`}
-                                      style={{ height: '100%', width: `${(u.amount / mb.amount) * pct}%`, background: u.color,
-                                        borderRadius: i === 0 ? '3px 0 0 3px' : (i === mb.byUser.length-1 ? '0 3px 3px 0' : 0) }} />
-                                  ))}
-                                </div>
-                                <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', minWidth: 70, textAlign: 'right', fontFamily: 'var(--font-mono)', fontFeatureSettings: '"tnum"' }}>{fmtMoney(mb.amount)}</span>
-                                {moDelta !== null
-                                  ? <span style={{ fontSize: 11, fontWeight: 600, minWidth: 40, textAlign: 'right', color: moDelta >= 0 ? 'var(--terra)' : 'var(--green)' }}>{moDelta >= 0 ? '↑' : '↓'}{Math.abs(moDelta).toFixed(0)}%</span>
-                                  : <span style={{ minWidth: 40 }} />
-                                }
-                              </div>
-                              {mb.byUser.length > 1 && (
-                                <div style={{ display: 'flex', gap: 10, marginTop: 2 }}>
-                                  {mb.byUser.map(u => (
-                                    <span key={u.user} style={{ fontSize: 11, color: u.color }}>
-                                      {u.displayName.split(' ')[0]} {fmtMoney(u.amount)}
-                                    </span>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })
-                  ) : (
-                    detail.category_breakdown?.length === 0
-                      ? <div style={{ color: 'var(--ink-3)', fontSize: 13 }}>No expenses yet</div>
-                      : (detail.category_breakdown || []).slice(0, 6).map(cb => {
-                          const catI = sharedCatById(cb.category);
-                          const pct  = detail.total_spent > 0 ? (cb.amount / detail.total_spent) * 100 : 0;
-                          return (
-                            <div key={cb.category} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0', borderBottom: '1px solid var(--line)' }}>
-                              <span style={{ fontSize: 16 }}>{SHARED_ICONS[cb.category] || '📦'}</span>
-                              <span style={{ flex: 1, fontSize: 14, color: 'var(--ink)' }}>{catI.name}</span>
-                              <div style={{ width: 100, height: 5, background: 'var(--line)', borderRadius: 3, overflow: 'hidden' }}>
-                                <div style={{ height: '100%', width: `${pct}%`, borderRadius: 3, background: catI.color }} />
-                              </div>
-                              <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', minWidth: 70, textAlign: 'right', fontFamily: 'var(--font-mono)', fontFeatureSettings: '"tnum"' }}>{fmtMoney(cb.amount)}</span>
-                              <span style={{ fontSize: 12, color: 'var(--ink-3)', minWidth: 32, textAlign: 'right' }}>{pct.toFixed(0)}%</span>
-                            </div>
-                          );
-                        })
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Recent activity strip */}
-          {expenses.length > 0 && (() => {
-            const recent = [...expenses].sort((a,b) => b.date.localeCompare(a.date)).slice(0, 5);
-            return (
-              <div className="card" style={{ marginTop: 16 }}>
-                <div className="card-head" style={{ marginBottom: 8 }}>
-                  <h3>Recent</h3>
-                  <button onClick={() => setDetailTab('expenses')} style={{ fontSize: 12, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>See all →</button>
-                </div>
-                <div className="txn-list">
-                  {recent.map(e => {
-                    const catI = sharedCatById(e.category);
-                    const uColor = participantColors[e.user] || '#94a3b8';
-                    return (
-                      <div key={e.id} className="txn-row" style={{ gridTemplateColumns: '30px 1fr 28px 56px 80px' }}>
-                        <div className="txn-icon" style={{ background: `${uColor}22`, color: uColor, fontSize: 14, width: 30, height: 30 }}>
-                          {SHARED_ICONS[e.category] || '📦'}
-                        </div>
-                        <div className="txn-main">
-                          <div className="txn-merchant" style={{ fontSize: 13 }}>{e.description}</div>
-                          <div className="txn-meta">
-                            <span className="cat-pill" style={{ color: catI.color }}>{catI.name}</span>
-                          </div>
-                        </div>
-                        <div title={e.display_name || e.user} style={{ width: 24, height: 24, borderRadius: '50%', background: uColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 8, fontWeight: 700, color: '#fff', flexShrink: 0 }}>
-                          {(e.display_name || e.user).slice(0,2).toUpperCase()}
-                        </div>
-                        <div className="txn-date">{e.date?.slice(5).replace('-', '/')}</div>
-                        <div className="txn-amt neg">{fmtMoney(e.amount)}</div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })()}
-        </div>
-      )}
+        );
+      })()}
 
       {/* ── Expenses tab ── */}
       {detailTab === 'expenses' && (

@@ -3,7 +3,7 @@ import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { TRANSACTIONS, CATEGORIES, ACCOUNTS, MONTHS, RECURRING, NET_WORTH_HISTORY } from '@/lib/fin';
 import { fmtMoney, fmtMoney2, fmtAbbr, fmt, catById, acctById, txnsForMonth, sumByCategory, monthSummary } from '@/lib/helpers';
 import { apiFetch } from '@/lib/api';
-import { SummaryCard, TxnList } from '@/components';
+import { SummaryCard, TxnList, TabHero } from '@/components';
 import { DonutChart } from '@/components/charts';
 
 export const SHARED_CATS = [
@@ -406,8 +406,21 @@ function TripsTab({ refreshFin, finVersion }) {
   }
 
   // ── List view ─────────────────────────────────────────────────────
+  const totalTripSpent = trips.reduce((s, t) => s + (t.total_spent || 0), 0);
   return (
     <div style={{ padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+      <TabHero
+        value={totalTripSpent}
+        format={fmtMoney}
+        label="Trips & Events"
+        sublabel={trips.length === 0 ? 'no trips yet' : `spent across ${trips.length} trip${trips.length !== 1 ? 's' : ''}`}
+        positive={false}
+        stats={[
+          { val: String(trips.length), key: 'Trips' },
+          { val: trips.length > 0 ? fmtMoney(totalTripSpent / trips.length) : '—', key: 'Avg per trip' },
+          { val: trips.filter(t => t.budget).length > 0 ? String(trips.filter(t => t.budget).length) : '0', key: 'Budgeted' },
+        ]}
+      />
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ fontSize: 13, color: 'var(--ink-3)' }}>Track spending for a trip or event</div>
         <button onClick={() => { setCreating(v => !v); setSaveMsg(null); }} style={{

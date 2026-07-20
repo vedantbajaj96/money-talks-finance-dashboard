@@ -8,11 +8,13 @@ from __future__ import annotations
 
 import datetime
 import hashlib
+import threading
 
-import pandas as pd
-
-from core.store import get_conn, data_file, user_dir, load_config, load_splits
+from core.store import get_conn, user_dir, load_config, load_splits
 from core.categories import map_category, _resolve_category, CAT_META, ACCOUNT_COLORS
+
+_recurring_cache: dict[str, tuple[float, list]] = {}
+_recurring_lock = threading.Lock()
 
 
 def _month_labels(key: str) -> tuple[str, str, str]:
@@ -31,8 +33,9 @@ def build_fin_data(username: str) -> dict:
         ).fetchall()
     ]
     months = [
-        {"key": k, "label": _month_labels(k)[0], "short": _month_labels(k)[1]}
+        {"key": k, "label": lbl, "short": sht}
         for k in month_keys
+        for lbl, sht, _ in [_month_labels(k)]
     ]
 
     # ── ACCOUNTS ──────────────────────────────────────────────────────────
@@ -146,9 +149,15 @@ def build_fin_data(username: str) -> dict:
 
     # Pre-build approved / user_edited sets for confidence scoring
     try:
-        _conf_df = pd.read_parquet(data_file(username), columns=["txn_id", "approved", "user_edited"])
-        _approved_ids    = set(_conf_df.loc[_conf_df["approved"].fillna(False).infer_objects(copy=False).astype(bool), "txn_id"].dropna())
-        _user_edited_ids = set(_conf_df.loc[_conf_df["user_edited"].fillna(False).infer_objects(copy=False).astype(bool), "txn_id"].dropna())
+        _sel_apr = "approved"    if "approved"    in col_names else "FALSE"
+        _sel_ue  = "user_edited" if "user_edited" in col_names else "FALSE"
+        _conf_rows = conn.execute(f"""
+            SELECT txn_id, {_sel_apr} AS approved, {_sel_ue} AS user_edited
+            FROM txns
+            WHERE {_sel_apr} = TRUE OR {_sel_ue} = TRUE
+        """).fetchall()
+        _approved_ids    = {r[0] for r in _conf_rows if r[1] and r[0]}
+        _user_edited_ids = {r[0] for r in _conf_rows if r[2] and r[0]}
     except Exception:
         _approved_ids    = set()
         _user_edited_ids = set()
@@ -250,13 +259,36 @@ def build_fin_data(username: str) -> dict:
     ]
 
     # ── RECURRING ─────────────────────────────────────────────────────────
-    recurring = []
+    # Cache by parquet mtime — recurring changes only when transactions change.
+    _parquet = user_dir(username) / "transactions.parquet"
     try:
-        import calendar as _cal
-        from core.subscriptions import detect_recurring
-        df = pd.read_parquet(data_file(username))
-        rec_df = detect_recurring(df)
-        if not rec_df.empty:
+        _pmtime = _parquet.stat().st_mtime
+    except OSError:
+        _pmtime = 0.0
+
+    with _recurring_lock:
+        _cached = _recurring_cache.get(username)
+        if _cached and _cached[0] == _pmtime:
+            recurring = _cached[1]
+        else:
+            recurring = None
+
+    if recurring is None:
+        recurring = []
+        try:
+            import calendar as _cal
+            from core.subscriptions import detect_recurring
+            _txn_type_sel = "transaction_type" if "transaction_type" in col_names else "NULL"
+            df = conn.execute(f"""
+                SELECT date, description, expense_amount, category, source,
+                       {_txn_type_sel} AS transaction_type
+                FROM txns
+            """).df()
+            rec_df = detect_recurring(df)
+        except Exception:
+            rec_df = None
+
+        if rec_df is not None and not rec_df.empty:
             today = datetime.date.today()
             for _, row in rec_df.iterrows():
                 cat_id  = map_category(str(row.get("category", "other")))
@@ -318,8 +350,9 @@ def build_fin_data(username: str) -> dict:
                     "est_monthly": float(row.get("est_monthly_cost", float(row["amount"]))),
                     "last_charge": last_date.isoformat(),
                 })
-    except Exception:
-        pass
+
+        with _recurring_lock:
+            _recurring_cache[username] = (_pmtime, recurring)
 
     return {
         "hasData":           True,

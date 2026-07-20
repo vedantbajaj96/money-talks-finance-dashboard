@@ -2,8 +2,7 @@ services:
   moneytalks:
     image: vedantbajaj96/moneytalks:latest
     ports:
-      - "8502:8502"
+      - "127.0.0.1:8502:8502"
     volumes:
       - ./data:/app/data
-      - /var/run/docker.sock:/var/run/docker.sock
     restart: unless-stopped

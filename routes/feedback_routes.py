@@ -27,7 +27,7 @@ def _save_feedback(entries: list) -> None:
 
 
 @router.post("/api/feedback")
-async def submit_feedback(body: dict[str, Any], current_user: str = Depends(get_current_user)) -> dict:
+def submit_feedback(body: dict[str, Any], current_user: str = Depends(get_current_user)) -> dict:
     message = (body.get("message") or "").strip()
     if not message:
         raise HTTPException(400, "message required")

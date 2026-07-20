@@ -3,7 +3,7 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { TRANSACTIONS, ACCOUNTS, MONTHS, RECURRING } from '@/lib/fin';
 import { fmtMoney, fmt, fmtAbbr, catById, txnsForMonth, monthSummary } from '@/lib/helpers';
 import { apiFetch } from '@/lib/api';
-import { TxnList } from '@/components';
+import { TxnList, TabHero } from '@/components';
 import { Sparkline } from '@/components/charts';
 
 const OVERVIEW_WIDGETS = [
@@ -535,6 +535,18 @@ function OverviewTab() {
 
   return (
     <div className="tab-body">
+      <TabHero
+        value={netWorth.total}
+        format={fmtMoney}
+        label="Financial Overview"
+        sublabel="net worth across all accounts"
+        positive={netWorth.total >= 0}
+        stats={[
+          { val: fmtMoney(netWorth.assets), key: 'Assets' },
+          { val: fmtMoney(netWorth.liabilities), key: 'Liabilities' },
+          { val: String(ACCOUNTS.length), key: 'Accounts' },
+        ]}
+      />
       <div className="grid-overview">
         {order.map((id, idx) => renderWidget(id, idx))}
       </div>

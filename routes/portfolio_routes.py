@@ -182,7 +182,7 @@ def _compute_performance(statements: list[dict]) -> dict:
 
 
 @router.post("/api/notifications/test")
-async def test_notification(current_user: str = Depends(get_current_user)) -> dict[str, Any]:
+def test_notification(current_user: str = Depends(get_current_user)) -> dict[str, Any]:
     from core.notifier import send_test_email
     cfg       = load_config(current_user)
     email     = cfg.get("alert_email", "").strip()

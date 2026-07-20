@@ -1,0 +1,31 @@
+# Copy this file to terraform.tfvars and fill in your values.
+# terraform.tfvars is gitignored — never commit it.
+
+# ── OCI credentials ───────────────────────────────────────────────
+# Find these in the OCI console: Profile (top-right) → My profile / Tenancy
+tenancy_ocid     = "ocid1.tenancy.oc1..xxxxxxxxxxxx"
+user_ocid        = "ocid1.user.oc1..xxxxxxxxxxxx"
+compartment_ocid = "ocid1.tenancy.oc1..xxxxxxxxxxxx"   # same as tenancy_ocid for root compartment
+fingerprint      = "xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx"
+private_key_path = "~/.oci/oci_api_key.pem"
+region           = "us-ashburn-1"   # or ap-sydney-1, eu-frankfurt-1, etc.
+
+# If terraform apply fails with "out of capacity", change this to 1 or 2
+availability_domain = 0
+
+# ── SSH ──────────────────────────────────────────────────────────
+# Paste the full contents of your public key (e.g. ~/.ssh/id_ed25519.pub)
+ssh_public_key = "ssh-ed25519 AAAAC3Nza... you@yourmac"
+
+# ── Tailscale ────────────────────────────────────────────────────
+# Generate a reusable=false, expiry=none auth key at:
+# https://login.tailscale.com/admin/settings/keys
+tailscale_auth_key = "tskey-auth-xxxxxxxxxxxx"
+
+# ── App secrets ──────────────────────────────────────────────────
+# Generate with: openssl rand -hex 32
+app_secret_key = "your-64-char-hex-secret"
+
+# ── Plaid ────────────────────────────────────────────────────────
+plaid_client_id = "your-plaid-client-id"
+plaid_secret    = "your-plaid-secret"

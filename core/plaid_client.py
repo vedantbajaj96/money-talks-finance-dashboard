@@ -29,9 +29,21 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
+import time
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+# ── Balance cache — avoids a live Plaid round-trip on every /api/fin load ────
+_balance_cache: dict[str, tuple[float, list]] = {}  # data_dir → (ts, results)
+_balance_cache_lock = threading.Lock()
+_BALANCE_TTL = 300  # 5 minutes
+
+
+def invalidate_balance_cache(data_dir: str) -> None:
+    with _balance_cache_lock:
+        _balance_cache.pop(data_dir, None)
 
 import pandas as pd
 import plaid
@@ -279,10 +291,18 @@ def get_connected_accounts(data_dir: str | None = None) -> list[dict]:
 
 
 def get_account_balances(cfg: dict | None = None, data_dir: str | None = None) -> list[dict]:
-    """Live balance fetch for net worth display."""
+    """Balance fetch with 5-minute cache — avoids a Plaid round-trip on every /api/fin."""
+    cache_key = str(data_dir or "")
+    now = time.monotonic()
+
+    with _balance_cache_lock:
+        if cache_key in _balance_cache:
+            ts, cached = _balance_cache[cache_key]
+            if now - ts < _BALANCE_TTL:
+                return cached
+
     client  = _get_api_client(cfg)
     results = []
-
     for item in _load_items(data_dir):
         try:
             response = client.accounts_balance_get(
@@ -299,6 +319,9 @@ def get_account_balances(cfg: dict | None = None, data_dir: str | None = None) -
                 })
         except Exception:
             continue
+
+    with _balance_cache_lock:
+        _balance_cache[cache_key] = (now, results)
 
     return results
 

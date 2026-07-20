@@ -80,7 +80,7 @@ def list_trips(current_user: str = Depends(get_current_user)) -> dict:
 
 
 @router.post("/api/trips")
-async def create_trip(body: dict[str, Any], current_user: str = Depends(get_current_user)) -> dict:
+def create_trip(body: dict[str, Any], current_user: str = Depends(get_current_user)) -> dict:
     name       = (body.get("name") or "").strip()
     start_date = body.get("start_date", "")
     end_date   = body.get("end_date", "")
@@ -188,7 +188,7 @@ def get_trip(trip_id: str, current_user: str = Depends(get_current_user)) -> dic
 
 
 @router.patch("/api/trips/{trip_id}")
-async def update_trip(trip_id: str, body: dict[str, Any], current_user: str = Depends(get_current_user)) -> dict:
+def update_trip(trip_id: str, body: dict[str, Any], current_user: str = Depends(get_current_user)) -> dict:
     trips = _load_trips(current_user)
     idx   = next((i for i, t in enumerate(trips) if t["id"] == trip_id), None)
     if idx is None:
@@ -201,7 +201,7 @@ async def update_trip(trip_id: str, body: dict[str, Any], current_user: str = De
 
 
 @router.delete("/api/trips/{trip_id}")
-async def delete_trip(trip_id: str, current_user: str = Depends(get_current_user)) -> dict:
+def delete_trip(trip_id: str, current_user: str = Depends(get_current_user)) -> dict:
     trips = [t for t in _load_trips(current_user) if t["id"] != trip_id]
     _save_trips(current_user, trips)
     df = load_df(current_user)
@@ -213,7 +213,7 @@ async def delete_trip(trip_id: str, current_user: str = Depends(get_current_user
 
 
 @router.post("/api/trips/{trip_id}/transactions/{txn_id}")
-async def add_txn_to_trip(trip_id: str, txn_id: str, current_user: str = Depends(get_current_user)) -> dict:
+def add_txn_to_trip(trip_id: str, txn_id: str, current_user: str = Depends(get_current_user)) -> dict:
     if not any(t["id"] == trip_id for t in _load_trips(current_user)):
         raise HTTPException(404, "Trip not found")
     df = load_df(current_user)
@@ -232,7 +232,7 @@ async def add_txn_to_trip(trip_id: str, txn_id: str, current_user: str = Depends
 
 
 @router.delete("/api/trips/{trip_id}/transactions/{txn_id}")
-async def remove_txn_from_trip(trip_id: str, txn_id: str, current_user: str = Depends(get_current_user)) -> dict:
+def remove_txn_from_trip(trip_id: str, txn_id: str, current_user: str = Depends(get_current_user)) -> dict:
     df = load_df(current_user)
     if df is None or "txn_id" not in df.columns:
         raise HTTPException(404, "No data")

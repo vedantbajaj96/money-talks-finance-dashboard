@@ -31,7 +31,7 @@ def auth_status() -> dict:
 
 
 @router.post("/api/auth/setup")
-async def auth_setup(body: dict[str, Any], response: Response) -> dict:
+def auth_setup(body: dict[str, Any], response: Response) -> dict:
     users = _load_users()
     if users:
         raise HTTPException(400, "Setup already completed")
@@ -67,7 +67,7 @@ async def auth_setup(body: dict[str, Any], response: Response) -> dict:
 
 @router.post("/api/auth/login")
 @limiter.limit("5/minute")
-async def auth_login(request: Request, body: dict[str, Any], response: Response) -> dict:
+def auth_login(request: Request, body: dict[str, Any], response: Response) -> dict:
     username = (body.get("username") or "").strip().lower()
     password = body.get("password") or ""
     users    = _load_users()
@@ -82,7 +82,7 @@ async def auth_login(request: Request, body: dict[str, Any], response: Response)
 
 
 @router.post("/api/auth/logout")
-async def auth_logout(request: Request, response: Response) -> dict:
+def auth_logout(request: Request, response: Response) -> dict:
     token = request.cookies.get(SESSION_COOKIE)
     if token and token in _sessions:
         del _sessions[token]
@@ -104,7 +104,7 @@ def auth_me(request: Request, current_user: str = Depends(get_current_user)) -> 
 
 
 @router.patch("/api/auth/me")
-async def update_me(body: dict[str, Any], current_user: str = Depends(get_current_user)) -> dict:
+def update_me(body: dict[str, Any], current_user: str = Depends(get_current_user)) -> dict:
     display_name = (body.get("display_name") or "").strip()
     if not display_name:
         raise HTTPException(400, "Display name cannot be empty")
@@ -117,7 +117,7 @@ async def update_me(body: dict[str, Any], current_user: str = Depends(get_curren
 
 
 @router.post("/api/auth/register")
-async def auth_register(body: dict[str, Any], admin: str = Depends(get_admin_user)) -> dict:
+def auth_register(body: dict[str, Any], admin: str = Depends(get_admin_user)) -> dict:
     username = (body.get("username") or "").strip().lower()
     password = body.get("password") or ""
     if not username or not password:
@@ -158,7 +158,7 @@ def auth_list_users(admin: str = Depends(get_admin_user)) -> dict:
 
 
 @router.delete("/api/auth/users/{username}")
-async def auth_delete_user(username: str, admin: str = Depends(get_admin_user)) -> dict:
+def auth_delete_user(username: str, admin: str = Depends(get_admin_user)) -> dict:
     if username == admin:
         raise HTTPException(400, "Cannot delete your own account")
     users = _load_users()
@@ -173,7 +173,7 @@ async def auth_delete_user(username: str, admin: str = Depends(get_admin_user)) 
 
 
 @router.post("/api/auth/change-password")
-async def auth_change_password(body: dict[str, Any], current_user: str = Depends(get_current_user)) -> dict:
+def auth_change_password(body: dict[str, Any], current_user: str = Depends(get_current_user)) -> dict:
     old_pw = body.get("old_password") or ""
     new_pw = body.get("new_password") or ""
     if not old_pw or not new_pw:

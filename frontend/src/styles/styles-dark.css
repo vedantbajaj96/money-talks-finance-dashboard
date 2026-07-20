@@ -12,9 +12,9 @@
   --ink-4:    #606a7c;
 
   /* Muted mineral accent */
-  --accent:   #27a555;
+  --accent:   #1ab868;
   --accent-2: #38a892;
-  --green:    #27a555;
+  --green:    #1ab868;
 
   /* Deeper shadows */
   --shadow-sm: 0 1px 3px rgba(0,0,0,0.5),  0 1px 2px rgba(0,0,0,0.35);
@@ -22,7 +22,7 @@
   --shadow-lg: 0 12px 36px rgba(0,0,0,0.65), 0 2px 8px rgba(0,0,0,0.4);
 
   background:
-    radial-gradient(ellipse 1000px 600px at 90% 0%, rgba(39,165,85,0.05), transparent 65%),
+    radial-gradient(ellipse 1000px 600px at 90% 0%, rgba(26,184,104,0.05), transparent 65%),
     radial-gradient(ellipse 800px 400px at 0% 100%, rgba(56,168,146,0.04), transparent 55%),
     var(--bg);
   color: var(--ink);
@@ -49,7 +49,7 @@
 
 /* Sync dot — toned down bloom */
 .app.dark .sync-dot {
-  box-shadow: 0 0 0 2px rgba(39,165,85,0.15), 0 0 7px rgba(39,165,85,0.2);
+  box-shadow: 0 0 0 2px rgba(26,184,104,0.15), 0 0 7px rgba(26,184,104,0.2);
 }
 
 /* Topbar */
@@ -125,9 +125,9 @@
 }
 .app.dark .filter-btn:hover { background: var(--surface-3); border-color: var(--line-2); }
 .app.dark .filter-btn.active {
-  background: rgba(39,165,85,0.12);
-  border-color: rgba(39,165,85,0.35);
-  color: #3ec872;
+  background: rgba(26,184,104,0.12);
+  border-color: rgba(26,184,104,0.35);
+  color: #1dcb72;
 }
 
 /* Searchable selects */
@@ -138,9 +138,9 @@
 .app.dark .search-input input { color: var(--ink); }
 
 /* Amount colors — readable on dark */
-.app.dark .pos         { color: #3ec872; }
-.app.dark .txn-amt.pos { color: #3ec872; }
-.app.dark .sum-trend.up   { color: #3ec872; background: rgba(39,165,85,0.15); }
+.app.dark .pos         { color: #1dcb72; }
+.app.dark .txn-amt.pos { color: #1dcb72; }
+.app.dark .sum-trend.up   { color: #1dcb72; background: rgba(26,184,104,0.15); }
 .app.dark .sum-trend.down { color: #f07050; background: rgba(224,90,58,0.12); }
 
 /* Review chips */
@@ -203,14 +203,14 @@
   border-color: var(--line-2);
   color: var(--ink-3);
 }
-.app.dark .review-approve-all-btn:hover:not(:disabled) { border-color: rgba(39,165,85,0.5); color: #3ec872; }
+.app.dark .review-approve-all-btn:hover:not(:disabled) { border-color: rgba(26,184,104,0.5); color: #1dcb72; }
 
 /* Trend table */
-.app.dark .trend-table tbody tr.trend-best  { background: rgba(39,165,85,0.07); }
+.app.dark .trend-table tbody tr.trend-best  { background: rgba(26,184,104,0.07); }
 .app.dark .trend-table tbody tr.trend-worst { background: rgba(224,90,58,0.07); }
 
 /* Tab accent background gradients — slightly richer on dark */
-.app.dark .page.tab-overview    { background: linear-gradient(180deg, rgba(39,165,85,0.07)    0, transparent 140px), var(--bg); }
+.app.dark .page.tab-overview    { background: linear-gradient(180deg, rgba(26,184,104,0.07)    0, transparent 140px), var(--bg); }
 .app.dark .page.tab-txns        { background: linear-gradient(180deg, rgba(129,140,248,0.07)  0, transparent 140px), var(--bg); }
 .app.dark .page.tab-review      { background: linear-gradient(180deg, rgba(245,158,11,0.07)   0, transparent 140px), var(--bg); }
 .app.dark .page.tab-flagged     { background: linear-gradient(180deg, rgba(224,90,58,0.08)    0, transparent 140px), var(--bg); }
@@ -224,7 +224,7 @@
 .app.dark .page.tab-recurring   { background: linear-gradient(180deg, rgba(245,158,11,0.07)   0, transparent 140px), var(--bg); }
 .app.dark .page.tab-trends      { background: linear-gradient(180deg, rgba(59,130,246,0.07)   0, transparent 140px), var(--bg); }
 .app.dark .page.tab-chat        { background: linear-gradient(180deg, rgba(59,130,246,0.07)   0, transparent 140px), var(--bg); }
-.app.dark .page.tab-monthly     { background: linear-gradient(180deg, rgba(39,165,85,0.07)    0, transparent 140px), var(--bg); }
+.app.dark .page.tab-monthly     { background: linear-gradient(180deg, rgba(26,184,104,0.07)    0, transparent 140px), var(--bg); }
 .app.dark .page.tab-settings    { background: linear-gradient(180deg, rgba(148,163,184,0.05)  0, transparent 140px), var(--bg); }
 .app.dark .page.tab-feedback    { background: linear-gradient(180deg, rgba(52,211,153,0.05)   0, transparent 140px), var(--bg); }
 
