@@ -19,7 +19,8 @@
   .month-switcher { padding: 2px; }
   .month-nav { width: 22px; height: 22px; }
   .page { padding: 14px; padding-bottom: calc(64px + env(safe-area-inset-bottom)); overflow-y: auto; -webkit-overflow-scrolling: touch; }
-  .grid-2, .grid-3, .grid-4, .grid-overview { grid-template-columns: 1fr; }
+  .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+  .grid-overview { columns: 1; }
   .bar-list-row { grid-template-columns: 1fr auto; }
   .bar-list-track { display: none; }
   .txn-row { grid-template-columns: 38px 1fr auto; gap: 12px; padding: 12px 2px; min-height: 58px; }

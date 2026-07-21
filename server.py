@@ -71,6 +71,9 @@ sys.excepthook = _excepthook
 
 # ---------------------------------------------------------------------------
 
+from dotenv import load_dotenv
+load_dotenv()
+
 import uvicorn
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import FileResponse

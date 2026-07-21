@@ -2,8 +2,9 @@ import React, { useState, useRef } from 'react';
 import { apiFetch } from '@/lib/api';
 
 interface VerifyResult {
-  period:  { from: string; to: string };
-  source:  string;
+  period:            { from: string; to: string };
+  source:            string;
+  accounts_compared: string[];
   summary: { statement_total: number; matched: number; missing: number; extra: number };
   missing: { date: string; description: string; amount: number }[];
   extra:   { date: string; description: string; amount: number; source: string }[];
@@ -88,12 +89,33 @@ export default function VerifyModal({ onClose }: { onClose: () => void }) {
         )}
 
         {state === 'done' && result && (() => {
-          const { summary, period, source } = result;
+          const { summary, period, source, accounts_compared } = result;
           const allGood = summary.missing === 0;
+          const multiCard = accounts_compared && accounts_compared.length > 1;
           return (
             <>
               <div className="verify-summary">
                 <div className="verify-period">{source} · {period.from} → {period.to}</div>
+                {accounts_compared && accounts_compared.length > 0 && (
+                  <div style={{
+                    fontSize: 11.5, color: 'var(--ink-3)', marginTop: 4, marginBottom: 2,
+                    display: 'flex', alignItems: 'flex-start', gap: 5,
+                  }}>
+                    <span>Compared against:</span>
+                    <span style={{ fontWeight: 600, color: 'var(--ink-2)' }}>
+                      {accounts_compared.join(', ')}
+                    </span>
+                  </div>
+                )}
+                {multiCard && (
+                  <div style={{
+                    fontSize: 11.5, color: '#92400e', background: 'rgba(245,158,11,0.08)',
+                    border: '1px solid rgba(245,158,11,0.2)', borderRadius: 6,
+                    padding: '6px 10px', marginTop: 6,
+                  }}>
+                    You have {accounts_compared.length} cards from this bank. "Plaid-only" items may include transactions from your other card — check the description to confirm.
+                  </div>
+                )}
 
                 {summary.extra > 0 && (
                   <div className="verify-alert">

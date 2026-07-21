@@ -486,7 +486,7 @@ function PlaidSyncCard() {
             color: result.ok ? 'var(--ink)' : '#f87171',
           }}>
             {result.ok
-              ? `✓ ${result.full ? 'Full re-sync' : 'Synced'} — ${result.stats?.added ?? 0} new, ${result.stats?.modified ?? 0} updated, ${result.stats?.removed ?? 0} removed${result.stats?.added > 0 ? ' — reloading…' : ''}`
+              ? `✓ ${result.full ? 'Full re-sync' : 'Synced'} — ${result.stats?.added ?? 0} new, ${result.stats?.modified ?? 0} updated, ${result.stats?.removed ?? 0} removed`
               : `⚠ ${result.error || 'Sync failed'}`}
             {result.ok && result.errors?.length > 0 && (
               <div style={{ marginTop: 6, color: 'var(--ink-3)' }}>
@@ -522,7 +522,7 @@ function PlaidSyncCard() {
               color: backfillResult.ok ? 'var(--ink)' : '#f87171',
             }}>
               {backfillResult.ok
-                ? `✓ Updated location on ${backfillResult.updated} transaction${backfillResult.updated !== 1 ? 's' : ''}${backfillResult.updated > 0 ? ' — reloading…' : ''}`
+                ? `✓ Updated location on ${backfillResult.updated} transaction${backfillResult.updated !== 1 ? 's' : ''}`
                 : `⚠ ${backfillResult.error || 'Failed'}`}
             </div>
           )}

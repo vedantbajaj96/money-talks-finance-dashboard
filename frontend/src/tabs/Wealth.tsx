@@ -124,6 +124,7 @@ function AccountList() {
 
 function AccountsTab({ onSync, syncing }) {
   const [plaidAccounts, setPlaidAccounts] = useState([]);
+  const [balances, setBalances]           = useState([]);
   const [configured, setConfigured]       = useState(false);
   const [syncResult, setSyncResult]       = useState(null);
   const [linking, setLinking]             = useState(false);
@@ -135,7 +136,12 @@ function AccountsTab({ onSync, syncing }) {
       setPlaidAccounts(d.accounts || []);
     });
 
-  useEffect(() => { loadAccounts(); }, []);
+  const loadBalances = () =>
+    apiFetch('/api/plaid/balances').then(r => r.json()).then(d => {
+      setBalances(d.accounts || []);
+    }).catch(() => {});
+
+  useEffect(() => { loadAccounts(); loadBalances(); }, []);
 
   async function openPlaidLink() {
     setError('');
@@ -181,100 +187,158 @@ function AccountsTab({ onSync, syncing }) {
     loadAccounts();
   }
 
+  const TYPE_COLOR: Record<string, string> = { depository: 'var(--green)', investment: '#818cf8', credit: '#f97316', loan: '#ef4444' };
+  const TYPE_LABEL: Record<string, string> = { depository: 'Cash & Savings', investment: 'Investments', credit: 'Credit Cards', loan: 'Loans' };
+  const TYPE_ORDER = ['depository', 'investment', 'credit', 'loan'];
+
+  // Group live balances by type, then by institution
+  const grouped: Record<string, any[]> = {};
+  balances.forEach(b => {
+    const t = b.account_type || 'other';
+    if (!grouped[t]) grouped[t] = [];
+    grouped[t].push(b);
+  });
+
+  const totalAssets = balances.filter(b => b.account_type !== 'credit' && b.account_type !== 'loan')
+    .reduce((s, b) => s + (b.current_balance || 0), 0);
+  const totalOwed = balances.filter(b => b.account_type === 'credit' || b.account_type === 'loan')
+    .reduce((s, b) => s + (b.current_balance || 0), 0);
+
   return (
     <div className="tab-body">
-      {/* Connected accounts */}
-      <div className="card">
-        <div className="card-head">
-          <h3>Linked accounts</h3>
+
+      {/* Sync controls */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+        <div style={{ display: 'flex', gap: 8 }}>
           {plaidAccounts.length > 0 && (
-            <div style={{ display: 'flex', gap: 8 }}>
+            <>
               <button onClick={() => onSync && onSync()} disabled={syncing} style={{
                 background: 'var(--accent)', color: '#052015', border: 'none',
-                borderRadius: 8, padding: '6px 14px', fontSize: 13, fontWeight: 600,
-                fontFamily: 'inherit', cursor: syncing ? 'default' : 'pointer',
-                opacity: syncing ? 0.6 : 1,
+                borderRadius: 8, padding: '7px 16px', fontSize: 13, fontWeight: 600,
+                fontFamily: 'inherit', cursor: syncing ? 'default' : 'pointer', opacity: syncing ? 0.6 : 1,
               }}>{syncing ? 'Syncing…' : 'Sync now'}</button>
-              <button onClick={() => onSync && onSync(true)} disabled={syncing} title="Reset cursors and re-pull full transaction history" style={{
-                background: 'transparent', color: 'var(--muted)',
-                border: '1px solid var(--border)',
-                borderRadius: 8, padding: '6px 14px', fontSize: 13,
-                fontFamily: 'inherit', cursor: syncing ? 'default' : 'pointer',
-                opacity: syncing ? 0.6 : 1,
+              <button onClick={() => onSync && onSync(true)} disabled={syncing} style={{
+                background: 'transparent', color: 'var(--ink-3)', border: '1px solid var(--line)',
+                borderRadius: 8, padding: '7px 14px', fontSize: 13,
+                fontFamily: 'inherit', cursor: syncing ? 'default' : 'pointer', opacity: syncing ? 0.6 : 1,
               }}>Full re-sync</button>
-            </div>
+            </>
           )}
         </div>
-
-        {syncResult && (
-          <div style={{
-            margin: '0 0 16px', padding: '12px 16px', borderRadius: 10, fontSize: 13,
-            background: syncResult.ok
-              ? 'color-mix(in srgb, var(--accent) 8%, transparent)'
-              : 'color-mix(in srgb, #ef4444 8%, transparent)',
-            border: `1px solid ${syncResult.ok ? 'var(--accent)' : '#ef4444'}`,
-            color: syncResult.ok ? 'var(--text)' : '#ef4444',
-          }}>
-            {syncResult.ok
-              ? `✓ ${syncResult.full ? 'Full re-sync' : 'Synced'} — ${syncResult.stats?.added ?? 0} new, ${syncResult.stats?.modified ?? 0} updated, ${syncResult.stats?.removed ?? 0} removed`
-              : `⚠ ${syncResult.error || 'Sync failed'}`}
-          </div>
-        )}
-
-        {plaidAccounts.length === 0 ? (
-          <div style={{ color: 'var(--muted)', fontSize: 14, padding: '12px 0' }}>
-            No accounts linked yet.
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-            {plaidAccounts.map(acct => (
-              <div key={acct.item_id} style={{
-                display: 'flex', alignItems: 'center', gap: 14,
-                padding: '12px 0', borderBottom: '1px solid var(--border)',
-              }}>
-                <div style={{
-                  width: 36, height: 36, borderRadius: 10,
-                  background: 'var(--bg)', display: 'flex', alignItems: 'center',
-                  justifyContent: 'center', fontSize: 16, border: '1px solid var(--border)',
-                }}>🏦</div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 500, fontSize: 14 }}>{acct.institution_name}</div>
-                  <div style={{ fontSize: 12, color: 'var(--muted)' }}>via Plaid</div>
-                </div>
-                <button onClick={() => removeAccount(acct.item_id)} style={{
-                  background: 'transparent', border: '1px solid var(--border)',
-                  borderRadius: 7, padding: '5px 12px', fontSize: 12,
-                  color: 'var(--muted)', cursor: 'pointer', fontFamily: 'inherit',
-                }}>Remove</button>
-              </div>
-            ))}
-          </div>
-        )}
+        <button onClick={configured ? openPlaidLink : undefined} disabled={!configured || linking} style={{
+          background: 'transparent', color: 'var(--ink-2)', border: '1px solid var(--line)',
+          borderRadius: 8, padding: '7px 14px', fontSize: 13, fontWeight: 500,
+          fontFamily: 'inherit', cursor: configured && !linking ? 'pointer' : 'default',
+          display: 'flex', alignItems: 'center', gap: 6,
+        }}>
+          <span style={{ fontSize: 16, lineHeight: 1 }}>+</span>
+          {linking ? 'Opening Plaid…' : 'Link account'}
+        </button>
       </div>
 
-      {/* Link new account */}
+      {syncResult && (
+        <div style={{
+          padding: '12px 16px', borderRadius: 10, fontSize: 13,
+          background: syncResult.ok ? 'color-mix(in srgb, var(--accent) 8%, transparent)' : 'color-mix(in srgb, #ef4444 8%, transparent)',
+          border: `1px solid ${syncResult.ok ? 'var(--accent)' : '#ef4444'}`,
+          color: syncResult.ok ? 'var(--ink)' : '#ef4444',
+        }}>
+          {syncResult.ok
+            ? `✓ ${syncResult.full ? 'Full re-sync' : 'Synced'} — ${syncResult.stats?.added ?? 0} new, ${syncResult.stats?.modified ?? 0} updated, ${syncResult.stats?.removed ?? 0} removed`
+            : `⚠ ${syncResult.error || 'Sync failed'}`}
+        </div>
+      )}
       {error && (
-        <div style={{ marginBottom: 12, padding: '12px 16px', borderRadius: 10,
-          background: 'color-mix(in srgb, #ef4444 8%, transparent)',
-          border: '1px solid #ef4444', fontSize: 13, color: '#ef4444' }}>
+        <div style={{ padding: '12px 16px', borderRadius: 10, background: 'color-mix(in srgb, #ef4444 8%, transparent)', border: '1px solid #ef4444', fontSize: 13, color: '#ef4444' }}>
           ⚠ {error}
         </div>
       )}
 
-      <div className="card add-acct" onClick={configured ? openPlaidLink : undefined}
-        style={{ cursor: configured ? 'pointer' : 'default', opacity: linking ? 0.6 : 1 }}>
-        <div className="add-icon">{linking ? '…' : '+'}</div>
-        <div>
-          <div className="add-title">
-            {linking ? 'Opening Plaid…' : 'Link another account'}
-          </div>
-          <div className="muted">
-            {configured
-              ? 'Connect a bank or card via Plaid'
-              : 'Add your Plaid API keys in Settings first'}
-          </div>
+      {/* Net summary strip */}
+      {balances.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+          {[
+            { label: 'Total Assets',     val: totalAssets,              color: 'var(--green)' },
+            { label: 'Total Owed',       val: totalOwed,                color: '#f97316'      },
+            { label: 'Net Worth',        val: totalAssets - totalOwed,  color: 'var(--ink)'   },
+          ].map(s => (
+            <div key={s.label} className="card" style={{ padding: '14px 16px', textAlign: 'center' }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 6 }}>{s.label}</div>
+              <div style={{ fontSize: 20, fontWeight: 800, color: s.color, fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em' }}>{fmtMoney(s.val)}</div>
+            </div>
+          ))}
         </div>
-      </div>
+      )}
+
+      {/* Account cards by type */}
+      {balances.length === 0 && plaidAccounts.length === 0 ? (
+        <div className="card" style={{ textAlign: 'center', padding: '40px 24px', color: 'var(--ink-3)', fontSize: 14 }}>
+          No accounts linked yet. Click "Link account" to connect via Plaid.
+        </div>
+      ) : (
+        TYPE_ORDER.filter(t => grouped[t]?.length).map(type => (
+          <div key={type}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: TYPE_COLOR[type], textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
+              {TYPE_LABEL[type] || type}
+            </div>
+            <div className="grid-2" style={{ marginBottom: 6 }}>
+              {grouped[type].map((b, i) => {
+                const isCredit = type === 'credit' || type === 'loan';
+                const bal = b.current_balance || 0;
+                const avail = b.available_balance;
+                const limit = isCredit && avail != null ? bal + avail : null;
+                const util = limit ? bal / limit : null;
+                const inst = plaidAccounts.find(a => a.institution_name === b.institution_name);
+                return (
+                  <div key={i} className="card" style={{ padding: '18px 20px', position: 'relative' }}>
+                    {/* Top: name + institution */}
+                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 14 }}>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', marginBottom: 2 }}>{b.account_name}</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <div style={{ width: 6, height: 6, borderRadius: '50%', background: TYPE_COLOR[type] }} />
+                          <span style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>{b.institution_name}</span>
+                        </div>
+                      </div>
+                      {inst && (
+                        <button onClick={() => removeAccount(inst.item_id)} style={{
+                          background: 'transparent', border: 'none', padding: '2px 4px',
+                          fontSize: 11, color: 'var(--ink-4)', cursor: 'pointer', fontFamily: 'inherit',
+                        }} title="Remove this institution">✕</button>
+                      )}
+                    </div>
+                    {/* Balance */}
+                    <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.03em', fontVariantNumeric: 'tabular-nums',
+                      color: isCredit ? '#f97316' : type === 'investment' ? 'var(--ink)' : 'var(--green)', marginBottom: 4 }}>
+                      {isCredit && bal > 0 ? '-' : ''}{fmtMoney(bal)}
+                    </div>
+                    {avail != null && (
+                      <div style={{ fontSize: 12, color: 'var(--ink-3)' }}>
+                        {isCredit ? `${fmtMoney(avail)} available` : `${fmtMoney(avail)} available`}
+                      </div>
+                    )}
+                    {/* Utilization bar for credit */}
+                    {util != null && (
+                      <div style={{ marginTop: 12 }}>
+                        <div style={{ height: 4, background: 'var(--line)', borderRadius: 2, overflow: 'hidden' }}>
+                          <div style={{ height: '100%', width: `${Math.min(util * 100, 100)}%`, borderRadius: 2,
+                            background: util > 0.7 ? '#ef4444' : util > 0.4 ? '#f97316' : 'var(--green)',
+                            transition: 'width 0.3s ease' }} />
+                        </div>
+                        {limit && (
+                          <div style={{ fontSize: 11, color: 'var(--ink-4)', marginTop: 4 }}>
+                            {(util * 100).toFixed(0)}% of {fmtMoney(limit)} limit used
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))
+      )}
     </div>
   );
 }

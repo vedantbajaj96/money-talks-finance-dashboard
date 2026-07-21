@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { apiFetch } from '@/lib/api';
 import { fmtMoney, fmtMoney2, fmtAbbr, fmt, catById, acctById, txnsForMonth, sumByCategory, monthSummary } from '@/lib/helpers';
 import { TRANSACTIONS, CATEGORIES, ACCOUNTS, MONTHS, RECURRING, NET_WORTH_HISTORY } from '@/lib/fin';
-import { SummaryCard, TxnList, TabHero } from '@/components';
+import { SummaryCard, TxnList } from '@/components';
 import { AreaChart, StackedBarChart, BarList } from '@/components/charts';
 import { AccountList, RecurringTab } from './Wealth';
 import { BudgetBars, WeeklySpendChart } from './Transactions';
@@ -94,17 +94,6 @@ function CategoriesTab({ monthKey, finVersion }) {
 
   return (
     <div className="tab-body">
-      <TabHero
-        value={total}
-        format={fmtMoney}
-        label={`Categories · ${catMonthLabel}`}
-        sublabel="total spend across all categories"
-        positive={false}
-        stats={[
-          { val: String(breakdown.length), key: 'Categories' },
-          { val: breakdown[0]?.name ?? '—', key: 'Top category' },
-        ]}
-      />
       <div className="card">
         <div className="card-head">
           <h3>Category breakdown</h3>
@@ -184,18 +173,6 @@ function TrendsTab({ setTab, setMonthKey }) {
 
   return (
     <div className="tab-body">
-      <TabHero
-        value={avgSavingsRate}
-        format={(n) => `${n.toFixed(0)}%`}
-        label={`Trends · Last ${MONTHS.length} Months`}
-        sublabel="average savings rate"
-        positive={avgSavingsRate >= 0}
-        stats={[
-          { val: fmtMoney(totalIncome6mo),   key: 'Total income' },
-          { val: fmtMoney(totalExpenses6mo), key: 'Total expenses' },
-          { val: String(activeMonths.length), key: 'Active months' },
-        ]}
-      />
       <div className="card">
         <div className="card-head">
           <h3>Income vs expenses</h3>

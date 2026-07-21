@@ -86,6 +86,15 @@ async def verify_statement(
     period_to   = stmt["_date"].max()
     source_name = str(stmt["source"].iloc[0])
 
+    # Map CSV source name → keyword to match against stored Plaid source values.
+    # Plaid stores "Plaid – Chase", "Plaid – American Express", etc.
+    _INST_KEYWORDS: dict[str, list[str]] = {
+        "Chase Credit Card": ["chase"],
+        "Chase Bank":        ["chase"],
+        "Amex":              ["american express", "amex"],
+    }
+    inst_keywords = _INST_KEYWORDS.get(source_name, [])
+
     # ── Load stored transactions for the same period ──────────────
     stored_df = load_df(current_user)
     if stored_df is None or stored_df.empty:
@@ -96,9 +105,25 @@ async def verify_statement(
     stored_df["_amt"]  = stored_df["expense_amount"].round(2)
     stored_df["_fp"]   = stored_df["description"].apply(_fp)
 
-    # Only compare the overlapping date window
+    # Filter to same date window
     in_window = (stored_df["_date"] >= period_from) & (stored_df["_date"] <= period_to)
     window_df = stored_df[in_window].copy()
+
+    # Filter to same institution so other banks don't appear as "extra".
+    # If we have a keyword match, apply it; otherwise fall back to all rows in window.
+    if inst_keywords:
+        src_col = window_df.get("source", pd.Series("", index=window_df.index)).fillna("").str.lower()
+        inst_mask = src_col.apply(lambda s: any(kw in s for kw in inst_keywords))
+        # Also include rows that were manually CSV-imported (source == source_name)
+        csv_mask  = window_df.get("source", pd.Series("", index=window_df.index)).fillna("") == source_name
+        window_df = window_df[inst_mask | csv_mask].copy()
+
+    # Collect the distinct accounts in this window so the UI can tell the user
+    # which cards were included (important when you have 2 Chase cards).
+    accounts_compared = sorted(
+        window_df["account"].dropna().unique().tolist()
+        if "account" in window_df.columns else []
+    )
 
     # ── Fuzzy match: (amount, desc_fp) within ±3 days ────────────
     # Build lookup: (amt, fp) → [date_str, ...]
@@ -148,8 +173,9 @@ async def verify_statement(
         })
 
     return {
-        "period":  { "from": period_from, "to": period_to },
-        "source":  source_name,
+        "period":            { "from": period_from, "to": period_to },
+        "source":            source_name,
+        "accounts_compared": accounts_compared,
         "summary": {
             "statement_total": len(stmt),
             "matched":         matched_count,

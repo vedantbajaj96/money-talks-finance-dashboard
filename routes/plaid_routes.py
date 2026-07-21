@@ -59,6 +59,20 @@ def plaid_accounts(current_user: str = Depends(get_current_user)) -> dict:
         return {"configured": False, "accounts": [], "error": str(e)}
 
 
+@router.get("/api/plaid/balances")
+def plaid_balances(current_user: str = Depends(get_current_user)) -> dict:
+    try:
+        from core.plaid_client import get_account_balances, is_configured
+        cfg      = load_config(current_user)
+        data_dir = str(user_dir(current_user))
+        if not is_configured(cfg):
+            return {"configured": False, "accounts": []}
+        accounts = get_account_balances(cfg=cfg, data_dir=data_dir)
+        return {"configured": True, "accounts": accounts}
+    except Exception as e:
+        return {"configured": False, "accounts": [], "error": str(e)}
+
+
 @router.post("/api/plaid/sync")
 def plaid_sync(body: dict[str, Any] = {}, current_user: str = Depends(get_current_user)) -> dict:
     try:
@@ -115,6 +129,25 @@ def plaid_sync(body: dict[str, Any] = {}, current_user: str = Depends(get_curren
             _is_income_cat = df["category"].apply(lambda c: _mc(str(c or "")) in _income_cats)
             df.loc[mask & (df["expense_amount"] < 0) & _is_income_cat,  "transaction_type"] = "income"
             df.loc[mask & (df["expense_amount"] < 0) & ~_is_income_cat, "transaction_type"] = "expense"
+
+            # Plaid's personal_finance_category: fill uncategorized rows before LLM
+            # (free — arrives in every sync response, no extra API call).
+            # Only use VERY_HIGH/HIGH confidence to avoid mis-categorization.
+            if "plaid_category_detailed" in df.columns and "plaid_category_confidence" in df.columns:
+                from core.categories import plaid_category_to_internal as _plaid_cat
+                still_uncategorized = (
+                    df["category"].isin(["Pending Review", "pending review", ""]) | df["category"].isna()
+                ) & ~user_edited
+                if still_uncategorized.any():
+                    for idx in df.index[still_uncategorized]:
+                        mapped = _plaid_cat(df.at[idx, "plaid_category_detailed"], df.at[idx, "plaid_category_confidence"])
+                        if mapped:
+                            df.at[idx, "category"] = mapped
+                    n_filled = still_uncategorized.sum() - (
+                        df["category"].isin(["Pending Review", "pending review", ""]) | df["category"].isna()
+                    )[still_uncategorized.index].sum()
+                    if n_filled > 0:
+                        logger.info("[sync:%s] Plaid category filled %d rows (skipping LLM for those)", current_user, n_filled)
 
             # LLM categorization for still-pending unedited rows.
             # Result goes into category but approved stays False → shows in Review tab.

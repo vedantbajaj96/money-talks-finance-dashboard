@@ -3,11 +3,12 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { TRANSACTIONS, ACCOUNTS, MONTHS, RECURRING } from '@/lib/fin';
 import { fmtMoney, fmt, fmtAbbr, catById, txnsForMonth, monthSummary } from '@/lib/helpers';
 import { apiFetch } from '@/lib/api';
-import { TxnList, TabHero } from '@/components';
+import { TxnList } from '@/components';
 import { Sparkline } from '@/components/charts';
 
 const OVERVIEW_WIDGETS = [
   { id: 'networth',  label: 'Net Worth'             },
+  { id: 'accounts',  label: 'Account Balances'      },
   { id: 'quality',   label: 'Data Quality'          },
   { id: 'vs6mo',     label: 'vs. 6-Month Avg'       },
   { id: 'anomalies', label: 'Spending Alerts'       },
@@ -216,6 +217,15 @@ function OverviewTab() {
       .catch(() => {});
   }, []);
 
+  // Live account balances — fetched from /api/plaid/balances
+  const [liveBalances, setLiveBalances] = useState<any[] | null>(null);
+  useEffect(() => {
+    apiFetch('/api/plaid/balances')
+      .then(r => r.json())
+      .then(d => setLiveBalances(d.accounts || []))
+      .catch(() => setLiveBalances([]));
+  }, []);
+
   // Category spend: this month vs 6-month average
   const curMonthKey = MONTHS[MONTHS.length - 1]?.key;
   const vs6mo = useMemo(() => {
@@ -284,6 +294,101 @@ function OverviewTab() {
         </div>
       </DragCard>
     );
+
+    if (id === 'accounts') {
+      const TYPE_ORDER = ['depository', 'investment', 'credit', 'loan'];
+      const TYPE_LABEL: Record<string, string> = { depository: 'Cash', investment: 'Investments', credit: 'Credit', loan: 'Loans' };
+      const TYPE_COLOR: Record<string, string> = { depository: 'var(--green)', investment: '#818cf8', credit: '#f97316', loan: '#ef4444' };
+
+      const groups: Record<string, any[]> = {};
+      (liveBalances || []).forEach(b => {
+        const t = b.account_type || 'other';
+        if (!groups[t]) groups[t] = [];
+        groups[t].push(b);
+      });
+
+      const totalAssets = (liveBalances || [])
+        .filter(b => b.account_type !== 'credit' && b.account_type !== 'loan')
+        .reduce((s, b) => s + (b.current_balance || 0), 0);
+      const totalOwed = (liveBalances || [])
+        .filter(b => b.account_type === 'credit' || b.account_type === 'loan')
+        .reduce((s, b) => s + (b.current_balance || 0), 0);
+
+      return (
+        <DragCard key={id} id={id} index={index} order={order} onReorder={handleReorder} title="Account Balances">
+          {liveBalances === null ? (
+            <div style={{ color: 'var(--ink-3)', fontSize: 13 }}>Loading…</div>
+          ) : liveBalances.length === 0 ? (
+            <div style={{ color: 'var(--ink-3)', fontSize: 13 }}>No accounts linked.</div>
+          ) : (
+            <>
+              {/* Summary strip */}
+              <div style={{ display: 'flex', gap: 0, marginBottom: 16, borderRadius: 10, overflow: 'hidden', border: '1px solid var(--line)' }}>
+                <div style={{ flex: 1, padding: '10px 14px', background: 'color-mix(in srgb, var(--green) 8%, transparent)' }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>Assets</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--green)', fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(totalAssets)}</div>
+                </div>
+                <div style={{ width: 1, background: 'var(--line)' }} />
+                <div style={{ flex: 1, padding: '10px 14px', background: 'color-mix(in srgb, #f97316 6%, transparent)' }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>Owed</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: '#f97316', fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(totalOwed)}</div>
+                </div>
+              </div>
+
+              {/* Accounts by type */}
+              {TYPE_ORDER.filter(t => groups[t]?.length).map(type => (
+                <div key={type} style={{ marginBottom: 14 }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: TYPE_COLOR[type], textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>
+                    {TYPE_LABEL[type] || type}
+                  </div>
+                  {groups[type].map((b, i) => {
+                    const isCredit = type === 'credit' || type === 'loan';
+                    const bal = b.current_balance || 0;
+                    const avail = b.available_balance;
+                    const limit = isCredit && avail != null ? bal + avail : null;
+                    const util = limit ? bal / limit : null;
+                    return (
+                      <div key={i} style={{ marginBottom: i < groups[type].length - 1 ? 10 : 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: util != null ? 5 : 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <div style={{ width: 3, height: 28, borderRadius: 2, background: TYPE_COLOR[type], flexShrink: 0 }} />
+                            <div>
+                              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{b.account_name}</div>
+                              <div style={{ fontSize: 11, color: 'var(--ink-3)' }}>{b.institution_name}</div>
+                            </div>
+                          </div>
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontSize: 14, fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: isCredit ? '#f97316' : 'var(--ink)' }}>
+                              {isCredit ? '-' : ''}{fmtMoney(bal)}
+                            </div>
+                            {avail != null && !isCredit && (
+                              <div style={{ fontSize: 10.5, color: 'var(--ink-3)' }}>{fmtMoney(avail)} avail</div>
+                            )}
+                          </div>
+                        </div>
+                        {util != null && (
+                          <div style={{ marginLeft: 11 }}>
+                            <div style={{ height: 3, background: 'var(--line)', borderRadius: 2, overflow: 'hidden' }}>
+                              <div style={{ height: '100%', width: `${Math.min(util * 100, 100)}%`, borderRadius: 2,
+                                background: util > 0.7 ? '#ef4444' : util > 0.4 ? '#f97316' : 'var(--green)' }} />
+                            </div>
+                            {limit && (
+                              <div style={{ fontSize: 10, color: 'var(--ink-4)', marginTop: 2 }}>
+                                {(util * 100).toFixed(0)}% of {fmtMoney(limit)} limit
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+            </>
+          )}
+        </DragCard>
+      );
+    }
 
     if (id === 'quality') {
       const { total = 0, approved = 0, remaining = 0, streak = 0, last_reviewed = null } = reviewStats || {};
@@ -533,20 +638,30 @@ function OverviewTab() {
     return null;
   }
 
+  const curSummary = useMemo(() => monthSummary(curMonthKey || ''), [curMonthKey]);
+  const monthLabel = curMonthKey
+    ? new Date(curMonthKey + '-02').toLocaleString('default', { month: 'long', year: 'numeric' })
+    : 'This Month';
+
   return (
     <div className="tab-body">
-      <TabHero
-        value={netWorth.total}
-        format={fmtMoney}
-        label="Financial Overview"
-        sublabel="net worth across all accounts"
-        positive={netWorth.total >= 0}
-        stats={[
-          { val: fmtMoney(netWorth.assets), key: 'Assets' },
-          { val: fmtMoney(netWorth.liabilities), key: 'Liabilities' },
-          { val: String(ACCOUNTS.length), key: 'Accounts' },
-        ]}
-      />
+      <div className="triple-hero">
+        <div className="triple-hero-eyebrow">{monthLabel}</div>
+        <div className="triple-hero-nums">
+          <div className="triple-hero-num">
+            <span className="triple-hero-val negative">{fmtMoney(curSummary.expenses)}</span>
+            <span className="triple-hero-key">Spent</span>
+          </div>
+          <div className="triple-hero-num">
+            <span className="triple-hero-val positive">{fmtMoney(curSummary.income)}</span>
+            <span className="triple-hero-key">Income</span>
+          </div>
+          <div className="triple-hero-num">
+            <span className={`triple-hero-val ${curSummary.net >= 0 ? 'positive' : 'negative'}`}>{fmtMoney(Math.abs(curSummary.net))}</span>
+            <span className="triple-hero-key">{curSummary.net >= 0 ? 'Saved' : 'Over Budget'}</span>
+          </div>
+        </div>
+      </div>
       <div className="grid-overview">
         {order.map((id, idx) => renderWidget(id, idx))}
       </div>

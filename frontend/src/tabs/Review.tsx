@@ -2,7 +2,8 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { apiFetch } from '@/lib/api';
 import { fmtMoney2, fmt, catById } from '@/lib/helpers';
-import { CategoryPicker, TabHero } from '@/components';
+import { CategoryPicker } from '@/components';
+import VerifyModal from '@/components/modals/VerifyModal';
 
 function AllDoneCelebration({ total, streak, setTab }) {
   const [show, setShow] = useState(false);
@@ -108,6 +109,7 @@ function ReviewTab({ refreshFin, setTab }) {
   });   // txnId → per-row category override
   const [localFlags, setLocalFlags] = useState({});
   const [approving, setApproving]   = useState(false);
+  const [showVerify, setShowVerify] = useState(false);
 
   // Persist groupIdx and itemCats across sessions
   useEffect(() => {
@@ -321,19 +323,6 @@ function ReviewTab({ refreshFin, setTab }) {
   return (
     <div className="tab-body review-tab-body">
 
-      <TabHero
-        value={allDone ? total : remaining}
-        format={(n) => Math.round(n).toString()}
-        label="Review Queue"
-        sublabel={allDone ? 'all transactions reviewed' : `transactions pending categorization`}
-        positive={allDone}
-        stats={[
-          { val: `${pct}%`, key: 'Complete' },
-          { val: String(approved), key: 'Approved' },
-          { val: String(groups.length), key: 'Groups' },
-        ]}
-      />
-
       {/* ── Progress header ─────────────────────────────────────────── */}
       <div className="review-progress-header">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
@@ -348,7 +337,18 @@ function ReviewTab({ refreshFin, setTab }) {
               {approved} of {total} approved
             </div>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
+            <button
+              onClick={() => setShowVerify(true)}
+              style={{
+                fontSize: 12, fontWeight: 600, color: 'var(--ink-2)',
+                background: 'var(--surface-2)', border: '1px solid var(--line)',
+                borderRadius: 8, padding: '6px 12px', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', gap: 5,
+              }}
+            >
+              <span>📋</span> Verify Statement
+            </button>
             <div style={{
               fontSize: 36, fontWeight: 800,
               color: pct >= 90 ? 'var(--green)' : pct >= 70 ? '#fbbf24' : 'var(--accent)',
@@ -659,6 +659,7 @@ function ReviewTab({ refreshFin, setTab }) {
           )}
         </>
       )}
+      {showVerify && <VerifyModal onClose={() => setShowVerify(false)} />}
     </div>
   );
 }

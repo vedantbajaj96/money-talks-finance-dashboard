@@ -197,22 +197,34 @@ def _row_from_txn(txn: dict, inst_name: str, item_id: str) -> dict:
     amount   = txn.get("amount") or txn.get("quantity") or 0.0
     txn_id   = txn.get("transaction_id") or txn.get("investment_transaction_id") or ""
     loc      = txn.get("location") or {}
+    pfc      = txn.get("personal_finance_category") or {}
+    if not isinstance(pfc, dict):
+        pfc = {}
+    counterparties = txn.get("counterparties") or []
+    cp = counterparties[0] if counterparties else {}
+    auth_date = txn.get("authorized_date")
     return {
-        "date":               pd.to_datetime(str(date_str)),
-        "description":        str(merchant).strip(),
-        "expense_amount":     float(amount),
-        "source":             f"Plaid – {inst_name}",
-        "format":             "plaid",
-        "source_file":        f"plaid_{item_id}",
-        "plaid_txn_id":       txn_id,
-        "pending":            bool(txn.get("pending", False)),
-        "category":           None,
-        "suggested_category": None,
-        "lat":                loc.get("lat"),
-        "lon":                loc.get("lon"),
-        "location_city":      loc.get("city"),
-        "location_region":    loc.get("region"),
-        "location_address":   loc.get("address"),
+        "date":                   pd.to_datetime(str(date_str)),
+        "authorized_date":        pd.to_datetime(str(auth_date)) if auth_date else None,
+        "description":            str(merchant).strip(),
+        "expense_amount":         float(amount),
+        "source":                 f"Plaid – {inst_name}",
+        "format":                 "plaid",
+        "source_file":            f"plaid_{item_id}",
+        "plaid_txn_id":           txn_id,
+        "pending":                bool(txn.get("pending", False)),
+        "category":               None,
+        "suggested_category":     None,
+        "plaid_category_primary":    pfc.get("primary"),
+        "plaid_category_detailed":   pfc.get("detailed"),
+        "plaid_category_confidence": pfc.get("confidence_level"),
+        "merchant_logo_url":      cp.get("logo_url"),
+        "merchant_website":       cp.get("website"),
+        "lat":                    loc.get("lat"),
+        "lon":                    loc.get("lon"),
+        "location_city":          loc.get("city"),
+        "location_region":        loc.get("region"),
+        "location_address":       loc.get("address"),
     }
 
 
@@ -451,6 +463,7 @@ def sync_all_transactions(
         cursor       = item.get("cursor")
         inst_source  = f"Plaid – {inst_name}"
 
+        is_full_resync = cursor is None
         try:
             added, modified, removed, next_cursor = _fetch_delta(client, access_token, cursor)
         except Exception as exc:
@@ -482,6 +495,17 @@ def sync_all_transactions(
             remove_ids = {r["transaction_id"] for r in removed}
             df = df[~df["plaid_txn_id"].isin(remove_ids)].copy()
         total_removed += len(removed)
+
+        # Remove pending counterparts via pending_transaction_id on posted transactions.
+        # Handles banks that don't reliably send pending IDs in the removed list.
+        if added and not df.empty and "plaid_txn_id" in df.columns:
+            pending_ids = {t["pending_transaction_id"] for t in added if t.get("pending_transaction_id")}
+            if pending_ids:
+                n_before = len(df)
+                df = df[~df["plaid_txn_id"].isin(pending_ids)].copy()
+                removed_pending = n_before - len(df)
+                if removed_pending:
+                    logger.info("[sync:%s] removed %d pending rows via pending_transaction_id", inst_name, removed_pending)
 
         # Apply modifications (amount/description only; never touch user-edited categories)
         if modified and not df.empty and "plaid_txn_id" in df.columns:
@@ -586,7 +610,7 @@ def sync_all_transactions(
                         if existing_entries:
                             break
 
-                if existing_entries and _within_window(str(row["date"])[:10], existing_entries):
+                if existing_entries and _within_window(str(row["date"])[:10], existing_entries, days=2):
                     if all(eid != txn_id for _, eid in existing_entries):
                         new_date = str(row["date"])[:10]
                         exact_date_match = any(ds == new_date for ds, _ in existing_entries)
@@ -596,26 +620,29 @@ def sync_all_transactions(
                             skipped += 1
                             continue
                         else:
-                            # Date shifted slightly → likely pending→posted, flag for review
+                            # Date shifted by 1 day → likely pending→posted, flag for review
                             logger.info("[sync:%s] flagging possible duplicate (date-window): %s %.2f", inst_name, row["date"], row["expense_amount"])
                             row["notes"] = "⚠ Possible duplicate — review and delete if needed"
                             row["category"] = "Pending Review"
 
                 # Intra-batch fingerprint check: catches pending+posted arriving in the same sync
-                # response (banks that don't reliably populate Plaid's removed list)
-                batch_entries = batch_fps.get(key, [])
-                if batch_entries and _within_window(str(row["date"])[:10], batch_entries):
-                    if all(eid != txn_id for _, eid in batch_entries):
-                        new_date = str(row["date"])[:10]
-                        if any(ds == new_date for ds, _ in batch_entries):
-                            logger.info("[sync:%s] skipped intra-batch exact dup: %s %.2f on %s", inst_name, row["description"], row["expense_amount"], new_date)
-                            skipped += 1
-                            continue
-                        else:
-                            logger.info("[sync:%s] flagging intra-batch possible dup: %s %.2f", inst_name, row["description"], row["expense_amount"])
-                            if not row.get("notes"):
-                                row["notes"] = "⚠ Possible duplicate — review and delete if needed"
-                                row["category"] = "Pending Review"
+                # response (banks that don't reliably populate Plaid's removed list).
+                # Skip during full resyncs — Plaid's full history is already deduplicated by ID;
+                # running this on historical data produces false positives for recurring charges.
+                if not is_full_resync:
+                    batch_entries = batch_fps.get(key, [])
+                    if batch_entries and _within_window(str(row["date"])[:10], batch_entries):
+                        if all(eid != txn_id for _, eid in batch_entries):
+                            new_date = str(row["date"])[:10]
+                            if any(ds == new_date for ds, _ in batch_entries):
+                                logger.info("[sync:%s] skipped intra-batch exact dup: %s %.2f on %s", inst_name, row["description"], row["expense_amount"], new_date)
+                                skipped += 1
+                                continue
+                            else:
+                                logger.info("[sync:%s] flagging intra-batch possible dup: %s %.2f", inst_name, row["description"], row["expense_amount"])
+                                if not row.get("notes"):
+                                    row["notes"] = "⚠ Possible duplicate — review and delete if needed"
+                                    row["category"] = "Pending Review"
 
                 batch_fps.setdefault(key, []).append((str(row["date"])[:10], txn_id))
                 deduped.append(row)

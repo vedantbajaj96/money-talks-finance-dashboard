@@ -125,6 +125,114 @@ _REIMBURSEMENT_CATS = {"reimbursements", "Reimbursements"}
 
 
 # ---------------------------------------------------------------------------
+# Plaid personal_finance_category.detailed → our internal category ID
+# Only covers unambiguous mappings; anything not listed falls through to LLM.
+# ---------------------------------------------------------------------------
+
+PLAID_CATEGORY_MAP: dict[str, str] = {
+    # Food & drink
+    "FOOD_AND_DRINK_GROCERIES":                 "groceries",
+    "FOOD_AND_DRINK_RESTAURANTS":               "dining",
+    "FOOD_AND_DRINK_FAST_FOOD":                 "dining",
+    "FOOD_AND_DRINK_COFFEE":                    "dining",
+    "FOOD_AND_DRINK_ALCOHOL_AND_BAR":           "dining",
+    "FOOD_AND_DRINK_FOOD_DELIVERY_SERVICES":    "dining",
+    # Transportation
+    "TRANSPORTATION_GAS":                       "transport",
+    "TRANSPORTATION_TAXI":                      "transport",
+    "TRANSPORTATION_PUBLIC_TRANSIT":            "transport",
+    "TRANSPORTATION_CAR_SERVICES":              "transport",
+    "TRANSPORTATION_PARKING":                   "transport",
+    "TRANSPORTATION_AUTO_INSURANCE":            "transport",
+    "TRANSPORTATION_AUTO_MAINTENANCE":          "transport",
+    # Travel
+    "TRAVEL_FLIGHTS":                           "travel",
+    "TRAVEL_HOTELS":                            "travel",
+    "TRAVEL_RENTAL_CARS":                       "travel",
+    "TRAVEL_VACATION_RENTALS":                  "travel",
+    "TRAVEL_CRUISES":                           "travel",
+    # Medical
+    "MEDICAL_DOCTOR_VISIT":                     "health",
+    "MEDICAL_PHARMACY":                         "health",
+    "MEDICAL_DENTAL":                           "health",
+    "MEDICAL_VISION":                           "health",
+    "MEDICAL_VETERINARY":                       "health",
+    # Personal care & fitness
+    "PERSONAL_CARE_HAIRCUT_AND_BARBERSHOP":     "personal_care",
+    "PERSONAL_CARE_SPA_AND_MASSAGE":            "personal_care",
+    "PERSONAL_CARE_GYMS_AND_FITNESS_CENTERS":   "health",
+    "PERSONAL_CARE_LAUNDRY_AND_DRY_CLEANING":   "personal_care",
+    # Entertainment
+    "ENTERTAINMENT_MUSIC_AND_AUDIO":            "entertainment",
+    "ENTERTAINMENT_MOVIES_AND_DVDS":            "entertainment",
+    "ENTERTAINMENT_TV_AND_MOVIES":              "entertainment",
+    "ENTERTAINMENT_SPORTING_EVENTS_AMUSEMENT_PARKS": "entertainment",
+    "ENTERTAINMENT_VIDEO_GAMES":                "entertainment",
+    "ENTERTAINMENT_CASINOS_AND_GAMBLING":       "entertainment",
+    # Shopping
+    "GENERAL_MERCHANDISE_DISCOUNT_STORES":      "shopping",
+    "GENERAL_MERCHANDISE_DEPARTMENT_STORES":    "shopping",
+    "GENERAL_MERCHANDISE_ONLINE_MARKETPLACES":  "shopping",
+    "CLOTHING_AND_ACCESSORIES":                 "shopping",
+    "HOME_IMPROVEMENT_HARDWARE":                "shopping",
+    "HOME_IMPROVEMENT_FURNITURE":               "shopping",
+    "ELECTRONICS":                              "shopping",
+    "SPORTING_GOODS":                           "shopping",
+    "BOOKS_AND_MAGAZINES":                      "shopping",
+    "PET_FOOD_SUPPLIES":                        "shopping",
+    # Housing & utilities
+    "RENT_AND_UTILITIES_RENT":                  "rent",
+    "RENT_AND_UTILITIES_GAS_AND_ELECTRICITY":   "utilities",
+    "RENT_AND_UTILITIES_WATER":                 "utilities",
+    "RENT_AND_UTILITIES_SEWAGE_AND_WASTE":      "utilities",
+    "RENT_AND_UTILITIES_TELEPHONE":             "utilities",
+    "RENT_AND_UTILITIES_INTERNET_AND_CABLE":    "subs",
+    # Subscriptions
+    "SUBSCRIPTION_STREAMING_SERVICES":          "subs",
+    "SUBSCRIPTION_MEMBERSHIP_DUES":             "subs",
+    "SUBSCRIPTION_SOFTWARE_AS_A_SERVICE":       "subs",
+    "SUBSCRIPTION_NEWSPAPERS_AND_MAGAZINES":    "subs",
+    # Education
+    "EDUCATION_TUITION":                        "education",
+    "EDUCATION_BOOKS_AND_SUPPLIES":             "education",
+    "EDUCATION_STUDENT_LOAN":                   "education",
+    # Income
+    "INCOME_PAYROLL":                           "income",
+    "INCOME_DIVIDENDS":                         "income",
+    "INCOME_INTEREST_EARNED":                   "income",
+    "INCOME_RETIREMENT_PENSION":                "income",
+    "INCOME_TAX_REFUND":                        "income",
+    "INCOME_UNEMPLOYMENT":                      "income",
+    "INCOME_WAGES":                             "income",
+    "INCOME_OTHER_INCOME":                      "income",
+    # Transfers
+    "TRANSFER_IN_ACCOUNT_TRANSFER":             "transfer",
+    "TRANSFER_OUT_ACCOUNT_TRANSFER":            "transfer",
+    "TRANSFER_IN_SAVINGS":                      "savings",
+    "TRANSFER_OUT_SAVINGS":                     "savings",
+    "TRANSFER_IN_INVESTMENT_AND_RETIREMENT":    "transfer",
+    "TRANSFER_OUT_INVESTMENT_AND_RETIREMENT":   "transfer",
+    "TRANSFER_IN_DEPOSIT":                      "transfer",
+    "TRANSFER_OUT_WITHDRAWAL":                  "transfer",
+    "LOAN_PAYMENTS_MORTGAGE_PAYMENT":           "rent",
+    "LOAN_PAYMENTS_CAR_PAYMENT":                "transport",
+    "LOAN_PAYMENTS_PERSONAL_LOAN_PAYMENT":      "transfer",
+    "LOAN_PAYMENTS_STUDENT_LOAN_PAYMENT":       "education",
+}
+
+
+def plaid_category_to_internal(detailed: str | None, confidence: str | None) -> str | None:
+    """Map Plaid's personal_finance_category.detailed to our internal category ID.
+
+    Returns None if: no mapping exists, confidence is LOW/UNKNOWN, or inputs are missing.
+    Only returns a value for VERY_HIGH or HIGH confidence to avoid mis-categorization.
+    """
+    if not detailed or confidence not in ("VERY_HIGH", "HIGH"):
+        return None
+    return PLAID_CATEGORY_MAP.get(str(detailed).upper())
+
+
+# ---------------------------------------------------------------------------
 # Pure helpers
 # ---------------------------------------------------------------------------
 
