@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import { TRANSACTIONS, CATEGORIES, ACCOUNTS, MONTHS, RECURRING, NET_WORTH_HISTORY } from '@/lib/fin';
 import { fmtMoney, fmtMoney2, fmtAbbr, fmt, catById, acctById, txnsForMonth, sumByCategory, monthSummary } from '@/lib/helpers';
 import { apiFetch } from '@/lib/api';
-import { SummaryCard, TabHero } from '@/components';
+import { SummaryCard } from '@/components';
 import { DonutChart, StackedBarChart } from '@/components/charts';
 import { SHARED_CATS, SPACE_ICONS } from './Trips';
 import { BarCol } from '@/components/modals';
@@ -247,6 +247,10 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
   const [expenseModal, setExpenseModal] = useState(false);
   const [joinLoading, setJoinLoading] = useState(false);
   const [copied, setCopied]           = useState(false);
+  const [appUsers, setAppUsers]       = useState<{username: string; display_name: string}[]>([]);
+  const [inviteSearch, setInviteSearch] = useState('');
+  const [inviteLoading, setInviteLoading] = useState<string | null>(null);
+  const [invitedSet, setInvitedSet]   = useState<Set<string>>(new Set());
 
   // Create form
   const [createForm, setCreateForm]   = useState({ name: '', type: 'event', icon: '📦', start_date: '', end_date: '', budget: '' });
@@ -360,9 +364,34 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
   }
 
   async function shareSpace(spaceId) {
-    const res = await apiFetch(`/api/shared/${spaceId}/share`, { method: 'POST' });
-    const d   = await res.json();
-    if (d.ok) setShareModal({ url: d.url, token: d.token });
+    const [res, usersRes] = await Promise.all([
+      apiFetch(`/api/shared/${spaceId}/share`, { method: 'POST' }),
+      apiFetch('/api/shared/users'),
+    ]);
+    const d = await res.json();
+    const u = await usersRes.json();
+    if (d.ok) {
+      setShareModal({ url: d.url, token: d.token, spaceId });
+      setAppUsers(u.users || []);
+      setInviteSearch('');
+      setInvitedSet(new Set());
+    }
+  }
+
+  async function inviteUser(username: string) {
+    if (!shareModal?.spaceId) return;
+    setInviteLoading(username);
+    try {
+      await apiFetch(`/api/shared/${shareModal.spaceId}/invite`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username }),
+      });
+      setInvitedSet(prev => new Set([...prev, username]));
+      loadSpaces();
+    } finally {
+      setInviteLoading(null);
+    }
   }
 
   async function deleteSpace(spaceId) {
@@ -594,24 +623,8 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
   if (!detail) {
     const mySpaces     = spaces.filter(s => s.role === 'owner');
     const joinedSpaces = spaces.filter(s => s.role === 'participant');
-    const totalSharedSpent = spaces.reduce((s, sp) => s + (sp.total_spent || 0), 0);
-
     return (
       <div className="tab-body">
-        {!loading && spaces.length > 0 && (
-          <TabHero
-            value={totalSharedSpent}
-            format={fmtMoney}
-            label="Shared Expenses"
-            sublabel={`tracked across ${spaces.length} space${spaces.length !== 1 ? 's' : ''}`}
-            positive={false}
-            stats={[
-              { val: String(spaces.length), key: 'Spaces' },
-              { val: String(mySpaces.length), key: 'Created by me' },
-              { val: String(joinedSpaces.length), key: 'Joined' },
-            ]}
-          />
-        )}
         {joinPrompt && (
           <Portal>
           <div style={{ position: 'fixed', inset: 0, zIndex: 800, background: 'rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -635,9 +648,34 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
         {shareModal && (
           <Portal>
           <div style={{ position: 'fixed', inset: 0, zIndex: 800, background: 'rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setShareModal(null)}>
-            <div className="card" style={{ width: 380, margin: 0 }} onClick={e => e.stopPropagation()}>
-              <h3 style={{ marginBottom: 12 }}>Share invite link</h3>
-              <p style={{ color: 'var(--ink-3)', fontSize: 13, marginBottom: 12 }}>Anyone with this link who is logged in can join the space.</p>
+            <div className="card" style={{ width: 400, margin: 0 }} onClick={e => e.stopPropagation()}>
+              <h3 style={{ marginBottom: 16 }}>Add people</h3>
+              {appUsers.length > 0 && (
+                <div style={{ marginBottom: 16 }}>
+                  <input
+                    placeholder="Search by name…"
+                    value={inviteSearch}
+                    onChange={e => setInviteSearch(e.target.value)}
+                    style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--surface-2)', color: 'var(--ink)', fontSize: 13, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box', marginBottom: 8 }}
+                  />
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 160, overflowY: 'auto' }}>
+                    {appUsers.filter(u => !inviteSearch || u.display_name.toLowerCase().includes(inviteSearch.toLowerCase()) || u.username.toLowerCase().includes(inviteSearch.toLowerCase())).map(u => (
+                      <div key={u.username} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 10px', borderRadius: 8, background: 'var(--surface-3)' }}>
+                        <div style={{ fontSize: 13, color: 'var(--ink)', fontWeight: 500 }}>{u.display_name}</div>
+                        <button
+                          onClick={() => inviteUser(u.username)}
+                          disabled={inviteLoading === u.username || invitedSet.has(u.username)}
+                          style={{ padding: '4px 12px', border: 'none', borderRadius: 6, background: invitedSet.has(u.username) ? 'var(--surface-2)' : 'var(--accent)', color: invitedSet.has(u.username) ? 'var(--ink-3)' : '#fff', cursor: invitedSet.has(u.username) ? 'default' : 'pointer', fontSize: 12, fontWeight: 600, fontFamily: 'inherit' }}
+                        >
+                          {invitedSet.has(u.username) ? '✓ Added' : inviteLoading === u.username ? '…' : 'Add'}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ height: 1, background: 'var(--line)', margin: '14px 0' }} />
+                </div>
+              )}
+              <div style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 7 }}>Or share invite link</div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <input readOnly value={shareModal.url} style={{ flex: 1, padding: '8px 12px', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--surface-2)', color: 'var(--ink)', fontSize: 13, fontFamily: 'monospace', outline: 'none' }} />
                 <button onClick={() => { navigator.clipboard.writeText(shareModal.url); setCopied(true); setTimeout(() => setCopied(false), 2000); }} style={{ padding: '8px 16px', border: 'none', borderRadius: 8, background: 'var(--accent)', color: '#fff', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, whiteSpace: 'nowrap' }}>
@@ -982,9 +1020,34 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
       {shareModal && (
         <Portal>
         <div style={{ position: 'fixed', inset: 0, zIndex: 800, background: 'rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setShareModal(null)}>
-          <div className="card" style={{ width: 380, margin: 0 }} onClick={e => e.stopPropagation()}>
-            <h3 style={{ marginBottom: 12 }}>Share invite link</h3>
-            <p style={{ color: 'var(--ink-3)', fontSize: 13, marginBottom: 12 }}>Anyone with this link who is logged in can join.</p>
+          <div className="card" style={{ width: 400, margin: 0 }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ marginBottom: 16 }}>Add people</h3>
+            {appUsers.length > 0 && (
+              <div style={{ marginBottom: 16 }}>
+                <input
+                  placeholder="Search by name…"
+                  value={inviteSearch}
+                  onChange={e => setInviteSearch(e.target.value)}
+                  style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--surface-2)', color: 'var(--ink)', fontSize: 13, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box', marginBottom: 8 }}
+                />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 160, overflowY: 'auto' }}>
+                  {appUsers.filter(u => !inviteSearch || u.display_name.toLowerCase().includes(inviteSearch.toLowerCase()) || u.username.toLowerCase().includes(inviteSearch.toLowerCase())).map(u => (
+                    <div key={u.username} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 10px', borderRadius: 8, background: 'var(--surface-3)' }}>
+                      <div style={{ fontSize: 13, color: 'var(--ink)', fontWeight: 500 }}>{u.display_name}</div>
+                      <button
+                        onClick={() => inviteUser(u.username)}
+                        disabled={inviteLoading === u.username || invitedSet.has(u.username)}
+                        style={{ padding: '4px 12px', border: 'none', borderRadius: 6, background: invitedSet.has(u.username) ? 'var(--surface-2)' : 'var(--accent)', color: invitedSet.has(u.username) ? 'var(--ink-3)' : '#fff', cursor: invitedSet.has(u.username) ? 'default' : 'pointer', fontSize: 12, fontWeight: 600, fontFamily: 'inherit' }}
+                      >
+                        {invitedSet.has(u.username) ? '✓ Added' : inviteLoading === u.username ? '…' : 'Add'}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ height: 1, background: 'var(--line)', margin: '14px 0' }} />
+              </div>
+            )}
+            <div style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 7 }}>Or share invite link</div>
             <div style={{ display: 'flex', gap: 8 }}>
               <input readOnly value={shareModal.url} style={{ flex: 1, padding: '8px 12px', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--surface-2)', color: 'var(--ink)', fontSize: 13, fontFamily: 'monospace', outline: 'none' }} />
               <button onClick={() => { navigator.clipboard.writeText(shareModal.url); setCopied(true); setTimeout(() => setCopied(false), 2000); }} style={{ padding: '8px 16px', border: 'none', borderRadius: 8, background: 'var(--accent)', color: '#fff', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, whiteSpace: 'nowrap' }}>

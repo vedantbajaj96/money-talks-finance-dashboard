@@ -1,7 +1,7 @@
 // Tab component — see frontend/AGENTS.md for context
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { MONTHS } from '@/lib/fin';
-import { fmtMoney, fmtAbbr, txnsForMonth, sumByCategory, monthSummary } from '@/lib/helpers';
+import { fmtMoney, fmtAbbr, fmt, txnsForMonth, sumByCategory, monthSummary, catById } from '@/lib/helpers';
 import { SummaryCard, TxnList } from '@/components';
 import { DonutChart, AreaChart, Sparkline } from '@/components/charts';
 
@@ -101,6 +101,122 @@ function useCountUp(target, duration = 550) {
     return () => cancelAnimationFrame(rafRef.current);
   }, [target]);
   return val;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// GROUPED TRANSACTION LIST
+// Groups repeated merchants into collapsible rows
+// ═══════════════════════════════════════════════════════════════════
+function GroupedTxnList({ txns, sortBy, onRecategorize, refreshFin }) {
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  const groups = useMemo(() => {
+    const map = new Map<string, any[]>();
+    txns.forEach(t => {
+      if (!map.has(t.merchant)) map.set(t.merchant, []);
+      map.get(t.merchant)!.push(t);
+    });
+    const arr = [...map.entries()].map(([merchant, items]) => {
+      const total = items.reduce((s, t) => s + Math.abs(t.amount), 0);
+      const lastDate = items.reduce((d, t) => t.date > d ? t.date : d, '');
+      const cat = catById(items[0]?.category);
+      return { merchant, items, total, lastDate, cat };
+    });
+    if (sortBy === 'amount') return arr.sort((a, b) => b.total - a.total);
+    return arr.sort((a, b) => b.lastDate.localeCompare(a.lastDate));
+  }, [txns, sortBy]);
+
+  function toggle(merchant: string) {
+    setExpanded(prev => {
+      const next = new Set(prev);
+      next.has(merchant) ? next.delete(merchant) : next.add(merchant);
+      return next;
+    });
+  }
+
+  return (
+    <div className="txn-list compact">
+      {groups.map(g => {
+        const isOpen = expanded.has(g.merchant);
+        const multi = g.items.length > 1;
+        return (
+          <div key={g.merchant}>
+            {/* Group header row */}
+            <div
+              className="txn-row"
+              style={{ cursor: multi ? 'pointer' : 'default' }}
+              onClick={multi ? () => toggle(g.merchant) : undefined}
+            >
+              <div className="txn-icon" style={{ background: g.cat.color + '24', color: g.cat.color }}>
+                {g.cat.icon}
+              </div>
+              <div className="txn-main">
+                <div className="txn-merchant">
+                  <span>{g.merchant}</span>
+                  {multi && (
+                    <span style={{
+                      marginLeft: 7, fontSize: 11, fontWeight: 600,
+                      background: g.cat.color + '20', color: g.cat.color,
+                      padding: '1px 7px', borderRadius: 20,
+                    }}>
+                      {g.items.length}×
+                    </span>
+                  )}
+                </div>
+                <div className="txn-meta">
+                  <span className="cat-pill" style={{ color: g.cat.color }}>{g.cat.name}</span>
+                </div>
+              </div>
+              <div className="txn-date">
+                {g.lastDate.slice(5).replace('-', '/')}
+              </div>
+              <div className="txn-amt neg" style={{ fontWeight: multi ? 600 : undefined }}>
+                -{fmtMoney(g.total)}
+              </div>
+              <div style={{ width: 20, textAlign: 'center', color: 'var(--ink-3)', fontSize: 12 }}>
+                {multi ? (isOpen ? '▲' : '▼') : ''}
+              </div>
+            </div>
+
+            {/* Expanded individual rows */}
+            {isOpen && g.items
+              .slice()
+              .sort((a, b) => sortBy === 'date'
+                ? b.date.localeCompare(a.date)
+                : Math.abs(b.amount) - Math.abs(a.amount)
+              )
+              .map(t => (
+                <div key={t.id} className="txn-row" style={{
+                  paddingLeft: 28,
+                  borderLeft: `3px solid ${g.cat.color}40`,
+                  background: 'color-mix(in srgb, var(--surface) 60%, transparent)',
+                }}>
+                  <div className="txn-icon" style={{ background: g.cat.color + '14', color: g.cat.color, fontSize: 11 }}>
+                    {g.cat.icon}
+                  </div>
+                  <div className="txn-main">
+                    <div className="txn-merchant" style={{ fontSize: 13, color: 'var(--ink-2)' }}>{t.merchant}</div>
+                    <div className="txn-meta">
+                      {onRecategorize ? (
+                        <span className="cat-pill" style={{ color: g.cat.color }}>{g.cat.name}</span>
+                      ) : (
+                        <span className="cat-pill" style={{ color: g.cat.color }}>{g.cat.name}</span>
+                      )}
+                      <span className="dot-sep">·</span>
+                      <span style={{ fontSize: 11 }}>{t.account}</span>
+                    </div>
+                  </div>
+                  <div className="txn-date">{t.date.slice(5).replace('-', '/')}</div>
+                  <div className="txn-amt neg">{fmt(t.amount, { sign: true })}</div>
+                  <div style={{ width: 20 }} />
+                </div>
+              ))
+            }
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -270,36 +386,36 @@ function MonthlyTab({ monthKey, txnOverrides, setTxnOverrides, refreshFin }) {
             { key: 'exp', name: 'Expenses', color: '#d97757', points: expenseSeries },
           ]} height={240} formatter={fmtAbbr} />
         </div>
-        {/* "Where it went" — collapses to a single-line header when a category is selected */}
-        {selectedCat && catInfo && selectedCat !== 'income' && selectedCat !== 'expenses' ? (
-          <div className="card" style={{ cursor: 'pointer', alignSelf: 'start' }} onClick={() => setSelectedCat(null)}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '2px 0' }}>
-              <span className="cat-dot" style={{ background: catInfo.color, flexShrink: 0 }} />
-              <span style={{ flex: 1, fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>{catInfo.name}</span>
-              <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>{fmtMoney(catInfo.amount)}</span>
-              <span style={{ fontSize: 12, color: 'var(--ink-3)', marginLeft: 4 }}>▾ All categories</span>
-            </div>
-          </div>
-        ) : (
-          <div className="card">
-            <div className="card-head"><h3>Where it went</h3><span className="muted">{MONTHS.find((m) => m.key === monthKey)?.label}</span></div>
-            <div className="donut-row">
-              <DonutChart data={breakdown} size={200} thickness={26} formatter={fmtMoney}
-                selectedCat={selectedCat} onSliceClick={handleSliceClick} />
-              <div className="donut-legend">
-                {breakdown.map((b) => (
+        {/* "Where it went" — always visible; selected category is highlighted in the legend */}
+        <div className="card">
+          <div className="card-head"><h3>Where it went</h3><span className="muted">{MONTHS.find((m) => m.key === monthKey)?.label}</span></div>
+          <div className="donut-row">
+            <DonutChart data={breakdown} size={200} thickness={26} formatter={fmtMoney}
+              selectedCat={selectedCat} onSliceClick={handleSliceClick} />
+            <div className="donut-legend">
+              {breakdown.map((b) => {
+                const isSelected = selectedCat === b.cat;
+                return (
                   <div key={b.cat} className="legend-row"
-                    style={{ cursor: 'pointer', opacity: selectedCat && selectedCat !== b.cat ? 0.4 : 1, transition: 'opacity .15s' }}
+                    style={{
+                      cursor: 'pointer',
+                      opacity: selectedCat && !isSelected ? 0.35 : 1,
+                      transition: 'opacity .15s',
+                      background: isSelected ? b.color + '12' : undefined,
+                      borderRadius: isSelected ? 6 : undefined,
+                      padding: isSelected ? '1px 5px' : undefined,
+                      margin: isSelected ? '0 -5px' : undefined,
+                    }}
                     onClick={() => handleSliceClick(b)}>
                     <span className="cat-dot" style={{ background: b.color }} />
-                    <span className="legend-name">{b.name}</span>
-                    <span className="legend-amt">{fmtMoney(b.amount)}</span>
+                    <span className="legend-name" style={{ fontWeight: isSelected ? 700 : undefined, color: isSelected ? 'var(--ink)' : undefined }}>{b.name}</span>
+                    <span className="legend-amt" style={{ fontWeight: isSelected ? 700 : undefined, color: isSelected ? b.color : undefined }}>{fmtMoney(b.amount)}</span>
                   </div>
-                ))}
-              </div>
+                );
+              })}
             </div>
           </div>
-        )}
+        </div>
       </div>
       {/* Transactions — appear full-width directly below the grid */}
       {selectedCat && catInfo && selectedCat !== 'income' && selectedCat !== 'expenses' && (
@@ -320,17 +436,26 @@ function MonthlyTab({ monthKey, txnOverrides, setTxnOverrides, refreshFin }) {
               ))}
             </div>
           </div>
-          <TxnList txns={catTxns} compact onRecategorize={recat} refreshFin={refreshFin}
-            sortCol={sortBy === 'date' ? 'date' : 'amount'} sortDir="desc" />
+          <GroupedTxnList txns={catTxns} sortBy={sortBy} onRecategorize={recat} refreshFin={refreshFin} />
         </div>
       )}
       {!selectedCat && (
         <div className="card">
           <div className="card-head">
-            <h3>Recent transactions</h3>
-            <span className="muted">{monthTxns.length} this month · click a slice or Income to filter</span>
+            <h3>Transactions</h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span className="muted">{monthTxns.length} this month · click a slice or Income to filter</span>
+              {['amount', 'date'].map(s => (
+                <button key={s} onClick={() => setSortBy(s)} style={{
+                  background: sortBy === s ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'none',
+                  border: `1px solid ${sortBy === s ? 'var(--accent)' : 'var(--line)'}`,
+                  borderRadius: 6, padding: '2px 10px', fontSize: 12, cursor: 'pointer',
+                  color: sortBy === s ? 'var(--accent)' : 'var(--ink-3)', fontFamily: 'inherit',
+                }}>{s === 'amount' ? '$ Amount' : '📅 Date'}</button>
+              ))}
+            </div>
           </div>
-          <TxnList txns={catTxns} compact onRecategorize={recat} refreshFin={refreshFin} />
+          <GroupedTxnList txns={catTxns} sortBy={sortBy} onRecategorize={recat} refreshFin={refreshFin} />
         </div>
       )}
     </div>

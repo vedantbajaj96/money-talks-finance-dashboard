@@ -118,17 +118,10 @@ def plaid_sync(body: dict[str, Any] = {}, current_user: str = Depends(get_curren
                 if "suggested_category" in recategorized.columns:
                     df.loc[unedited_idx, "suggested_category"] = recategorized["suggested_category"].values
                 logger.info("[sync:%s] rule categorization done in %.1fs (%d rows)", current_user, time.monotonic() - t_rules0, len(unedited_idx))
+            # Track rows that need transaction_type assigned — evaluated AFTER all categorization
             if "transaction_type" not in df.columns:
                 df["transaction_type"] = None
-            mask = df["transaction_type"].isna() | (df["transaction_type"].astype(str) == "None")
-            df.loc[mask & (df["expense_amount"] >= 0), "transaction_type"] = "expense"
-            # Only mark as income if category is an actual income category — not just any credit
-            from core.categories import map_category as _mc
-            _income_cats = {"income", "freelance-and-side-income", "paycheck-and-salary",
-                            "investment-and-dividend-income", "other-income"}
-            _is_income_cat = df["category"].apply(lambda c: _mc(str(c or "")) in _income_cats)
-            df.loc[mask & (df["expense_amount"] < 0) & _is_income_cat,  "transaction_type"] = "income"
-            df.loc[mask & (df["expense_amount"] < 0) & ~_is_income_cat, "transaction_type"] = "expense"
+            txn_type_mask = df["transaction_type"].isna() | (df["transaction_type"].astype(str) == "None")
 
             # Plaid's personal_finance_category: fill uncategorized rows before LLM
             # (free — arrives in every sync response, no extra API call).
@@ -177,6 +170,18 @@ def plaid_sync(body: dict[str, Any] = {}, current_user: str = Depends(get_curren
 
             from core.categories import detect_refund_pairs
             df, _ = detect_refund_pairs(df, user_rules_path=user_dir(current_user) / "user_rules.py")
+
+            # Assign transaction_type now that all categorization is complete.
+            # Evaluating here instead of before Plaid/LLM categorization ensures
+            # interest-earned and other income rows (whose category was "Pending Review"
+            # during the initial rule pass) are correctly marked "income".
+            from core.categories import map_category as _mc
+            _income_cats = {"income", "freelance-and-side-income", "paycheck-and-salary",
+                            "investment-and-dividend-income", "other-income"}
+            _is_income_cat = df["category"].apply(lambda c: _mc(str(c or "")) in _income_cats)
+            df.loc[txn_type_mask & (df["expense_amount"] >= 0), "transaction_type"] = "expense"
+            df.loc[txn_type_mask & (df["expense_amount"] < 0) & _is_income_cat,  "transaction_type"] = "income"
+            df.loc[txn_type_mask & (df["expense_amount"] < 0) & ~_is_income_cat, "transaction_type"] = "expense"
 
             # Any row the user manually edited is already reviewed — approve it.
             _ue = df.get("user_edited", pd.Series(False, index=df.index)).fillna(False).astype(bool)

@@ -23,6 +23,15 @@ def _month_labels(key: str) -> tuple[str, str, str]:
     return dt.strftime("%b %Y"), dt.strftime("%b"), dt.strftime("%b %y")
 
 
+def _display_name(desc: str) -> str:
+    """Normalize all-caps merchant names to title case (e.g. 'AMK ESRI' → 'Amk Esri')."""
+    s = str(desc).strip()
+    alpha = [c for c in s if c.isalpha()]
+    if alpha and all(c.isupper() for c in alpha):
+        return s.title()
+    return s
+
+
 def build_fin_data(username: str) -> dict:
     conn = get_conn(username)
 
@@ -185,7 +194,7 @@ def build_fin_data(username: str) -> dict:
         transactions.append({
             "id":          _tid,
             "date":        str(date)[:10],
-            "merchant":    str(desc),
+            "merchant":    _display_name(desc),
             "category":    cat_id,
             "amount":      round(-float(expense_amount), 2),
             "account":     str(source or ""),
@@ -339,7 +348,7 @@ def build_fin_data(username: str) -> dict:
                     next_date = today + datetime.timedelta(days=30)
 
                 recurring.append({
-                    "merchant":    str(row["description"]),
+                    "merchant":    _display_name(row["description"]),
                     "category":    cat_id,
                     "amount":      float(row["amount"]),
                     "freq":        freq,

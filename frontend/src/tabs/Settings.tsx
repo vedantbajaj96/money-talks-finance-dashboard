@@ -429,13 +429,17 @@ function NotificationsCard() {
   );
 }
 
-function PlaidSyncCard() {
+function PlaidSyncCard({ onSync, syncing: appSyncing }: { onSync?: (full?: boolean) => void; syncing?: boolean }) {
   const [syncing, setSyncing]             = useState(false);
   const [result,  setResult]             = useState(null);
   const [backfilling, setBackfilling]    = useState(false);
   const [backfillResult, setBackfillResult] = useState(null);
 
+  const isSyncing = appSyncing || syncing;
+
   async function sync(full = false) {
+    // Full re-sync uses the app-level handler (shows full-screen overlay)
+    if (full && onSync) { onSync(true); return; }
     setSyncing(true); setResult(null);
     try {
       const res  = await apiFetch('/api/plaid/sync', {
@@ -497,16 +501,20 @@ function PlaidSyncCard() {
         )}
 
         <div style={{ display: 'flex', gap: 10 }}>
-          <button onClick={() => sync(false)} disabled={syncing || backfilling} style={{
-            flex: 1, background: 'var(--accent)', color: '#052015', border: 'none',
+          <button onClick={() => sync(false)} disabled={isSyncing || backfilling} style={{
+            flex: 1, background: isSyncing ? 'var(--surface-2)' : 'var(--accent)',
+            color: isSyncing ? 'var(--ink-3)' : '#052015', border: isSyncing ? '1px solid var(--line)' : 'none',
             borderRadius: 10, padding: '11px 0', fontWeight: 600, fontSize: 14,
-            fontFamily: 'inherit', cursor: syncing ? 'default' : 'pointer', opacity: syncing ? 0.6 : 1,
-          }}>{syncing ? 'Syncing…' : 'Sync now'}</button>
-          <button onClick={() => sync(true)} disabled={syncing || backfilling} style={{
-            flex: 1, background: 'transparent', color: 'var(--ink-2)',
+            fontFamily: 'inherit', cursor: isSyncing ? 'default' : 'pointer',
+            transition: 'all 0.2s',
+          }}>{isSyncing ? '⏳ Syncing…' : 'Sync now'}</button>
+          <button onClick={() => sync(true)} disabled={isSyncing || backfilling} style={{
+            flex: 1, background: isSyncing ? 'var(--surface-2)' : 'transparent',
+            color: isSyncing ? 'var(--ink-3)' : 'var(--ink-2)',
             border: '1px solid var(--line)', borderRadius: 10, padding: '11px 0',
             fontWeight: 500, fontSize: 14, fontFamily: 'inherit',
-            cursor: syncing ? 'default' : 'pointer', opacity: syncing ? 0.6 : 1,
+            cursor: isSyncing ? 'default' : 'pointer',
+            transition: 'all 0.2s',
           }}>Full re-sync</button>
         </div>
 
@@ -526,7 +534,7 @@ function PlaidSyncCard() {
                 : `⚠ ${backfillResult.error || 'Failed'}`}
             </div>
           )}
-          <button onClick={backfillLocations} disabled={syncing || backfilling} style={{
+          <button onClick={backfillLocations} disabled={isSyncing || backfilling} style={{
             background: 'transparent', color: 'var(--muted)',
             border: '1px solid var(--line)', borderRadius: 8, padding: '8px 16px',
             fontWeight: 500, fontSize: 13, fontFamily: 'inherit',
@@ -538,7 +546,7 @@ function PlaidSyncCard() {
   );
 }
 
-function SettingsTab({ refreshFin }) {
+function SettingsTab({ refreshFin, onSync, syncing }: { refreshFin?: () => void; onSync?: (full?: boolean) => void; syncing?: boolean }) {
   const [dragging, setDragging]     = useState(false);
   const [uploading, setUploading]   = useState(false);
   const [uploadResult, setUpload]   = useState(null);
@@ -736,7 +744,7 @@ function SettingsTab({ refreshFin }) {
         </div>
       </Card>
 
-      <PlaidSyncCard />
+      <PlaidSyncCard onSync={onSync} syncing={syncing} />
 
       <Card title="Auto-Sync Schedule">
         <div style={{ display: 'grid', gap: 14 }}>

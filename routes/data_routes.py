@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from core.auth import get_current_user, SESSION_COOKIE, _sessions
 
 logger = logging.getLogger("moneytalks")
-from core.categories import CAT_MAP, _resolve_category
+from core.categories import CAT_MAP, _resolve_category, map_category as _map_cat
 from core.fin_data import build_fin_data
 from core.search import semantic_txn_search
 from core.store import (
@@ -26,6 +26,9 @@ from core.store import (
 router = APIRouter()
 
 REVIEW_BATCH_SIZE = 60
+
+_INCOME_CATS = {"income", "freelance-and-side-income", "paycheck-and-salary",
+                "investment-and-dividend-income", "other-income"}
 
 # Blocklist for /api/query — prevent reading arbitrary files via DuckDB table functions
 _BLOCKED = re.compile(
@@ -166,7 +169,7 @@ def update_transaction(
         df.loc[mask, "category"] = reverse_map.get(ll_cat, ll_cat)
         # Sync transaction_type with new category (affects monthly aggregation)
         if "transaction_type" in df.columns:
-            if ll_cat == "income":
+            if _map_cat(ll_cat) in _INCOME_CATS:
                 df.loc[mask, "transaction_type"] = "income"
             elif ll_cat in ("transfer", "savings", "refund"):
                 df.loc[mask, "transaction_type"] = "transfer"
@@ -715,7 +718,7 @@ def approve_batch(body: dict[str, Any], current_user: str = Depends(get_current_
             df.loc[mask, "user_edited"] = True
             # Sync transaction_type to match the new category
             if "transaction_type" in df.columns:
-                if ll_cat == "income":
+                if _map_cat(ll_cat) in _INCOME_CATS:
                     df.loc[mask, "transaction_type"] = "income"
                 elif ll_cat in ("transfer", "savings", "refund"):
                     df.loc[mask, "transaction_type"] = "transfer"

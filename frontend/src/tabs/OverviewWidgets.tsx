@@ -21,8 +21,11 @@ const OVERVIEW_WIDGETS = [
 
 const OVERVIEW_ORDER_KEY = 'mt_overview_order';
 
-function DragCard({ id, index, order, onReorder, title, children }) {
-  const dragRef = useRef(null);
+function DragCard({ id, index, order, onReorder, title, children, onNavigate }: {
+  id: string; index: number; order: string[]; onReorder: (o: string[]) => void;
+  title: string; children: React.ReactNode; onNavigate?: () => void;
+}) {
+  const mouseDownPos = useRef<{ x: number; y: number } | null>(null);
 
   function onDragStart(e) {
     e.dataTransfer.effectAllowed = 'move';
@@ -41,6 +44,18 @@ function DragCard({ id, index, order, onReorder, title, children }) {
     next.splice(index, 0, moved);
     onReorder(next);
   }
+  function handleMouseDown(e) {
+    mouseDownPos.current = { x: e.clientX, y: e.clientY };
+  }
+  function handleClick(e) {
+    if (!onNavigate) return;
+    if (mouseDownPos.current) {
+      const dx = Math.abs(e.clientX - mouseDownPos.current.x);
+      const dy = Math.abs(e.clientY - mouseDownPos.current.y);
+      if (dx > 5 || dy > 5) return;
+    }
+    onNavigate();
+  }
 
   return (
     <div
@@ -48,12 +63,20 @@ function DragCard({ id, index, order, onReorder, title, children }) {
       onDragStart={onDragStart}
       onDragOver={onDragOver}
       onDrop={onDrop}
-      style={{ cursor: 'grab' }}
+      onMouseDown={handleMouseDown}
+      onClick={handleClick}
+      style={{ cursor: onNavigate ? 'pointer' : 'grab' }}
     >
-      <div className="card">
+      <div className="card" style={{ transition: 'box-shadow 0.15s' }}
+        onMouseEnter={onNavigate ? e => { (e.currentTarget as HTMLElement).style.boxShadow = '0 0 0 1.5px var(--accent)'; } : undefined}
+        onMouseLeave={onNavigate ? e => { (e.currentTarget as HTMLElement).style.boxShadow = ''; } : undefined}
+      >
         <div className="card-head">
           <h3>{title}</h3>
-          <span style={{ color: 'var(--line-2)', fontSize: 14, userSelect: 'none' }}>⠿</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {onNavigate && <span style={{ color: 'var(--ink-3)', fontSize: 13, opacity: 0.6, lineHeight: 1 }}>→</span>}
+            <span style={{ color: 'var(--line-2)', fontSize: 14, userSelect: 'none' }}>⠿</span>
+          </div>
         </div>
         <div>
           {children}
@@ -63,7 +86,7 @@ function DragCard({ id, index, order, onReorder, title, children }) {
   );
 }
 
-function OverviewTab() {
+function OverviewTab({ setTab }: { setTab?: (t: string) => void }) {
   const savedOrder = (() => {
     try { return JSON.parse(localStorage.getItem(OVERVIEW_ORDER_KEY)); } catch(e) { return null; }
   })();
@@ -268,7 +291,7 @@ function OverviewTab() {
     const label = OVERVIEW_WIDGETS.find(w => w.id === id)?.label || id;
 
     if (id === 'networth') return (
-      <DragCard key={id} id={id} index={index} order={order} onReorder={handleReorder} title="Net Worth">
+      <DragCard key={id} id={id} index={index} order={order} onReorder={handleReorder} title="Net Worth" onNavigate={setTab ? () => setTab('networth') : undefined}>
         <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 16 }}>
           <div>
             <div style={{ fontSize: 32, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>
@@ -281,7 +304,15 @@ function OverviewTab() {
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {ACCOUNTS.filter(a => a.balance !== 0).sort((a,b) => Math.abs(b.balance) - Math.abs(a.balance)).slice(0,6).map(a => (
-            <div key={a.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13 }}>
+            <div key={a.id}
+              onClick={setTab ? e => { e.stopPropagation(); setTab('accounts'); } : undefined}
+              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13,
+                borderRadius: 6, padding: '2px 4px', margin: '0 -4px',
+                transition: 'background 0.1s',
+              }}
+              onMouseEnter={setTab ? e => { (e.currentTarget as HTMLElement).style.background = 'var(--surface-2, rgba(0,0,0,0.04))'; } : undefined}
+              onMouseLeave={setTab ? e => { (e.currentTarget as HTMLElement).style.background = ''; } : undefined}
+            >
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ width: 8, height: 8, borderRadius: '50%', background: a.color, display: 'inline-block', flexShrink: 0 }} />
                 <span style={{ color: 'var(--ink-2)' }}>{a.inst || a.name}</span>
@@ -315,7 +346,7 @@ function OverviewTab() {
         .reduce((s, b) => s + (b.current_balance || 0), 0);
 
       return (
-        <DragCard key={id} id={id} index={index} order={order} onReorder={handleReorder} title="Account Balances">
+        <DragCard key={id} id={id} index={index} order={order} onReorder={handleReorder} title="Account Balances" onNavigate={setTab ? () => setTab('accounts') : undefined}>
           {liveBalances === null ? (
             <div style={{ color: 'var(--ink-3)', fontSize: 13 }}>Loading…</div>
           ) : liveBalances.length === 0 ? (
@@ -401,7 +432,7 @@ function OverviewTab() {
       // Hide when fully reviewed and recently active — nothing actionable to show
       if (reviewStats && qPct >= 100 && remaining === 0 && !needsAttention) return null;
       return (
-        <DragCard key={id} id={id} index={index} order={order} onReorder={handleReorder} title="Data Quality">
+        <DragCard key={id} id={id} index={index} order={order} onReorder={handleReorder} title="Data Quality" onNavigate={setTab ? () => setTab('review') : undefined}>
           {!reviewStats ? (
             <div style={{ color: 'var(--muted)', fontSize: 13 }}>Loading…</div>
           ) : (
@@ -453,7 +484,7 @@ function OverviewTab() {
     }
 
     if (id === 'vs6mo') return (
-      <DragCard key={id} id={id} index={index} order={order} onReorder={handleReorder} title="vs. 6-Month Avg">
+      <DragCard key={id} id={id} index={index} order={order} onReorder={handleReorder} title="vs. 6-Month Avg" onNavigate={setTab ? () => setTab('categories') : undefined}>
         <div style={{ fontSize: 11, color: 'var(--ink-3)', marginBottom: 12 }}>
           {MONTHS[MONTHS.length - 1]?.label} · compared to 6-month average
         </div>
@@ -501,7 +532,7 @@ function OverviewTab() {
     );
 
     if (id === 'anomalies') return (
-      <DragCard key={id} id={id} index={index} order={order} onReorder={handleReorder} title="Spending Alerts">
+      <DragCard key={id} id={id} index={index} order={order} onReorder={handleReorder} title="Spending Alerts" onNavigate={setTab ? () => setTab('categories') : undefined}>
         {anomalies.length === 0 ? (
           <div style={{ color: 'var(--muted)', fontSize: 13, padding: '12px 0' }}>
             All categories within normal range. Nice work.
@@ -526,7 +557,7 @@ function OverviewTab() {
     );
 
     if (id === 'merchants') return (
-      <DragCard key={id} id={id} index={index} order={order} onReorder={handleReorder} title="Top Merchants">
+      <DragCard key={id} id={id} index={index} order={order} onReorder={handleReorder} title="Top Merchants" onNavigate={setTab ? () => setTab('txns') : undefined}>
         <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 12 }}>Last 30 days</div>
         {topMerchants.length === 0 ? (
           <div style={{ color: 'var(--muted)', fontSize: 13 }}>No transactions yet.</div>
@@ -548,7 +579,7 @@ function OverviewTab() {
     );
 
     if (id === 'trends') return (
-      <DragCard key={id} id={id} index={index} order={order} onReorder={handleReorder} title="Spending Trends">
+      <DragCard key={id} id={id} index={index} order={order} onReorder={handleReorder} title="Spending Trends" onNavigate={setTab ? () => setTab('trends') : undefined}>
         <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 12 }}>Last 6 months by category</div>
         {trends.map(t => (
           <div key={t.cat} style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
@@ -565,7 +596,7 @@ function OverviewTab() {
     );
 
     if (id === 'recurring') return (
-      <DragCard key={id} id={id} index={index} order={order} onReorder={handleReorder} title="Upcoming Bills">
+      <DragCard key={id} id={id} index={index} order={order} onReorder={handleReorder} title="Upcoming Bills" onNavigate={setTab ? () => setTab('recurring') : undefined}>
         {upcoming.length === 0 ? (
           <div style={{ color: 'var(--muted)', fontSize: 13 }}>No bills due in the next 14 days.</div>
         ) : upcoming.map(r => (
@@ -586,7 +617,7 @@ function OverviewTab() {
     );
 
     if (id === 'recent') return (
-      <DragCard key={id} id={id} index={index} order={order} onReorder={handleReorder} title="Recent Transactions">
+      <DragCard key={id} id={id} index={index} order={order} onReorder={handleReorder} title="Recent Transactions" onNavigate={setTab ? () => setTab('txns') : undefined}>
         {recentTxns.length === 0 ? (
           <div style={{ color: 'var(--ink-3)', fontSize: 13 }}>No transactions yet.</div>
         ) : (

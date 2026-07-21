@@ -73,24 +73,122 @@ function NetWorthTab() {
 // ═══════════════════════════════════════════════════════════════════
 // CATEGORIES TAB
 // ═══════════════════════════════════════════════════════════════════
+// Clickable monthly bar chart for category detail
+function CatHistoryBars({ months, color, onBarClick, activeMonthKey }) {
+  const [hover, setHover] = useState<number | null>(null);
+  const values = months.map(m => m.value);
+  const max = Math.max(...values, 1);
+  const pad = { top: 20, right: 12, bottom: 32, left: 56 };
+  const W = 720, H = 220;
+  const innerW = W - pad.left - pad.right;
+  const innerH = H - pad.top - pad.bottom;
+  const barW = innerW / months.length * 0.55;
+  const gap = innerW / months.length;
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map(f => max * f);
+
+  return (
+    <div className="chart-wrap" style={{ cursor: 'pointer' }}>
+      <svg width="100%" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ display: 'block' }}>
+        {ticks.map((v, i) => {
+          const y = pad.top + innerH - (v / max) * innerH;
+          return (
+            <g key={i}>
+              <line x1={pad.left} x2={W - pad.right} y1={y} y2={y}
+                stroke={i === 0 ? 'rgba(20,24,32,0.12)' : 'rgba(20,24,32,0.05)'}
+                strokeWidth="1" strokeDasharray={i === 0 ? undefined : '4 4'} />
+              <text x={pad.left - 8} y={y + 4} textAnchor="end" className="chart-axis-label">
+                {fmtAbbr(v)}
+              </text>
+            </g>
+          );
+        })}
+        {months.map((m, i) => {
+          const cx = pad.left + gap * i + gap / 2;
+          const barH = (m.value / max) * innerH;
+          const isActive = m.key === activeMonthKey;
+          const isHover = hover === i;
+          return (
+            <g key={m.key}>
+              {/* bar */}
+              <rect
+                x={cx - barW / 2} y={pad.top + innerH - barH}
+                width={barW} height={barH}
+                fill={color} rx={3}
+                opacity={isActive ? 1 : isHover ? 0.85 : (activeMonthKey ? 0.35 : 0.7)}
+                style={{ transition: 'opacity 0.12s' }}
+              />
+              {/* active indicator dot */}
+              {isActive && m.value > 0 && (
+                <circle cx={cx} cy={pad.top + innerH - barH - 7} r={3} fill={color} />
+              )}
+              {/* hover + click target */}
+              <rect
+                x={cx - gap / 2} y={pad.top} width={gap} height={innerH}
+                fill="transparent"
+                onMouseEnter={() => setHover(i)}
+                onMouseLeave={() => setHover(null)}
+                onClick={() => onBarClick(m.key)}
+                style={{ cursor: 'pointer' }}
+              />
+              <text x={cx} y={H - 10} textAnchor="middle" className="chart-axis-label"
+                style={{ fontWeight: isActive ? 700 : 400, fill: isActive ? 'var(--ink)' : undefined }}>
+                {m.short}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+      {hover !== null && months[hover]?.value > 0 && (
+        <div className="chart-tooltip" style={{ left: pad.left + gap * hover + gap / 2, top: 12 }}>
+          <div className="tt-title">{months[hover].label}</div>
+          <div className="tt-total">{fmtMoney(months[hover].value)}</div>
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', marginTop: 2 }}>Click to see transactions</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CategoriesTab({ monthKey, finVersion }) {
+  const [selectedCat, setSelectedCat] = useState<string | null>(null);
+  const [detailMonthKey, setDetailMonthKey] = useState<string | null>(null);
+
+  // Reset detail month when category changes
+  function selectCat(cat: string) {
+    const next = selectedCat === cat ? null : cat;
+    setSelectedCat(next);
+    setDetailMonthKey(next ? monthKey : null);
+    if (next) {
+      setTimeout(() => {
+        document.getElementById('cat-detail-panel')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }, 50);
+    }
+  }
+
   const txns = txnsForMonth(monthKey);
   const breakdown = sumByCategory(txns);
   const total = breakdown.reduce((s, b) => s + b.amount, 0);
+  const catMonthLabel = MONTHS.find((m) => m.key === monthKey)?.label ?? monthKey;
 
-  // 6-mo per-category trend (top 5)
-  const top = breakdown.slice(0, 5);
-  const series = top.map((b) => ({
-    key: b.cat, name: b.name, color: b.color,
-    points: MONTHS.map((m) => {
-      const v = txnsForMonth(m.key)
-        .filter((t) => t.category === b.cat)
-        .reduce((s, t) => s + Math.abs(t.amount), 0);
-      return { label: m.short, value: v };
-    }),
+  const selInfo = selectedCat
+    ? (breakdown.find(b => b.cat === selectedCat) || catById(selectedCat))
+    : null;
+
+  const chartMonths = MONTHS.slice(-24).map(m => ({
+    key: m.key, short: m.short, label: m.label,
+    value: txnsForMonth(m.key).filter(t => t.category === selectedCat).reduce((s, t) => s + Math.abs(t.amount), 0),
   }));
 
-  const catMonthLabel = MONTHS.find((m) => m.key === monthKey)?.label ?? monthKey;
+  const activeDmKey = detailMonthKey || monthKey;
+  const detailMonthLabel = MONTHS.find(m => m.key === activeDmKey)?.label ?? activeDmKey;
+  const detailTxns = selectedCat
+    ? txnsForMonth(activeDmKey).filter(t => t.category === selectedCat)
+    : [];
+
+  const allTimeTotal = chartMonths.reduce((s, m) => s + m.value, 0);
+  const activeMonthCount = chartMonths.filter(m => m.value > 0).length;
+  const monthlyAvg = activeMonthCount > 0 ? allTimeTotal / activeMonthCount : 0;
+  const peakMonth = chartMonths.reduce((best, m) => m.value > best.value ? m : best, chartMonths[0] || { value: 0, label: '—' });
 
   return (
     <div className="tab-body">
@@ -99,36 +197,130 @@ function CategoriesTab({ monthKey, finVersion }) {
           <h3>Category breakdown</h3>
           <span className="muted">{fmtMoney(total)} total · {catMonthLabel}</span>
         </div>
+        {!selectedCat && (
+          <div style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 14 }}>
+            Click any category to see month-by-month history
+          </div>
+        )}
         <div className="cat-grid">
-          {breakdown.map((b) => (
-            <div key={b.cat} className="cat-card" style={{ borderColor: b.color + '30' }}>
-              <div className="cat-card-head">
-                <span className="cat-card-icon" style={{ background: b.color + '24', color: b.color }}>{b.icon}</span>
-                <span className="cat-card-name">{b.name}</span>
-              </div>
-              <div className="cat-card-amt" style={{ color: b.color }}>{fmtMoney(b.amount)}</div>
-              <div className="cat-card-pct">
-                <div className="cat-card-track">
-                  <div className="cat-card-fill" style={{ width: `${(b.amount / total) * 100}%`, background: b.color }} />
+          {breakdown.map((b) => {
+            const isSelected = selectedCat === b.cat;
+            return (
+              <div key={b.cat} className="cat-card"
+                onClick={() => selectCat(b.cat)}
+                style={{
+                  borderColor: isSelected ? b.color : b.color + '30',
+                  cursor: 'pointer',
+                  background: isSelected ? b.color + '10' : undefined,
+                  outline: isSelected ? `2px solid ${b.color}` : undefined,
+                  transition: 'all 0.15s',
+                }}
+              >
+                <div className="cat-card-head">
+                  <span className="cat-card-icon" style={{ background: b.color + '24', color: b.color }}>{b.icon}</span>
+                  <span className="cat-card-name">{b.name}</span>
                 </div>
-                <span>{((b.amount / total) * 100).toFixed(1)}%</span>
+                <div className="cat-card-amt" style={{ color: b.color }}>{fmtMoney(b.amount)}</div>
+                <div className="cat-card-pct">
+                  <div className="cat-card-track">
+                    <div className="cat-card-fill" style={{ width: `${(b.amount / total) * 100}%`, background: b.color }} />
+                  </div>
+                  <span>{((b.amount / total) * 100).toFixed(1)}%</span>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
-      <div className="card">
-        <div className="card-head">
-          <h3>Top 5 categories — 6 month trend</h3>
+      {selectedCat && selInfo && (
+        <div id="cat-detail-panel" className="card">
+          <div className="card-head">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ width: 32, height: 32, borderRadius: 9, background: selInfo.color + '22',
+                color: selInfo.color, display: 'grid', placeItems: 'center', fontSize: 16, flexShrink: 0 }}>
+                {selInfo.icon}
+              </span>
+              <h3>{selInfo.name}</h3>
+            </div>
+            <button onClick={() => setSelectedCat(null)}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-3)',
+                fontSize: 18, lineHeight: 1, padding: '4px 6px' }}>
+              ✕
+            </button>
+          </div>
+
+          {/* Stats strip */}
+          <div style={{ display: 'flex', gap: 0, marginBottom: 20, borderRadius: 10, overflow: 'hidden',
+            border: '1px solid var(--line)' }}>
+            {[
+              { label: `Total (${chartMonths.length}mo)`, value: fmtMoney(allTimeTotal) },
+              { label: 'Monthly avg', value: fmtMoney(monthlyAvg) },
+              { label: catMonthLabel, value: fmtMoney(breakdown.find(b => b.cat === selectedCat)?.amount || 0) },
+              { label: 'Peak month', value: peakMonth?.label || '—' },
+            ].map((s, i, arr) => (
+              <div key={s.label} style={{ flex: 1, padding: '10px 14px',
+                borderRight: i < arr.length - 1 ? '1px solid var(--line)' : undefined }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--ink-3)',
+                  textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>{s.label}</div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)',
+                  fontVariantNumeric: 'tabular-nums' }}>{s.value}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Clickable monthly bar chart */}
+          <div style={{ fontSize: 11, color: 'var(--ink-3)', marginBottom: 8 }}>
+            Click a bar to see that month's transactions
+          </div>
+          <CatHistoryBars
+            months={chartMonths}
+            color={selInfo.color}
+            activeMonthKey={activeDmKey}
+            onBarClick={(key) => setDetailMonthKey(key)}
+          />
+
+          {/* Transactions for selected month */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            margin: '20px 0 10px' }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-3)',
+              textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+              Transactions · {detailMonthLabel}
+            </div>
+            {detailTxns.length > 0 && (
+              <span style={{ fontSize: 12, fontWeight: 600, color: selInfo.color }}>
+                {fmtMoney(detailTxns.reduce((s, t) => s + Math.abs(t.amount), 0))}
+              </span>
+            )}
+          </div>
+          {detailTxns.length > 0
+            ? <TxnList txns={detailTxns} />
+            : <div style={{ color: 'var(--ink-3)', fontSize: 13 }}>No {selInfo.name} transactions in {detailMonthLabel}.</div>
+          }
         </div>
-        <AreaChart series={series} height={260} formatter={fmtAbbr} fill={false} />
-        <div className="legend-row-inline">
-          {series.map((s) => (
-            <span key={s.key}><i style={{ background: s.color }} />{s.name}</span>
-          ))}
+      )}
+
+      {!selectedCat && (
+        <div className="card">
+          <div className="card-head">
+            <h3>Top 5 categories — trend</h3>
+          </div>
+          <AreaChart series={breakdown.slice(0, 5).map(b => ({
+            key: b.cat, name: b.name, color: b.color,
+            points: MONTHS.map(m => ({
+              label: m.short,
+              value: txnsForMonth(m.key).filter(t => t.category === b.cat).reduce((s, t) => s + Math.abs(t.amount), 0),
+            })),
+          }))} height={260} formatter={fmtAbbr} fill={false} />
+          <div className="legend-row-inline">
+            {breakdown.slice(0, 5).map(b => (
+              <span key={b.cat} style={{ cursor: 'pointer' }} onClick={() => selectCat(b.cat)}>
+                <i style={{ background: b.color }} />{b.name}
+              </span>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

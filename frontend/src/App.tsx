@@ -343,6 +343,20 @@ function fmtSyncTime(iso: string) {
   return `Synced ${Math.round(diffH / 24)}d ago`;
 }
 
+// Hover-triggered prefetch: start loading bundle as soon as user mouses over nav item
+const HOVER_PREFETCH: Record<string, () => void> = {
+  shared:      () => import('@/tabs/Shared'),
+  trips:       () => import('@/tabs/Trips'),
+  categories:  () => import('@/tabs/Analysis'),
+  trends:      () => import('@/tabs/Analysis'),
+  networth:    () => import('@/tabs/Wealth'),
+  accounts:    () => import('@/tabs/Wealth'),
+  recurring:   () => import('@/tabs/Wealth'),
+  investments: () => import('@/tabs/Investments'),
+  cashflow:    () => import('@/tabs/Spending'),
+  flow:        () => import('@/tabs/Spending'),
+};
+
 // ── Sidebar ───────────────────────────────────────────────────────
 function Sidebar({ active, onChange, layout, syncState }: { active: string | null; onChange: (t: string) => void; layout: string; syncState: any }) {
   const collapsed = layout === 'icons';
@@ -368,6 +382,7 @@ function Sidebar({ active, onChange, layout, syncState }: { active: string | nul
               <button key={t.id}
                 className={`nav-item ${active === t.id ? 'active' : ''}`}
                 onClick={() => onChange(t.id)}
+                onMouseEnter={HOVER_PREFETCH[t.id] ? () => HOVER_PREFETCH[t.id]() : undefined}
                 title={collapsed ? t.name : ''}>
                 <Icon name={t.icon} size={18} />
                 {!collapsed && <span>{t.name}</span>}
@@ -765,6 +780,7 @@ export default function App() {
 
   const [syncState,    setSyncState]    = useState<any>(null);
   const [syncing,      setSyncing]      = useState(false);
+  const [syncFull,     setSyncFull]     = useState(false);
   const [syncProgress, setSyncProgress] = useState<{ step: string; pct: number; error: boolean } | null>(null);
 
   useEffect(() => {
@@ -801,6 +817,7 @@ export default function App() {
   const manualSync = useCallback(async (full = false) => {
     if (syncing) return;
     setSyncing(true);
+    setSyncFull(full);
     setSyncProgress({ step: full ? 'Resetting cursors…' : 'Connecting to bank…', pct: 10, error: false });
     try {
       setSyncProgress({ step: 'Fetching transactions…', pct: 35, error: false });
@@ -859,6 +876,18 @@ export default function App() {
     document.title = name ? `${name} — MoneyTalks` : 'MoneyTalks';
   }, [tab]);
 
+  // Prefetch heavy lazy chunks quickly so tab switches feel instant
+  useEffect(() => {
+    const t = setTimeout(() => {
+      import('@/tabs/Shared');
+      import('@/tabs/Trips');
+      import('@/tabs/Spending');
+      import('@/tabs/Analysis');
+      import('@/tabs/Wealth');
+    }, 500);
+    return () => clearTimeout(t);
+  }, []);
+
   const accent  = ACCENT_PRESETS[t.accent] || ACCENT_PRESETS.emerald;
   const cssVars = {
     '--accent':  accent.accent,
@@ -872,7 +901,7 @@ export default function App() {
   const renderTab = () => {
     if (!tab) return null;
     switch (tab) {
-      case 'overview':    return <OverviewTab    {...sharedProps} />;
+      case 'overview':    return <OverviewTab    {...sharedProps} setTab={setTab} />;
       case 'txns':        return <TransactionsTab {...sharedProps} />;
       case 'monthly':     return <MonthlyTab {...sharedProps} />;
       case 'review':      return <ReviewTab refreshFin={refreshFin} setTab={setTab} />;
@@ -888,7 +917,7 @@ export default function App() {
       case 'recurring':   return <RecurringTab />;
       case 'chat':        return <ChatTab />;
       case 'flagged':     return <FlaggedTab />;
-      case 'settings':    return <SettingsTab refreshFin={refreshFin} />;
+      case 'settings':    return <SettingsTab refreshFin={refreshFin} onSync={manualSync} syncing={syncing} />;
       case 'feedback':    return <FeedbackTab />;
       case 'admin':       return <AdminTab />;
       default:            return <OverviewTab    {...sharedProps} />;
@@ -913,7 +942,7 @@ export default function App() {
               {syncProgress.error ? '⚠️' : '🔄'}
             </div>
             <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)', marginBottom: 6 }}>
-              {syncProgress.error ? 'Sync failed' : 'Syncing your accounts'}
+              {syncProgress.error ? 'Sync failed' : syncFull ? 'Full re-sync in progress' : 'Syncing your accounts'}
             </div>
             <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 20 }}>
               {syncProgress.step}
@@ -933,7 +962,7 @@ export default function App() {
             </div>
             {!syncProgress.error && (
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 10 }}>
-                Don't close the app — this takes a few seconds
+                {syncFull ? 'Rebuilding your full transaction history — please wait' : 'Don\'t close the app — this takes a few seconds'}
               </div>
             )}
           </div>

@@ -274,6 +274,15 @@ def _resolve_category(
     if raw_category in _REIMBURSEMENT_CATS or cat_id == "reimbursements":
         return "other"
 
+    # If the stored category is explicitly an income category, trust it over txn_type.
+    # This handles rows where txn_type was incorrectly set to "expense" before the
+    # final category was known (e.g. interest earned categorized after transaction_type
+    # was already assigned during sync).
+    _INCOME_CATS = {"income", "freelance-and-side-income", "paycheck-and-salary",
+                    "investment-and-dividend-income", "other-income"}
+    if cat_id in _INCOME_CATS:
+        return "income"
+
     is_income = (txn_type == "income") or (txn_type is None and expense_amount < 0)
     if is_income:
         return "income"

@@ -662,7 +662,7 @@ def sync_all_transactions(
                     was_user_edited = ann.get("user_edited", False)
                     if was_user_edited or ann.get("category"):
                         new_df.at[i, "category"] = ann["category"]
-                    if ann.get("notes"):
+                    if ann.get("notes") and "Possible duplicate" not in str(ann["notes"]):
                         new_df.at[i, "notes"] = ann["notes"]
                     if ann.get("tags"):
                         new_df.at[i, "tags"] = ann["tags"]

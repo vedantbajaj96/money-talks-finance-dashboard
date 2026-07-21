@@ -209,6 +209,62 @@ def _display_names(usernames: list[str]) -> dict[str, str]:
 # Endpoints — IMPORTANT: literal paths (/join, /joined) must come before /{space_id}
 # ---------------------------------------------------------------------------
 
+@router.get("/api/shared/users")
+def list_app_users(current_user: str = Depends(get_current_user)) -> dict:
+    """Return regular app users (excluding self, admins, and demo accounts) for direct-invite UI."""
+    try:
+        users = json.loads(USERS_FILE.read_text()) if USERS_FILE.exists() else {}
+    except Exception:
+        users = {}
+    result = [
+        {"username": u, "display_name": v.get("display_name") or u}
+        for u, v in users.items()
+        if u != current_user
+        and not v.get("is_admin")
+        and u != "demo"
+    ]
+    return {"users": result}
+
+
+@router.post("/api/shared/{space_id}/invite")
+def invite_user(space_id: str, body: dict[str, Any], current_user: str = Depends(get_current_user)) -> dict:
+    """Directly add an app user to a space (owner only, no token required)."""
+    username = (body.get("username") or "").strip()
+    try:
+        validate_username(username)
+    except ValueError:
+        raise HTTPException(400, "Invalid username")
+
+    owner, space = _resolve_space(space_id, current_user)
+    if current_user != owner:
+        raise HTTPException(403, "Only the space owner can invite users")
+
+    try:
+        users = json.loads(USERS_FILE.read_text()) if USERS_FILE.exists() else {}
+    except Exception:
+        users = {}
+    if username not in users:
+        raise HTTPException(404, f"User not found")
+
+    if username in space.get("participants", []):
+        return {"ok": True, "already_member": True}
+
+    spaces = _load_spaces(owner)
+    idx = next((i for i, s in enumerate(spaces) if s["id"] == space_id), None)
+    if idx is None:
+        raise HTTPException(404, "Space not found")
+
+    spaces[idx].setdefault("participants", [owner]).append(username)
+    _save_spaces(owner, spaces)
+
+    joined = _load_joined(username)
+    if not any(j["owner"] == owner and j["space_id"] == space_id for j in joined):
+        joined.append({"owner": owner, "space_id": space_id})
+        _save_joined(username, joined)
+
+    return {"ok": True}
+
+
 @router.get("/api/shared")
 def list_spaces(current_user: str = Depends(get_current_user)) -> dict:
     """Return owned spaces + joined spaces, each with total and last_activity."""
