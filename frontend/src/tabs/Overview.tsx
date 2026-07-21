@@ -111,16 +111,20 @@ function GroupedTxnList({ txns, sortBy, onRecategorize, refreshFin }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const groups = useMemo(() => {
+    // Group by merchant+category so "Costco Gas" and "Costco Grocery" stay separate
     const map = new Map<string, any[]>();
     txns.forEach(t => {
-      if (!map.has(t.merchant)) map.set(t.merchant, []);
-      map.get(t.merchant)!.push(t);
+      const key = `${t.merchant}||${t.category}`;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(t);
     });
-    const arr = [...map.entries()].map(([merchant, items]) => {
+    const arr = [...map.entries()].map(([, items]) => {
       const total = items.reduce((s, t) => s + Math.abs(t.amount), 0);
       const lastDate = items.reduce((d, t) => t.date > d ? t.date : d, '');
       const cat = catById(items[0]?.category);
-      return { merchant, items, total, lastDate, cat };
+      const logo_url = items.find(t => (t as any).logo_url)?.logo_url as string | undefined;
+      const merchant = items[0]?.merchant || '';
+      return { merchant, items, total, lastDate, cat, logo_url };
     });
     if (sortBy === 'amount') return arr.sort((a, b) => b.total - a.total);
     return arr.sort((a, b) => b.lastDate.localeCompare(a.lastDate));
@@ -147,8 +151,11 @@ function GroupedTxnList({ txns, sortBy, onRecategorize, refreshFin }) {
               style={{ cursor: multi ? 'pointer' : 'default' }}
               onClick={multi ? () => toggle(g.merchant) : undefined}
             >
-              <div className="txn-icon" style={{ background: g.cat.color + '24', color: g.cat.color }}>
-                {g.cat.icon}
+              <div className="txn-icon" style={{ background: g.cat.color + '24', color: g.cat.color, overflow: 'hidden', padding: g.logo_url ? 0 : undefined }}>
+                {g.logo_url
+                  ? <img src={g.logo_url} alt="" width={36} height={36} style={{ display: 'block', borderRadius: 'inherit' }}
+                      onError={e => { e.currentTarget.style.display = 'none'; (e.currentTarget.parentElement as HTMLElement).textContent = g.cat.icon; }} />
+                  : g.cat.icon}
               </div>
               <div className="txn-main">
                 <div className="txn-merchant">

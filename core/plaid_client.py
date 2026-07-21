@@ -159,14 +159,36 @@ def _best_description(txn: dict) -> str:
     with asterisks and provide no counterparty data.  Fall back through all
     available fields, and as a last resort convert Plaid's category slug to a
     readable label (e.g. FOOD_AND_DRINK_RESTAURANTS → "Restaurants").
+
+    When `name` is more specific than `merchant_name` (e.g. "Costco Gas" vs
+    "Costco"), we prefer a cleaned version of `name` so different Costco
+    transaction types remain distinct.
     """
     def _masked(s: str) -> bool:
         return not s or "***" in s
 
+    merchant_name = str(txn.get("merchant_name") or "").strip()
+    raw_name      = str(txn.get("name") or "").strip()
+
+    # If merchant_name exists and name starts with it but adds meaningful context
+    # (e.g. "Costco Gas" starts with "Costco"), prefer the name — but clean it
+    # by stripping trailing location codes, store numbers, and state abbreviations.
+    if merchant_name and not _masked(merchant_name) and raw_name and not _masked(raw_name):
+        if raw_name.lower().startswith(merchant_name.lower()) and len(raw_name) > len(merchant_name):
+            extra = raw_name[len(merchant_name):].strip()
+            # Keep extra only if it looks like a word (not a store number / zip)
+            import re as _re
+            first_word = _re.split(r'[\s#\d]', extra)[0].strip()
+            if first_word and not first_word.isdigit():
+                # e.g. "Costco Gas #1234 San Bernardino" → "Costco Gas"
+                cleaned = (merchant_name + " " + first_word).title()
+                return cleaned
+        return merchant_name
+
     candidates = [
-        txn.get("merchant_name") or "",
+        merchant_name,
         ((txn.get("counterparties") or [{}])[0].get("name") or ""),
-        txn.get("name") or "",
+        raw_name,
         txn.get("original_description") or "",
     ]
     for c in candidates:

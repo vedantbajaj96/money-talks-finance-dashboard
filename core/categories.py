@@ -70,6 +70,7 @@ CAT_MAP: dict[str, str] = {
     "Reimbursement":  "other",
     "Transfers":      "transfer",
     "Savings":        "savings",
+    "Services":       "services",
     "Other":          "other",
 }
 
@@ -95,6 +96,7 @@ CAT_META: dict[str, dict] = {
     "education":     {"name": "Education",        "group": "variable", "color": "#818cf8", "icon": "◈"},
     "self_dev":      {"name": "Self Development", "group": "variable", "color": "#fb7185", "icon": "◍"},
     "personal_care": {"name": "Personal Care",    "group": "variable", "color": "#f0abfc", "icon": "◎"},
+    "services":      {"name": "Services",          "group": "variable", "color": "#2dd4bf", "icon": "◱"},
     "other":         {"name": "Other",            "group": "variable", "color": "#94a3b8", "icon": "○"},
 }
 
@@ -218,6 +220,44 @@ PLAID_CATEGORY_MAP: dict[str, str] = {
     "LOAN_PAYMENTS_CAR_PAYMENT":                "transport",
     "LOAN_PAYMENTS_PERSONAL_LOAN_PAYMENT":      "transfer",
     "LOAN_PAYMENTS_STUDENT_LOAN_PAYMENT":       "education",
+    # General services (home cleaning, repair, legal, accounting, etc.)
+    "GENERAL_SERVICES_ACCOUNTING_AND_FINANCIAL_PLANNING": "services",
+    "GENERAL_SERVICES_AUTOMOTIVE":              "services",
+    "GENERAL_SERVICES_CHILDCARE":               "services",
+    "GENERAL_SERVICES_CLEANING":                "services",
+    "GENERAL_SERVICES_FINANCIAL_PLANNING":      "services",
+    "GENERAL_SERVICES_HOME_IMPROVEMENT":        "services",
+    "GENERAL_SERVICES_INSURANCE":               "services",
+    "GENERAL_SERVICES_LEGAL":                   "services",
+    "GENERAL_SERVICES_MARKETING":               "services",
+    "GENERAL_SERVICES_PERSONAL_STORAGE":        "services",
+    "GENERAL_SERVICES_PRINTING":                "services",
+    "GENERAL_SERVICES_SHIPPING":                "services",
+    "GENERAL_SERVICES_VETERINARY":              "health",
+    # Government & non-profit
+    "GOVERNMENT_AND_NON_PROFIT_DONATIONS":      "other",
+    "GOVERNMENT_AND_NON_PROFIT_GOVERNMENT_FEES":"other",
+    "GOVERNMENT_AND_NON_PROFIT_TAX_PAYMENT":    "other",
+    # Bank fees
+    "BANK_FEES_ATM_FEES":                       "other",
+    "BANK_FEES_FOREIGN_TRANSACTION_FEES":       "other",
+    "BANK_FEES_INSUFFICIENT_FUNDS":             "other",
+    "BANK_FEES_INTEREST_CHARGE":                "other",
+    "BANK_FEES_OVERDRAFT_FEES":                 "other",
+    "BANK_FEES_OTHER_BANK_FEES":                "other",
+    # Missing transport
+    "TRANSPORTATION_TOLLS":                     "transport",
+    "TRANSPORTATION_BIKES_AND_SCOOTERS":        "transport",
+    # Missing entertainment
+    "ENTERTAINMENT_CONCERTS_AND_EVENTS":        "entertainment",
+    "ENTERTAINMENT_BARS_AND_NIGHTLIFE":         "dining",
+    "ENTERTAINMENT_OUTDOOR_AND_RECREATION":     "entertainment",
+    # Missing personal care
+    "PERSONAL_CARE_TOBACCO_AND_VAPING":         "other",
+    "PERSONAL_CARE_BEAUTY":                     "personal_care",
+    # Missing food
+    "FOOD_AND_DRINK_VENDING_MACHINES":          "dining",
+    "FOOD_AND_DRINK_BAKERIES":                  "dining",
 }
 
 

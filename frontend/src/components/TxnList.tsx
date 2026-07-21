@@ -111,8 +111,17 @@ function TxnList({ txns, compact = false, onRecategorize, refreshFin, sortCol: i
           const isFlagged = !!localFlags[t.id];
           return (
             <div key={t.id} className="txn-row" style={isSplit ? { paddingLeft: 28, borderLeft: `3px solid ${cat.color}40` } : isFlagged ? { background: 'rgba(249,115,22,0.035)' } : {}}>
-              <div className="txn-icon" style={{ background: cat.color + '24', color: cat.color }}>
-                {isSplit ? '⋮' : cat.icon}
+              <div className="txn-icon" style={{ background: cat.color + '24', color: cat.color, overflow: 'hidden', padding: (t as any).logo_url && !isSplit ? 0 : undefined }}>
+                {!isSplit && (t as any).logo_url
+                  ? <img src={(t as any).logo_url} alt="" width={36} height={36}
+                      style={{ display: 'block', borderRadius: 'inherit' }}
+                      onError={e => {
+                        const el = e.currentTarget;
+                        el.style.display = 'none';
+                        (el.parentElement as HTMLElement).textContent = cat.icon;
+                      }} />
+                  : isSplit ? '⋮' : cat.icon
+                }
               </div>
               <div className="txn-main">
                 <div className="txn-merchant">
