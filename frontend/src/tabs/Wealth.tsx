@@ -125,6 +125,8 @@ function AccountList() {
 function AccountsTab({ onSync, syncing }) {
   const [plaidAccounts, setPlaidAccounts] = useState([]);
   const [balances, setBalances]           = useState([]);
+  const [liabilities, setLiabilities]    = useState<any[]>([]);
+  const [liabReady, setLiabReady]        = useState(false);
   const [configured, setConfigured]       = useState(false);
   const [syncResult, setSyncResult]       = useState(null);
   const [linking, setLinking]             = useState(false);
@@ -141,13 +143,27 @@ function AccountsTab({ onSync, syncing }) {
       setBalances(d.accounts || []);
     }).catch(() => {});
 
-  useEffect(() => { loadAccounts(); loadBalances(); }, []);
+  const loadLiabilities = () =>
+    apiFetch('/api/plaid/liabilities').then(r => r?.json()).then(d => {
+      setLiabilities(d?.liabilities || []);
+      setLiabReady(true);
+    }).catch(() => setLiabReady(true));
 
-  async function openPlaidLink() {
+  useEffect(() => { loadAccounts(); loadBalances(); loadLiabilities(); }, []);
+
+  async function openPlaidLink(updateItemId?: string) {
     setError('');
     setLinking(true);
     try {
-      const res = await apiFetch('/api/plaid/link-token', { method: 'POST' });
+      // Update mode: re-authenticate existing item (adds liabilities, no new connection)
+      // Fresh mode: link a brand new institution
+      const res = updateItemId
+        ? await apiFetch('/api/plaid/link-token/update', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ item_id: updateItemId }),
+          })
+        : await apiFetch('/api/plaid/link-token', { method: 'POST' });
       const data = await res.json();
       if (!res.ok) { setError(data.detail || 'Failed to get link token'); setLinking(false); return; }
 
@@ -163,13 +179,18 @@ function AccountsTab({ onSync, syncing }) {
       const handler = window.Plaid.create({
         token: data.link_token,
         onSuccess: async (public_token, metadata) => {
-          const inst = metadata?.institution?.name || 'Unknown';
-          await apiFetch('/api/plaid/exchange', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ public_token, institution_name: inst }),
-          });
+          if (!updateItemId) {
+            // Fresh link: exchange public token for a new access token
+            const inst = metadata?.institution?.name || 'Unknown';
+            await apiFetch('/api/plaid/exchange', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ public_token, institution_name: inst }),
+            });
+          }
+          // Update mode: item already exists, just refresh liabilities + balances
           await loadAccounts();
+          await loadLiabilities();
           setLinking(false);
         },
         onExit: () => setLinking(false),
@@ -289,6 +310,7 @@ function AccountsTab({ onSync, syncing }) {
                 const limit = isCredit && avail != null ? bal + avail : null;
                 const util = limit ? bal / limit : null;
                 const inst = plaidAccounts.find(a => a.institution_name === b.institution_name);
+                const liab = isCredit ? liabilities.find(l => l.institution === b.institution_name) : null;
                 return (
                   <div key={i} className="card" style={{ padding: '18px 20px', position: 'relative' }}>
                     {/* Top: name + institution */}
@@ -332,6 +354,64 @@ function AccountsTab({ onSync, syncing }) {
                         )}
                       </div>
                     )}
+                    {/* Per-card re-link prompt when liabilities not yet available */}
+                    {isCredit && liabReady && !liab && inst && (
+                      <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                        <span style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>Payment details unavailable</span>
+                        <button onClick={() => openPlaidLink(inst.item_id)} disabled={linking} style={{
+                          flexShrink: 0, background: 'transparent', color: '#f97316',
+                          border: '1px solid color-mix(in srgb, #f97316 40%, transparent)',
+                          borderRadius: 6, padding: '3px 10px', fontSize: 11, fontWeight: 600,
+                          fontFamily: 'inherit', cursor: linking ? 'default' : 'pointer', opacity: linking ? 0.6 : 1,
+                        }}>
+                          {linking ? 'Opening…' : 'Re-link'}
+                        </button>
+                      </div>
+                    )}
+                    {/* Liabilities: payment info for credit cards */}
+                    {liab && (
+                      <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--line)', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 12px' }}>
+                        {liab.minimum_payment > 0 && (
+                          <div>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>Min Payment</div>
+                            <div style={{ fontSize: 14, fontWeight: 700, color: liab.is_overdue ? '#ef4444' : 'var(--ink)' }}>{fmtMoney(liab.minimum_payment)}</div>
+                          </div>
+                        )}
+                        {liab.next_payment_due_date && (
+                          <div>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>Due Date</div>
+                            <div style={{ fontSize: 14, fontWeight: 700, color: liab.is_overdue ? '#ef4444' : 'var(--ink)' }}>
+                              {liab.next_payment_due_date.slice(5).replace('-', '/')}
+                              {liab.is_overdue && <span style={{ marginLeft: 5, fontSize: 10, color: '#ef4444', fontWeight: 600 }}>OVERDUE</span>}
+                            </div>
+                          </div>
+                        )}
+                        {liab.last_statement_balance > 0 && (
+                          <div>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>Last Statement</div>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-2)' }}>{fmtMoney(liab.last_statement_balance)}</div>
+                          </div>
+                        )}
+                        {liab.last_payment_amount > 0 && (
+                          <div>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>Last Payment</div>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--green)' }}>{fmtMoney(liab.last_payment_amount)}</div>
+                          </div>
+                        )}
+                        {liab.aprs?.length > 0 && (
+                          <div style={{ gridColumn: '1 / -1' }}>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>APR</div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                              {liab.aprs.filter(a => a.rate > 0).map((a, ai) => (
+                                <span key={ai} style={{ fontSize: 11, background: 'var(--bg)', borderRadius: 5, padding: '2px 7px', color: 'var(--ink-2)', border: '1px solid var(--line)' }}>
+                                  {a.rate.toFixed(2)}% {a.type?.replace(/_/g, ' ').toLowerCase()}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -346,23 +426,63 @@ function AccountsTab({ onSync, syncing }) {
 // ═══════════════════════════════════════════════════════════════════
 // RECURRING TAB
 // ═══════════════════════════════════════════════════════════════════
-function RecurringTab() {
-  const subs = RECURRING.filter((r) => r.category === 'subs');
-  const bills = RECURRING.filter((r) => r.category !== 'subs');
-  const monthlyTotal = RECURRING.reduce((s, r) => s + r.est_monthly, 0);
-  const subsTotal = subs.reduce((s, r) => s + r.est_monthly, 0);
+// Maps Plaid primary category → our internal category id
+const PLAID_REC_CAT: Record<string, string> = {
+  SUBSCRIPTION: 'subs', RENT_AND_UTILITIES: 'utilities', LOAN_PAYMENTS: 'other',
+  FOOD_AND_DRINK: 'dining', TRANSPORTATION: 'transit', ENTERTAINMENT: 'entertainment',
+  PERSONAL_CARE: 'personal', MEDICAL: 'health', GENERAL_MERCHANDISE: 'shopping',
+  HOME_IMPROVEMENT: 'home', TRAVEL: 'travel', GOVERNMENT_AND_NON_PROFIT: 'other',
+};
 
-  const FREQ_COLORS = {
+function RecurringTab() {
+  const [plaidStreams, setPlaidStreams] = useState<any[]>([]);
+  const [plaidReady, setPlaidReady]   = useState(false);
+
+  useEffect(() => {
+    apiFetch('/api/plaid/recurring').then(r => r?.json()).then(d => {
+      if (d?.configured) {
+        // Only show MATURE outflow streams (skip TOMBSTONED = cancelled, EARLY_DETECTION = tentative)
+        const streams = (d.outflow || []).filter((s: any) => s.status !== 'TOMBSTONED');
+        setPlaidStreams(streams);
+      }
+      setPlaidReady(true);
+    }).catch(() => setPlaidReady(true));
+  }, []);
+
+  // Build unified list: Plaid streams when available, local RECURRING as fallback
+  const useLocal = !plaidStreams.length;
+  const allItems = useLocal
+    ? RECURRING
+    : plaidStreams.map((s: any) => ({
+        merchant:    s.merchant || s.description,
+        category:    PLAID_REC_CAT[s.category?.toUpperCase()] || 'other',
+        freq:        s.freq,
+        amount:      s.last_amount,
+        est_monthly: s.freq === 'Monthly' ? s.last_amount : s.avg_amount,
+        next:        s.next_date,
+        account:     s.institution,
+        occurrences: 0,
+        _plaid:      true,
+        _early:      s.status === 'EARLY_DETECTION',
+      }));
+
+  const subs         = allItems.filter(r => r.category === 'subs');
+  const bills        = allItems.filter(r => r.category !== 'subs');
+  const monthlyTotal = allItems.reduce((s, r) => s + (r.est_monthly || 0), 0);
+  const subsTotal    = subs.reduce((s, r) => s + (r.est_monthly || 0), 0);
+
+  const FREQ_COLORS: Record<string, string> = {
     Weekly: '#f97316', 'Bi-weekly': '#fbbf24', Monthly: '#5ec98a',
-    Quarterly: '#67e8f9', Annual: '#a78bfa',
+    'Semi-monthly': '#34d399', Quarterly: '#67e8f9', Annual: '#a78bfa',
   };
-  const RecRow = ({ r }) => {
-    const cat = catById(r.category);
-    const acct = acctById(r.account);
+
+  const RecRow = ({ r }: { r: any }) => {
+    const cat      = catById(r.category);
+    const acct     = acctById(r.account);
     const freqColor = FREQ_COLORS[r.freq] || '#94a3b8';
     const nextDate  = r.next ? r.next.slice(5).replace('-', '/') : '—';
     const today     = new Date().toISOString().slice(0, 10);
-    const daysUntil = r.next ? Math.ceil((new Date(r.next) - new Date(today)) / 864e5) : null;
+    const daysUntil = r.next ? Math.ceil((new Date(r.next) as any - new Date(today) as any) / 864e5) : null;
     return (
       <div className="rec-row">
         <div className="rec-icon" style={{ background: cat.color + '24', color: cat.color }}>{cat.icon}</div>
@@ -373,12 +493,13 @@ function RecurringTab() {
               fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 10,
               background: freqColor + '20', color: freqColor, textTransform: 'uppercase', letterSpacing: '0.05em',
             }}>{r.freq}</span>
+            {r._early && <span style={{ fontSize: 10, color: 'var(--muted)', fontStyle: 'italic' }}>tentative</span>}
           </div>
           <div className="rec-meta">
             <span style={{ color: cat.color }}>{cat.name}</span>
             <span className="dot-sep">·</span>
-            <span>{acct.name}</span>
-            {r.occurrences > 0 && (
+            <span>{r._plaid ? r.account : acct.name}</span>
+            {!r._plaid && r.occurrences > 0 && (
               <>
                 <span className="dot-sep">·</span>
                 <span style={{ color: 'var(--muted)' }}>{r.occurrences}× detected</span>
@@ -418,9 +539,9 @@ function RecurringTab() {
         sublabel="estimated monthly recurring cost"
         positive={false}
         stats={[
-          { val: fmtMoney(subsTotal),        key: 'Subscriptions' },
+          { val: fmtMoney(subsTotal),         key: 'Subscriptions' },
           { val: fmtMoney(monthlyTotal * 12), key: 'Annual' },
-          { val: String(RECURRING.length),    key: 'Tracked' },
+          { val: String(allItems.length),     key: 'Tracked' },
         ]}
       />
       <div className="grid-3">
@@ -430,12 +551,19 @@ function RecurringTab() {
         <SummaryCard label="Annual cost" value={fmtMoney(monthlyTotal * 12)} accent="var(--ink)" />
       </div>
 
+      {plaidReady && !useLocal && (
+        <div style={{ fontSize: 11, color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)', display: 'inline-block' }} />
+          Powered by Plaid — real next-charge dates from your bank
+        </div>
+      )}
+
       <div className="card">
         <div className="card-head">
           <h3>Subscriptions</h3>
           <span className="muted">{subs.length} services</span>
         </div>
-        <div className="rec-list">{subs.map((r) => <RecRow key={r.merchant} r={r} />)}</div>
+        <div className="rec-list">{subs.map((r, i) => <RecRow key={r.merchant + i} r={r} />)}</div>
       </div>
 
       <div className="card">
@@ -443,7 +571,7 @@ function RecurringTab() {
           <h3>Bills & utilities</h3>
           <span className="muted">{bills.length} recurring</span>
         </div>
-        <div className="rec-list">{bills.map((r) => <RecRow key={r.merchant} r={r} />)}</div>
+        <div className="rec-list">{bills.map((r, i) => <RecRow key={r.merchant + i} r={r} />)}</div>
       </div>
     </div>
   );

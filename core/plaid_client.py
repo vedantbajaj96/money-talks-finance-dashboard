@@ -56,6 +56,9 @@ from plaid.model.link_token_create_request_user import LinkTokenCreateRequestUse
 from plaid.model.products import Products
 from plaid.model.transactions_refresh_request import TransactionsRefreshRequest
 from plaid.model.transactions_sync_request import TransactionsSyncRequest
+from plaid.model.item_remove_request import ItemRemoveRequest
+from plaid.model.liabilities_get_request import LiabilitiesGetRequest
+from plaid.model.transactions_recurring_get_request import TransactionsRecurringGetRequest
 
 # Default data directory (module-level fallback; per-user callers pass data_dir explicitly)
 # _MODULE_DIR is core/, so parent is the project root where data/ actually lives.
@@ -260,9 +263,17 @@ def is_configured(cfg: dict | None = None) -> bool:
     return bool(cfg.get("plaid_client_id")) and bool(cfg.get("plaid_secret"))
 
 
-def create_link_token(cfg: dict | None = None, redirect_uri: str | None = None) -> str:
+def create_link_token(
+    cfg: dict | None = None,
+    redirect_uri: str | None = None,
+    access_token: str | None = None,
+) -> str:
     """
     Create a Plaid Link token.
+
+    Pass access_token to enter update mode — re-authenticates the existing item
+    in place without creating a new one. Also adds liabilities as an optional
+    product so the user can consent to it during the update flow.
 
     OAuth institutions (AMEX, Chase, BofA, Capital One) require redirect_uri to be set
     AND registered in your Plaid dashboard (Developers → API → Allowed Redirect URIs).
@@ -280,14 +291,25 @@ def create_link_token(cfg: dict | None = None, redirect_uri: str | None = None) 
             "http://localhost:8502/oauth_callback" if env_name == "sandbox" else None
         )
 
-    kwargs = dict(
-        user=LinkTokenCreateRequestUser(client_user_id="local-user"),
-        client_name="MoneyTalks",
-        products=[Products("transactions")],
-        optional_products=[Products("investments")],
-        country_codes=[CountryCode("US")],
-        language="en",
-    )
+    if access_token:
+        # Update mode: re-authenticate existing item, request liabilities consent
+        kwargs = dict(
+            user=LinkTokenCreateRequestUser(client_user_id="local-user"),
+            client_name="MoneyTalks",
+            access_token=access_token,
+            optional_products=[Products("liabilities")],
+            country_codes=[CountryCode("US")],
+            language="en",
+        )
+    else:
+        kwargs = dict(
+            user=LinkTokenCreateRequestUser(client_user_id="local-user"),
+            client_name="MoneyTalks",
+            products=[Products("transactions")],
+            optional_products=[Products("investments"), Products("liabilities")],
+            country_codes=[CountryCode("US")],
+            language="en",
+        )
     if redirect_uri:
         kwargs["redirect_uri"] = redirect_uri
 
@@ -360,9 +382,17 @@ def get_account_balances(cfg: dict | None = None, data_dir: str | None = None) -
     return results
 
 
-def remove_account(item_id: str, data_dir: str | None = None) -> None:
-    items = [i for i in _load_items(data_dir) if i.get("item_id") != item_id]
-    _save_items(items, data_dir)
+def remove_account(item_id: str, cfg: dict | None = None, data_dir: str | None = None) -> None:
+    items = _load_items(data_dir)
+    item = next((i for i in items if i.get("item_id") == item_id), None)
+    if item:
+        try:
+            client = _get_api_client(cfg or _default_cfg())
+            client.item_remove(ItemRemoveRequest(access_token=item["access_token"]))
+            logger.info("[remove_account] Plaid item %s removed", item_id)
+        except Exception as e:
+            logger.warning("[remove_account] Plaid item_remove failed for %s: %s", item_id, e)
+    _save_items([i for i in items if i.get("item_id") != item_id], data_dir)
 
 
 def backfill_locations(
@@ -804,3 +834,85 @@ def get_investment_data(cfg: dict | None = None, data_dir: str | None = None) ->
     # Sort transactions newest-first
     transactions.sort(key=lambda t: t["date"], reverse=True)
     return {"holdings": holdings, "transactions": transactions, "errors": errors}
+
+
+def get_liabilities(cfg: dict | None = None, data_dir: str | None = None) -> list[dict]:
+    """Fetch credit card liability details (min payment, due date, statement balance) for all items."""
+    client  = _get_api_client(cfg or _default_cfg())
+    results = []
+    for item in _load_items(data_dir):
+        inst = item.get("institution_name", "Unknown")
+        try:
+            resp = client.liabilities_get(LiabilitiesGetRequest(access_token=item["access_token"]))
+            for c in (resp.liabilities.credit or []):
+                aprs = [
+                    {"type": str(a.apr_type), "rate": float(a.apr_percentage or 0)}
+                    for a in (c.aprs or [])
+                ]
+                results.append({
+                    "account_id":             c.account_id,
+                    "institution":            inst,
+                    "last_payment_date":      str(c.last_payment_date)      if c.last_payment_date      else None,
+                    "last_payment_amount":    float(c.last_payment_amount   or 0),
+                    "last_statement_balance": float(c.last_statement_balance or 0),
+                    "last_statement_date":    str(c.last_statement_issue_date) if c.last_statement_issue_date else None,
+                    "minimum_payment":        float(c.minimum_payment_amount or 0),
+                    "next_payment_due_date":  str(c.next_payment_due_date)  if c.next_payment_due_date  else None,
+                    "is_overdue":             bool(c.is_overdue),
+                    "aprs":                   aprs,
+                })
+        except Exception as exc:
+            s = str(exc)
+            if "PRODUCTS_NOT_SUPPORTED" not in s and "ITEM_LOGIN_REQUIRED" not in s:
+                logger.warning("[liabilities:%s] %s", inst, exc)
+    return results
+
+
+def get_recurring_streams(cfg: dict | None = None, data_dir: str | None = None) -> dict:
+    """Fetch Plaid's pre-computed recurring transaction streams for all items."""
+    client  = _get_api_client(cfg or _default_cfg())
+    inflow  = []
+    outflow = []
+
+    def _stream(s, inst: str) -> dict:
+        avg  = s.average_amount  or type("_", (), {"amount": 0})()
+        last = s.last_amount     or type("_", (), {"amount": 0})()
+        pfc  = s.personal_finance_category
+        freq = str(s.frequency or "MONTHLY")
+        # Normalize Plaid frequency to our labels
+        freq_label = {
+            "WEEKLY": "Weekly", "BIWEEKLY": "Bi-weekly", "SEMI_MONTHLY": "Semi-monthly",
+            "MONTHLY": "Monthly", "ANNUALLY": "Annual",
+        }.get(freq.upper(), freq.title())
+        return {
+            "stream_id":   s.stream_id or "",
+            "merchant":    s.merchant_name or s.description or "",
+            "description": s.description or "",
+            "category":    str(pfc.primary if pfc else "") or "",
+            "detailed":    str(pfc.detailed_category if hasattr(pfc, "detailed_category") else (pfc.detailed if pfc else "")) or "",
+            "freq":        freq_label,
+            "avg_amount":  float(getattr(avg, "amount", 0) or 0),
+            "last_amount": float(getattr(last, "amount", 0) or 0),
+            "next_date":   str(s.next_expected_date) if s.next_expected_date else None,
+            "last_date":   str(s.last_date)          if s.last_date          else None,
+            "status":      str(s.status or ""),
+            "account_id":  s.account_id or "",
+            "institution": inst,
+        }
+
+    for item in _load_items(data_dir):
+        inst = item.get("institution_name", "Unknown")
+        try:
+            resp = client.transactions_recurring_get(
+                TransactionsRecurringGetRequest(access_token=item["access_token"])
+            )
+            for s in (resp.inflow_streams or []):
+                inflow.append(_stream(s, inst))
+            for s in (resp.outflow_streams or []):
+                outflow.append(_stream(s, inst))
+        except Exception as exc:
+            s = str(exc)
+            if "PRODUCTS_NOT_SUPPORTED" not in s and "ITEM_LOGIN_REQUIRED" not in s:
+                logger.warning("[recurring:%s] %s", inst, exc)
+
+    return {"inflow": inflow, "outflow": outflow}

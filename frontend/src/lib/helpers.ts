@@ -45,6 +45,17 @@ export function acctById(id: string): Account {
   return ACCOUNTS.find(a => a.id === id) || { id, name: id, color: '#94a3b8' };
 }
 
+// ── Merchant initials ─────────────────────────────────────────────────────────
+
+const _STOPS = new Set(['the', 'a', 'an', 'of', 'at', 'in', 'on', 'for', 'and', '&']);
+
+export function merchantInitials(name: string): string {
+  const words = name.trim().split(/\s+/).filter(w => !_STOPS.has(w.toLowerCase()) && w.length > 0);
+  if (words.length === 0) return (name[0] || '?').toUpperCase();
+  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
+  return (words[0][0] + words[1][0]).toUpperCase();
+}
+
 // ── Transaction aggregation ───────────────────────────────────────────────────
 
 const EXCLUDE_CATS = new Set(['income', 'transfer', 'refund', 'savings']);

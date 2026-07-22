@@ -938,30 +938,24 @@ export default function App() {
             border: '1px solid var(--line)', padding: '36px 40px',
             minWidth: 320, textAlign: 'center', boxShadow: '0 24px 64px rgba(0,0,0,0.3)',
           }}>
-            <div style={{ fontSize: 32, marginBottom: 12 }}>
-              {syncProgress.error ? '⚠️' : '🔄'}
-            </div>
+            {syncProgress.error ? (
+              <div style={{ fontSize: 32, marginBottom: 12 }}>⚠️</div>
+            ) : (
+              <div className="sync-dots" style={{ marginBottom: 16 }}>
+                <span /><span /><span />
+              </div>
+            )}
             <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)', marginBottom: 6 }}>
               {syncProgress.error ? 'Sync failed' : syncFull ? 'Full re-sync in progress' : 'Syncing your accounts'}
             </div>
             <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 20 }}>
               {syncProgress.step}
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-              <div style={{ flex: 1, height: 6, background: 'var(--line)', borderRadius: 3, overflow: 'hidden' }}>
-                <div style={{
-                  height: '100%', borderRadius: 3,
-                  width: `${syncProgress.pct}%`,
-                  background: syncProgress.error ? 'var(--terra)' : 'var(--accent)',
-                  transition: 'width 0.4s ease',
-                }} />
-              </div>
-              <div style={{ fontSize: 12, color: 'var(--muted)', minWidth: 32, textAlign: 'right' }}>
-                {syncProgress.pct}%
-              </div>
+            <div className="sync-bar-track">
+              <div className={`sync-bar-sweep${syncProgress.error ? ' error' : ''}`} />
             </div>
             {!syncProgress.error && (
-              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 10 }}>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 12 }}>
                 {syncFull ? 'Rebuilding your full transaction history — please wait' : 'Don\'t close the app — this takes a few seconds'}
               </div>
             )}

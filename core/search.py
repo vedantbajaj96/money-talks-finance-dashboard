@@ -199,6 +199,16 @@ def semantic_txn_search(username: str, q: str) -> dict:
           "semantic": True
         }
     """
+    try:
+        return _semantic_txn_search_inner(username, q)
+    except MemoryError:
+        return {"matches": [], "merchants": [], "semantic": False, "error": "out of memory"}
+    except Exception as e:
+        print(f"[search] error for {username!r}: {e}", flush=True)
+        return {"matches": [], "merchants": [], "semantic": False, "error": str(e)}
+
+
+def _semantic_txn_search_inner(username: str, q: str) -> dict:
     from core.categories import map_category
     import numpy as np
 

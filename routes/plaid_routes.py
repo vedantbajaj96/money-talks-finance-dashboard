@@ -30,6 +30,28 @@ def plaid_link_token(current_user: str = Depends(get_current_user)) -> dict:
         raise HTTPException(500, str(e))
 
 
+@router.post("/api/plaid/link-token/update")
+def plaid_link_token_update(body: dict[str, Any], current_user: str = Depends(get_current_user)) -> dict:
+    """Create an update-mode link token for an existing item (no new item created)."""
+    cfg = load_config(current_user)
+    if not cfg.get("plaid_client_id") or not cfg.get("plaid_secret"):
+        raise HTTPException(400, "Plaid keys not configured")
+    item_id = body.get("item_id")
+    if not item_id:
+        raise HTTPException(400, "item_id required")
+    try:
+        from core.plaid_client import create_link_token, _load_items
+        items = _load_items(data_dir=str(user_dir(current_user)))
+        item = next((i for i in items if i.get("item_id") == item_id), None)
+        if not item:
+            raise HTTPException(404, "Item not found")
+        return {"link_token": create_link_token(cfg=cfg, access_token=item["access_token"])}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
 @router.post("/api/plaid/exchange")
 def plaid_exchange(body: dict[str, Any], current_user: str = Depends(get_current_user)) -> dict:
     try:
@@ -103,6 +125,38 @@ def plaid_sync(body: dict[str, Any] = {}, current_user: str = Depends(get_curren
         df, dupes_removed = _dedup(df)
         if dupes_removed:
             logger.info("[sync:%s] removed %d semantic duplicates after sync", current_user, dupes_removed)
+
+        # Preserve approved/user_edited/category from semantic matches in pre-sync data.
+        # This handles full resyncs where new Plaid item IDs replace old ones — the
+        # plaid_txn_id changes but (description, date, amount) stays the same.
+        if existing is not None and not existing.empty and "approved" in existing.columns:
+            _apr_col = existing.get("approved", pd.Series(False, index=existing.index)).fillna(False).astype(bool)
+            _ue_col  = existing.get("user_edited", pd.Series(False, index=existing.index)).fillna(False).astype(bool)
+            _prev_approved: dict[tuple, dict] = {}
+            for _, row in existing[_apr_col | _ue_col].iterrows():
+                key = (str(row.get("description", "")), str(row.get("date", ""))[:10],
+                       round(float(row.get("expense_amount") or 0), 2))
+                _prev_approved[key] = {
+                    "approved":    bool(row.get("approved", False)),
+                    "user_edited": bool(row.get("user_edited", False)),
+                    "category":    row.get("category"),
+                }
+            if _prev_approved:
+                _new_apr  = df.get("approved",    pd.Series(False, index=df.index)).fillna(False).astype(bool)
+                _new_ue   = df.get("user_edited", pd.Series(False, index=df.index)).fillna(False).astype(bool)
+                recovered = 0
+                for idx, row in df[~_new_apr].iterrows():
+                    key = (str(row.get("description", "")), str(row.get("date", ""))[:10],
+                           round(float(row.get("expense_amount") or 0), 2))
+                    match = _prev_approved.get(key)
+                    if match:
+                        df.at[idx, "approved"]    = match["approved"]
+                        df.at[idx, "user_edited"] = match["user_edited"]
+                        if match["user_edited"] and match["category"]:
+                            df.at[idx, "category"] = match["category"]
+                        recovered += 1
+                if recovered:
+                    logger.info("[sync:%s] recovered approved/edited flags for %d rows via semantic match", current_user, recovered)
         t_sync = time.monotonic()
         logger.info("[sync:%s] transactions fetched in %.1fs — added=%s modified=%s removed=%s",
                     current_user, t_sync - t_refresh,
@@ -306,7 +360,34 @@ def plaid_backfill_locations(current_user: str = Depends(get_current_user)) -> d
 def plaid_remove_account(item_id: str, current_user: str = Depends(get_current_user)) -> dict:
     try:
         from core.plaid_client import remove_account
-        remove_account(item_id, data_dir=str(user_dir(current_user)))
+        remove_account(item_id, cfg=load_config(current_user), data_dir=str(user_dir(current_user)))
         return {"ok": True}
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+@router.get("/api/plaid/liabilities")
+def plaid_liabilities(current_user: str = Depends(get_current_user)) -> dict:
+    try:
+        from core.plaid_client import get_liabilities, is_configured
+        cfg = load_config(current_user)
+        if not is_configured(cfg):
+            return {"liabilities": [], "configured": False}
+        data = get_liabilities(cfg=cfg, data_dir=str(user_dir(current_user)))
+        return {"liabilities": data, "configured": True}
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+@router.get("/api/plaid/recurring")
+def plaid_recurring(current_user: str = Depends(get_current_user)) -> dict:
+    try:
+        from core.plaid_client import get_recurring_streams, is_configured
+        cfg = load_config(current_user)
+        if not is_configured(cfg):
+            return {"inflow": [], "outflow": [], "configured": False}
+        data = get_recurring_streams(cfg=cfg, data_dir=str(user_dir(current_user)))
+        data["configured"] = True
+        return data
     except Exception as e:
         raise HTTPException(500, str(e))

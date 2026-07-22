@@ -1,7 +1,7 @@
 // Chart component — see frontend/AGENTS.md for context
 import { useState } from 'react';
 import { ACCOUNTS } from '@/lib/fin';
-import { fmt, acctById } from '@/lib/helpers';
+import { fmt, acctById, merchantInitials } from '@/lib/helpers';
 import { apiFetch } from '@/lib/api';
 import { liveCatById } from '@/components/CategoryPicker';
 import CategoryPicker from '@/components/CategoryPicker';
@@ -118,9 +118,13 @@ function TxnList({ txns, compact = false, onRecategorize, refreshFin, sortCol: i
                       onError={e => {
                         const el = e.currentTarget;
                         el.style.display = 'none';
-                        (el.parentElement as HTMLElement).textContent = cat.icon;
+                        const parent = el.parentElement as HTMLElement;
+                        parent.style.fontSize = '12px';
+                        parent.style.fontWeight = '700';
+                        parent.style.letterSpacing = '-0.02em';
+                        parent.textContent = merchantInitials(t.merchant);
                       }} />
-                  : isSplit ? '⋮' : cat.icon
+                  : isSplit ? '⋮' : <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: '-0.02em' }}>{merchantInitials(t.merchant)}</span>
                 }
               </div>
               <div className="txn-main">
@@ -176,11 +180,15 @@ function TxnList({ txns, compact = false, onRecategorize, refreshFin, sortCol: i
               ) : (
                 <div
                   className="txn-date"
-                  title={canEdit ? 'Click to edit date' : undefined}
+                  title={
+                    (t as any).auth_date && (t as any).auth_date !== t.date
+                      ? `Authorized ${(t as any).auth_date} · posted ${t.date}`
+                      : canEdit ? 'Click to edit date' : undefined
+                  }
                   style={canEdit ? { cursor: 'pointer', textDecoration: 'underline dotted', textUnderlineOffset: 2 } : {}}
                   onClick={canEdit ? () => setEditDateId(t.id) : undefined}
                 >
-                  {(dateOverrides[t.id] ?? t.date).slice(5).replace('-', '/')}
+                  {(dateOverrides[t.id] ?? ((t as any).auth_date || t.date)).slice(5).replace('-', '/')}
                 </div>
               )}
               <div className={`txn-amt ${t.amount >= 0 ? 'pos' : 'neg'}`}>

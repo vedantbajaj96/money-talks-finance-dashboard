@@ -1,7 +1,7 @@
 // Tab component — see frontend/AGENTS.md for context
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { apiFetch } from '@/lib/api';
-import { fmtMoney2, fmt, catById } from '@/lib/helpers';
+import { fmtMoney2, fmt, catById, merchantInitials } from '@/lib/helpers';
 import { CategoryPicker } from '@/components';
 import VerifyModal from '@/components/modals/VerifyModal';
 
@@ -409,8 +409,19 @@ function ReviewTab({ refreshFin, setTab }) {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
                 {/* Vendor icon + name */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                  <div className="review-vendor-icon" style={{ background: catInfo.color + '20', color: catInfo.color }}>
-                    {catInfo.icon}
+                  <div className="review-vendor-icon" style={{ background: catInfo.color + '20', color: catInfo.color, overflow: 'hidden', padding: g.txns[0]?.logo_url ? 0 : undefined }}>
+                    {g.txns[0]?.logo_url
+                      ? <img src={g.txns[0].logo_url} alt="" width={40} height={40}
+                          style={{ display: 'block', borderRadius: 'inherit' }}
+                          onError={e => {
+                            const el = e.currentTarget;
+                            el.style.display = 'none';
+                            const p = el.parentElement as HTMLElement;
+                            p.style.fontSize = '13px'; p.style.fontWeight = '700';
+                            p.textContent = merchantInitials(g.name);
+                          }} />
+                      : <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: '-0.02em' }}>{merchantInitials(g.name)}</span>
+                    }
                   </div>
                   <div>
                     <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--ink)', letterSpacing: '-0.025em', marginBottom: 3 }}>

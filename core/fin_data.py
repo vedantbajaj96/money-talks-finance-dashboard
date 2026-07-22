@@ -136,6 +136,7 @@ def build_fin_data(username: str) -> dict:
     select_location_region = "location_region" if "location_region" in col_names else "NULL"
     select_location_address = "location_address" if "location_address" in col_names else "NULL"
     select_logo_url        = "merchant_logo_url" if "merchant_logo_url" in col_names else "NULL"
+    select_auth_date       = "authorized_date"   if "authorized_date"   in col_names else "NULL"
 
     rows = conn.execute(f"""
         SELECT
@@ -153,7 +154,8 @@ def build_fin_data(username: str) -> dict:
             {select_location_city}    AS location_city,
             {select_location_region}  AS location_region,
             {select_location_address} AS location_address,
-            {select_logo_url}         AS logo_url
+            {select_logo_url}         AS logo_url,
+            {select_auth_date}        AS auth_date
         FROM txns
         ORDER BY date DESC
     """).fetchall()
@@ -174,7 +176,7 @@ def build_fin_data(username: str) -> dict:
         _user_edited_ids = set()
 
     transactions = []
-    for date, desc, expense_amount, category, source, txn_id, notes, tags, txn_type, user_edited, source_type, flagged, starred, lat, lon, location_city, location_region, location_address, logo_url in rows:
+    for date, desc, expense_amount, category, source, txn_id, notes, tags, txn_type, user_edited, source_type, flagged, starred, lat, lon, location_city, location_region, location_address, logo_url, auth_date in rows:
         if not txn_id:
             txn_id = hashlib.md5(
                 f"{date}|{desc}|{expense_amount}".encode()
@@ -213,6 +215,7 @@ def build_fin_data(username: str) -> dict:
             "location_region":  str(location_region) if location_region else None,
             "location_address": str(location_address) if location_address else None,
             "logo_url":         str(logo_url) if logo_url and str(logo_url) != "None" else None,
+            "auth_date":        str(auth_date)[:10] if auth_date and str(auth_date) not in ("None", "NaT") else None,
         })
 
     # ── APPLY SPLITS ──────────────────────────────────────────────────────

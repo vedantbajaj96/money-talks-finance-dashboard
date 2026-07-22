@@ -134,7 +134,7 @@ function AdminTab() {
       { name: 'Transactions API', url: '/api/fin?months=1' },
       { name: 'Config API',       url: '/api/config' },
       { name: 'Accounts API',     url: '/api/plaid/accounts' },
-      { name: 'Search API',       url: '/api/transactions/search?q=test' },
+      { name: 'Search API',       url: '/api/transactions/search?q=' },
     ];
     const pings = await Promise.all(endpoints.map(async ({ name, url }) => {
       const t0 = performance.now();

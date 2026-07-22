@@ -1119,3 +1119,46 @@
   text-transform: uppercase;
   color: var(--ink-4);
 }
+
+/* ─── Sync progress bar — indeterminate sweep ───────────────────────── */
+@keyframes sync-sweep {
+  0%   { transform: translateX(-100%); }
+  60%  { transform: translateX(250%); }
+  100% { transform: translateX(250%); }
+}
+@keyframes sync-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
+.sync-bar-track {
+  position: relative;
+  height: 4px;
+  background: var(--line);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.sync-bar-sweep {
+  position: absolute;
+  top: 0; left: 0;
+  width: 45%;
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent) 40%, var(--accent) 60%, transparent);
+  animation: sync-sweep 1.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+.sync-bar-sweep.error {
+  background: linear-gradient(90deg, transparent, var(--terra) 40%, var(--terra) 60%, transparent);
+  animation: none;
+  width: 100%;
+  opacity: 0.6;
+}
+.sync-dots {
+  display: flex; gap: 5px; justify-content: center; align-items: center;
+}
+.sync-dots span {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--accent); opacity: 0.3;
+  animation: sync-pulse 1.4s ease-in-out infinite;
+}
+.sync-dots span:nth-child(2) { animation-delay: 0.2s; }
+.sync-dots span:nth-child(3) { animation-delay: 0.4s; }

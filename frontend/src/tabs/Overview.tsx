@@ -1,7 +1,7 @@
 // Tab component — see frontend/AGENTS.md for context
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { MONTHS } from '@/lib/fin';
-import { fmtMoney, fmtAbbr, fmt, txnsForMonth, sumByCategory, monthSummary, catById } from '@/lib/helpers';
+import { fmtMoney, fmtAbbr, fmt, txnsForMonth, sumByCategory, monthSummary, catById, merchantInitials } from '@/lib/helpers';
 import { SummaryCard, TxnList } from '@/components';
 import { DonutChart, AreaChart, Sparkline } from '@/components/charts';
 
@@ -154,8 +154,13 @@ function GroupedTxnList({ txns, sortBy, onRecategorize, refreshFin }) {
               <div className="txn-icon" style={{ background: g.cat.color + '24', color: g.cat.color, overflow: 'hidden', padding: g.logo_url ? 0 : undefined }}>
                 {g.logo_url
                   ? <img src={g.logo_url} alt="" width={36} height={36} style={{ display: 'block', borderRadius: 'inherit' }}
-                      onError={e => { e.currentTarget.style.display = 'none'; (e.currentTarget.parentElement as HTMLElement).textContent = g.cat.icon; }} />
-                  : g.cat.icon}
+                      onError={e => {
+                        e.currentTarget.style.display = 'none';
+                        const p = e.currentTarget.parentElement as HTMLElement;
+                        p.style.fontSize = '12px'; p.style.fontWeight = '700'; p.style.letterSpacing = '-0.02em';
+                        p.textContent = merchantInitials(g.merchant);
+                      }} />
+                  : <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: '-0.02em' }}>{merchantInitials(g.merchant)}</span>}
               </div>
               <div className="txn-main">
                 <div className="txn-merchant">
@@ -253,6 +258,28 @@ function MonthlyTab({ monthKey, txnOverrides, setTxnOverrides, refreshFin }) {
     ? monthTxns.filter(t => t.category === selectedCat).sort((a, b) =>
         sortBy === 'date' ? new Date(b.date) - new Date(a.date) : Math.abs(b.amount) - Math.abs(a.amount))
     : monthTxns.slice(0, 8);
+
+  // Spending anomalies: compare current month vs trailing 3-month avg per category
+  const anomalies = useMemo(() => {
+    const monthIdx = MONTHS.findIndex(m => m.key === monthKey);
+    const prevMonths = MONTHS.slice(Math.max(0, monthIdx - 3), monthIdx);
+    if (!prevMonths.length) return [];
+    const trailingAvg: Record<string, number> = {};
+    prevMonths.forEach(m => {
+      sumByCategory(txnsForMonth(m.key)).forEach(c => {
+        trailingAvg[c.cat] = (trailingAvg[c.cat] || 0) + c.amount / prevMonths.length;
+      });
+    });
+    const EXCLUDE = new Set(['income', 'transfer', 'refund', 'savings']);
+    return breakdown
+      .filter(b => !EXCLUDE.has(b.cat))
+      .filter(b => {
+        const avg = trailingAvg[b.cat];
+        return avg && avg >= 30 && b.amount >= avg * 1.5;
+      })
+      .map(b => ({ ...b, avg: trailingAvg[b.cat], ratio: b.amount / trailingAvg[b.cat], delta: b.amount - trailingAvg[b.cat] }))
+      .sort((a, b) => b.ratio - a.ratio);
+  }, [monthKey, breakdown]);
 
   function handleSliceClick(s) {
     setSelectedCat(prev => prev === s.cat ? null : s.cat);
@@ -385,6 +412,33 @@ function MonthlyTab({ monthKey, txnOverrides, setTxnOverrides, refreshFin }) {
         );
       })()}
       <MonthVibeBanner summary={summary} prev={prev} />
+      {anomalies.length > 0 && (
+        <div className="card" style={{ padding: '14px 18px' }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>
+            Spending spikes this month
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {anomalies.map(a => (
+              <div key={a.cat}
+                style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '6px 8px', borderRadius: 8, transition: 'background .1s',
+                  background: selectedCat === a.cat ? a.color + '12' : undefined }}
+                onClick={() => handleSliceClick(a)}
+                onMouseEnter={e => { if (selectedCat !== a.cat) (e.currentTarget as HTMLElement).style.background = 'var(--bg)'; }}
+                onMouseLeave={e => { if (selectedCat !== a.cat) (e.currentTarget as HTMLElement).style.background = ''; }}
+              >
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: a.color, flexShrink: 0 }} />
+                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', flex: 1 }}>{a.name}</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: a.color, background: a.color + '18', borderRadius: 6, padding: '2px 8px' }}>
+                  {a.ratio.toFixed(1)}× usual
+                </span>
+                <span style={{ fontSize: 12, color: 'var(--muted)', minWidth: 80, textAlign: 'right' }}>
+                  {fmtMoney(a.amount)} <span style={{ color: 'var(--terra)' }}>+{fmtMoney(a.delta)}</span>
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="grid-2">
         <div className="card">
           <div className="card-head"><h3>Cash flow</h3><span className="muted">Last 6 months</span></div>
