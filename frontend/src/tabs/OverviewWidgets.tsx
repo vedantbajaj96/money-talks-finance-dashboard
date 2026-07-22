@@ -144,7 +144,7 @@ function OverviewTab({ setTab, monthKey: propMonthKey }: { setTab?: (t: string) 
       const p3Total = spendingTxns.filter(t => t.date >= ago90 && t.date < curMonth + '-01'
         && t.category === cat).reduce((s, t) => s + Math.abs(t.amount), 0);
       const avg = p3Total / 3;
-      if (avg > 20 && curAmt > avg * 1.25 && curAmt - avg > 50) {
+      if (avg > 20 && curAmt > avg * 1.25 && curAmt - avg > 50 && now.getDate() >= 7) {
         const catInfo = catById(cat);
         alerts.push({ cat, name: catInfo.name, color: catInfo.color, cur: curAmt, avg, pct: Math.round((curAmt/avg-1)*100) });
       }
@@ -372,11 +372,11 @@ function OverviewTab({ setTab, monthKey: propMonthKey }: { setTab?: (t: string) 
                   <div style={{ fontSize: 10, fontWeight: 700, color: TYPE_COLOR[type], textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>
                     {TYPE_LABEL[type] || type}
                   </div>
-                  {groups[type].map((b, i) => {
+                  {[...groups[type]].sort((a, b) => (b.current_balance || 0) - (a.current_balance || 0)).map((b, i) => {
                     const isCredit = type === 'credit' || type === 'loan';
                     const bal = b.current_balance || 0;
                     const avail = b.available_balance;
-                    const limit = isCredit && avail != null ? bal + avail : null;
+                    const limit = isCredit && avail != null && avail > 0 ? bal + avail : null;
                     const util = limit ? bal / limit : null;
                     return (
                       <div key={i} style={{ marginBottom: i < groups[type].length - 1 ? 10 : 0 }}>

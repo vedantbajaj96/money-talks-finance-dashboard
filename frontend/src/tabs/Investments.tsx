@@ -646,7 +646,7 @@ function InvestmentsTab() {
             <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Transaction History</div>
           </div>
           <div>
-            {transactions.map((t, i) => {
+            {[...transactions].sort((a, b) => b.date > a.date ? 1 : -1).map((t, i) => {
               const style = txnTypeStyle(t.type);
               const label = txnTypeLabel(t.type, t.subtype);
               const isSell = t.type === 'sell' || (t.type === 'cash' && t.amount > 0);

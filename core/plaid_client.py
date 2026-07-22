@@ -305,8 +305,8 @@ def create_link_token(
         kwargs = dict(
             user=LinkTokenCreateRequestUser(client_user_id="local-user"),
             client_name="MoneyTalks",
-            products=[Products("transactions")],
-            optional_products=[Products("investments"), Products("liabilities")],
+            products=[Products("transactions"), Products("liabilities")],
+            optional_products=[Products("investments")],
             country_codes=[CountryCode("US")],
             language="en",
         )

@@ -3,7 +3,7 @@ import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { TRANSACTIONS, CATEGORIES, ACCOUNTS, MONTHS, RECURRING, NET_WORTH_HISTORY } from '@/lib/fin';
 import { fmtMoney, fmtMoney2, fmtAbbr, fmt, catById, acctById, txnsForMonth, sumByCategory, monthSummary } from '@/lib/helpers';
 import { apiFetch } from '@/lib/api';
-import { SummaryCard, TxnList, TabHero } from '@/components';
+import { SummaryCard, TxnList } from '@/components';
 import { AreaChart, StackedBarChart, BarList } from '@/components/charts';
 import { BudgetBars, WeeklySpendChart } from './Transactions';
 
@@ -62,22 +62,8 @@ function SpendingTab({ monthKey, finVersion }) {
   });
 
   const txnCount = txns.filter((t) => t.amount < 0 && t.category !== 'transfer').length;
-  const monthLabel = MONTHS.find((m) => m.key === monthKey)?.label ?? monthKey;
-
   return (
     <div className="tab-body">
-      <TabHero
-        value={total}
-        format={fmtMoney}
-        label={`Spending · ${monthLabel}`}
-        sublabel="total expenses this month"
-        positive={false}
-        stats={[
-          { val: fmtMoney(total / 30), key: 'Daily avg' },
-          { val: String(txnCount),     key: 'Transactions' },
-          { val: breakdown[0]?.name ?? '—', key: 'Top category' },
-        ]}
-      />
       <div className="grid-3">
         <SummaryCard label="Total spend" n={total} accent="var(--terra)" />
         <SummaryCard label="Daily average"
@@ -180,21 +166,8 @@ function IncomeTab({ monthKey, finVersion }) {
   const trendSeries = MONTHS.map((m) => ({ label: m.short, value: monthSummary(m.key).income }));
   const avg = trendSeries.reduce((s, p) => s + p.value, 0) / trendSeries.length;
 
-  const incomeMonthLabel = MONTHS.find((m) => m.key === monthKey)?.label ?? monthKey;
-
   return (
     <div className="tab-body">
-      <TabHero
-        value={total}
-        format={fmtMoney}
-        label={`Income · ${incomeMonthLabel}`}
-        sublabel="earned this month"
-        positive={true}
-        stats={[
-          { val: fmtMoney(avg),        key: '6-mo avg' },
-          { val: String(sources.length), key: 'Sources' },
-        ]}
-      />
       <div className="grid-3">
         <SummaryCard label="Income this month" n={total} accent="var(--green)" />
         <SummaryCard label="6-month average" n={avg} accent="var(--ink)" />
@@ -272,18 +245,6 @@ function CashFlowTab() {
 
   return (
     <div className="tab-body">
-      <TabHero
-        value={totalNet}
-        format={fmtMoney}
-        label="Cash Flow · Last 6 Months"
-        sublabel={totalNet >= 0 ? 'net saved over 6 months' : 'net deficit over 6 months'}
-        positive={totalNet >= 0}
-        stats={[
-          { val: fmtMoney(totalIn),  key: 'Income' },
-          { val: fmtMoney(totalOut), key: 'Expenses' },
-          { val: `${totalIn > 0 ? ((totalNet / totalIn) * 100).toFixed(0) : 0}%`, key: 'Savings rate' },
-        ]}
-      />
       <div className="grid-3">
         <SummaryCard label="6-mo income" n={totalIn} accent="var(--green)" />
         <SummaryCard label="6-mo expenses" n={totalOut} accent="var(--terra)" />

@@ -213,7 +213,7 @@ function SpaceCard({ space, isOwner, onOpen, onShare, onDelete }) {
           )}
         </div>
         <div style={{ textAlign: 'right', flexShrink: 0 }}>
-          <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)', fontFamily: 'var(--font-mono)', fontFeatureSettings: '"tnum"' }}>${(space.total_spent || 0).toFixed(2)}</div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)', fontFamily: 'var(--font-mono)', fontFeatureSettings: '"tnum"' }}>{fmtMoney(space.total_spent || 0)}</div>
           {budget && <div style={{ fontSize: 11, color: overBudget ? 'var(--terra)' : 'var(--ink-3)' }}>of ${budget.toFixed(0)}</div>}
         </div>
         {isOwner && (
@@ -256,6 +256,10 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
   const [createForm, setCreateForm]   = useState({ name: '', type: 'event', icon: '📦', start_date: '', end_date: '', budget: '' });
   const [createSaving, setCreateSaving] = useState(false);
 
+  const [editSpaceOpen, setEditSpaceOpen] = useState(false);
+  const [editSpaceForm, setEditSpaceForm] = useState({ name: '', type: 'event', icon: '📦', start_date: '', end_date: '', budget: '' });
+  const [editSpaceSaving, setEditSpaceSaving] = useState(false);
+
   // Add expense form
   const [expForm, setExpForm]         = useState({ description: '', amount: '', date: new Date().toISOString().slice(0,10), category: 'other' });
   const [expSaving, setExpSaving]     = useState(false);
@@ -286,6 +290,8 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
   }
 
   const [activeMerchantShared, setActiveMerchantShared] = useState(null);
+  const [drillDownMonth, setDrillDownMonth] = useState(null);
+  const [expandedMerchants, setExpandedMerchants] = useState(new Set<string>());
   const [me, setMe] = useState(null);
   useEffect(() => {
     apiFetch('/api/auth/me').then(r => r.json()).then(setMe).catch(() => {});
@@ -305,6 +311,8 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
     setDetailTab('overview');
     setExpSearch('');
     setMenuExpId(null);
+    setDrillDownMonth(null);
+    setExpandedMerchants(new Set());
     apiFetch(`/api/shared/${space.id}`).then(r => r.json()).then(d => {
       setDetail(d);
       setDetailLoading(false);
@@ -360,6 +368,30 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
       }
     } finally {
       setCreateSaving(false);
+    }
+  }
+
+  async function saveEditedSpace() {
+    if (!detail || !editSpaceForm.name.trim()) return;
+    setEditSpaceSaving(true);
+    try {
+      await apiFetch(`/api/shared/${detail.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name:       editSpaceForm.name.trim(),
+          type:       editSpaceForm.type,
+          icon:       editSpaceForm.icon,
+          start_date: editSpaceForm.start_date || null,
+          end_date:   editSpaceForm.end_date || null,
+          budget:     editSpaceForm.budget ? parseFloat(editSpaceForm.budget) : null,
+        }),
+      });
+      setEditSpaceOpen(false);
+      loadDetail(detail);
+      loadSpaces();
+    } finally {
+      setEditSpaceSaving(false);
     }
   }
 
@@ -621,8 +653,8 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
 
   // ── Space list view ──────────────────────────────────────────────────────────
   if (!detail) {
-    const mySpaces     = spaces.filter(s => s.role === 'owner');
-    const joinedSpaces = spaces.filter(s => s.role === 'participant');
+    const mySpaces     = spaces.filter(s => s.role === 'owner').sort((a, b) => (b.total_spent || 0) - (a.total_spent || 0));
+    const joinedSpaces = spaces.filter(s => s.role === 'participant').sort((a, b) => (b.total_spent || 0) - (a.total_spent || 0));
     return (
       <div className="tab-body">
         {joinPrompt && (
@@ -1104,6 +1136,88 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
         </Portal>
       )}
 
+      {/* Edit space modal */}
+      {editSpaceOpen && (
+        <Portal>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 800, background: 'rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setEditSpaceOpen(false)}>
+          <div className="card" style={{ width: 420, margin: 0, maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ marginBottom: 16 }}>Edit space</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div>
+                <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>Name</label>
+                <input value={editSpaceForm.name} onChange={e => setEditSpaceForm(f => ({...f, name: e.target.value}))}
+                  style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--surface-2)', color: 'var(--ink)', fontFamily: 'inherit', fontSize: 14, outline: 'none', boxSizing: 'border-box' }} />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 6 }}>Type</label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {([
+                    { val: 'recurring', emoji: '🔁', name: 'Recurring', desc: 'Ongoing shared expenses tracked month-over-month' },
+                    { val: 'trip',      emoji: '✈️', name: 'Trip',      desc: 'Travel with a start and end date' },
+                    { val: 'event',     emoji: '🎉', name: 'Event',     desc: 'One-off gathering or occasion' },
+                  ] as const).map(({ val, emoji, name, desc }) => {
+                    const sel = editSpaceForm.type === val;
+                    return (
+                      <button key={val} onClick={() => setEditSpaceForm(f => ({...f, type: val}))} style={{
+                        display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px',
+                        border: `1.5px solid ${sel ? 'var(--accent)' : 'var(--line)'}`,
+                        borderRadius: 10,
+                        background: sel ? 'color-mix(in srgb, var(--accent) 8%, var(--surface-2))' : 'var(--surface-2)',
+                        cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', width: '100%',
+                      }}>
+                        <span style={{ fontSize: 20 }}>{emoji}</span>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: sel ? 'var(--accent)' : 'var(--ink)' }}>{name}</div>
+                          <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 1 }}>{desc}</div>
+                        </div>
+                        {sel && <span style={{ marginLeft: 'auto', color: 'var(--accent)', fontSize: 14 }}>✓</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>Icon</label>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {SPACE_ICONS.map(icon => (
+                    <button key={icon} onClick={() => setEditSpaceForm(f => ({...f, icon}))} style={{
+                      width: 36, height: 36, fontSize: 20, border: `2px solid ${editSpaceForm.icon === icon ? 'var(--accent)' : 'var(--line)'}`,
+                      borderRadius: 8, background: 'none', cursor: 'pointer',
+                    }}>{icon}</button>
+                  ))}
+                </div>
+              </div>
+              {(editSpaceForm.type === 'trip' || editSpaceForm.type === 'event') && (
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>Start date</label>
+                    <input type="date" value={editSpaceForm.start_date} onChange={e => setEditSpaceForm(f => ({...f, start_date: e.target.value}))}
+                      style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--surface-2)', color: 'var(--ink)', fontFamily: 'inherit', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>End date</label>
+                    <input type="date" value={editSpaceForm.end_date} onChange={e => setEditSpaceForm(f => ({...f, end_date: e.target.value}))}
+                      style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--surface-2)', color: 'var(--ink)', fontFamily: 'inherit', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+                  </div>
+                </div>
+              )}
+              <div>
+                <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>Budget (optional)</label>
+                <input type="number" value={editSpaceForm.budget} onChange={e => setEditSpaceForm(f => ({...f, budget: e.target.value}))}
+                  placeholder="0.00" style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--surface-2)', color: 'var(--ink)', fontFamily: 'inherit', fontSize: 14, outline: 'none', boxSizing: 'border-box' }} />
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
+              <button onClick={() => setEditSpaceOpen(false)} style={{ flex: 1, padding: '10px 0', border: '1px solid var(--line)', borderRadius: 10, background: 'none', cursor: 'pointer', color: 'var(--ink-3)', fontFamily: 'inherit' }}>Cancel</button>
+              <button onClick={saveEditedSpace} disabled={editSpaceSaving || !editSpaceForm.name.trim()} style={{ flex: 1, padding: '10px 0', border: 'none', borderRadius: 10, background: 'var(--accent)', color: '#fff', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
+                {editSpaceSaving ? 'Saving…' : 'Save changes'}
+              </button>
+            </div>
+          </div>
+        </div>
+        </Portal>
+      )}
+
       {/* ── Header ── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16 }}>
         <button onClick={() => setDetail(null)} style={{ background: 'none', border: '1px solid var(--line)', borderRadius: 8, padding: '6px 12px', cursor: 'pointer', color: 'var(--ink-3)', fontFamily: 'inherit', fontSize: 13 }}>← Back</button>
@@ -1116,6 +1230,7 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+          {isOwner && <button onClick={() => { setEditSpaceForm({ name: detail.name, type: detail.type, icon: detail.icon || '📦', start_date: detail.start_date || '', end_date: detail.end_date || '', budget: detail.budget ? String(detail.budget) : '' }); setEditSpaceOpen(true); }} style={{ padding: '7px 14px', border: '1px solid var(--line)', borderRadius: 8, background: 'none', cursor: 'pointer', color: 'var(--ink-3)', fontFamily: 'inherit', fontSize: 13 }}>✏️ Edit</button>}
           {isOwner && <button onClick={() => shareSpace(detail.id)} style={{ padding: '7px 14px', border: '1px solid var(--line)', borderRadius: 8, background: 'none', cursor: 'pointer', color: 'var(--ink-3)', fontFamily: 'inherit', fontSize: 13 }}>🔗 Share</button>}
           {!isOwner && <button onClick={leaveSpace} style={{ padding: '7px 14px', border: '1px solid var(--line)', borderRadius: 8, background: 'none', cursor: 'pointer', color: 'var(--terra)', fontFamily: 'inherit', fontSize: 13 }}>Leave</button>}
           <button onClick={() => setExpenseModal(true)} style={{ padding: '7px 14px', border: 'none', borderRadius: 8, background: 'var(--accent)', color: '#fff', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, fontSize: 13 }}>+ Expense</button>
@@ -1207,76 +1322,203 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
           );
         };
 
-        return (
-          <div>
-            {/* M/M delta headline */}
-            {monthBreakdown.length >= 2 && (() => {
-              const cur = monthBreakdown[0];
-              const prev = monthBreakdown[1];
-              if (!cur || !prev || prev.amount === 0) return null;
-              const delta = cur.amount - prev.amount;
-              const pct = Math.abs((delta / prev.amount) * 100).toFixed(0);
-              return (
-                <div style={{ fontSize: 13, color: 'var(--ink-3)', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span>{isRecurring ? 'Together this month:' : 'This trip so far:'}</span>
-                  <span style={{ fontWeight: 700, color: 'var(--ink)', fontFamily: 'var(--font-mono)' }}>{fmtMoney(cur.amount)}</span>
-                  <span style={{ color: delta >= 0 ? 'var(--terra)' : 'var(--green)', fontWeight: 600 }}>
-                    {delta >= 0 ? '↑' : '↓'} {pct}% vs {fmtMonth(prev.month)}
-                  </span>
-                </div>
-              );
-            })()}
+        // ── Month drill-down: grouped by store ──────────────────────────
+        if (drillDownMonth) {
+          const monthExps = expenses.filter(e => e.date?.startsWith(drillDownMonth));
+          const groupMap: Record<string, { name: string; total: number; exps: typeof monthExps }> = {};
+          monthExps.forEach(e => {
+            const key = e.description;
+            if (!groupMap[key]) groupMap[key] = { name: key, total: 0, exps: [] };
+            groupMap[key].total += e.amount;
+            groupMap[key].exps.push(e);
+          });
+          const sortedGroups = Object.values(groupMap).sort((a, b) => b.total - a.total);
+          const monthTotal = monthExps.reduce((s, e) => s + e.amount, 0);
 
-            {/* Summary cards */}
-            <div className="grid-4" style={{ marginBottom: 16 }}>
-              <SummaryCard label="Total spent" n={detail.total_spent || 0}
-                sub={`${expenses.length} expense${expenses.length !== 1 ? 's' : ''}`} />
-              <SummaryCard label="Your share" n={myTotal} accent="var(--accent)"
-                sub={detail.total_spent > 0 ? `${((myTotal / detail.total_spent) * 100).toFixed(0)}% of total` : null} />
-              <SummaryCard label={detail.per_user?.length === 2
-                ? ((detail.per_user.find(u => u.user !== me?.username)?.display_name) || 'Others')
-                : 'Others'} n={otherTotal}
-                sub={detail.per_user?.length > 1 ? `${detail.per_user.length - 1} other${detail.per_user.length > 2 ? 's' : ''}` : null} />
-              {budget ? (
-                <SummaryCard label="Budget" n={budget} accent={overBudget ? 'var(--terra)' : 'var(--ink)'}
-                  sub={overBudget ? `${fmtMoney(detail.total_spent - budget)} over` : `${fmtMoney(budget - detail.total_spent)} left`} />
-              ) : isRecurring ? (
-                <SummaryCard label="Avg / month" n={avgPerMonth} accent="var(--ink)"
-                  sub={`over ${monthBreakdown.length} month${monthBreakdown.length !== 1 ? 's' : ''}`} />
-              ) : (
-                <SummaryCard label="Daily avg"
-                  n={(detail.total_spent || 0) / Math.max(tripDays || dailyBreakdown.length || 1, 1)}
-                  accent="var(--ink)"
-                  sub={tripDays ? `${tripDays} day trip` : `${dailyBreakdown.length} days`} />
-              )}
-            </div>
-
-            <SharedVibeBanner detail={detail} myUsername={me?.username} myTotal={myTotal} expenses={expenses} />
-
-            {/* Budget progress */}
-            {budget && (
-              <div className="card" style={{ marginBottom: 16 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>Budget progress</span>
-                  <span style={{ fontSize: 13, color: overBudget ? 'var(--terra)' : 'var(--ink-3)' }}>
-                    {fmtMoney(detail.total_spent || 0)} / {fmtMoney(budget)}
-                  </span>
-                </div>
-                <div style={{ height: 8, background: 'var(--line)', borderRadius: 4, overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${Math.min(budgetPct, 100)}%`, borderRadius: 4, background: overBudget ? 'var(--terra)' : 'var(--accent)', transition: 'width .3s' }} />
+          return (
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+                <button onClick={() => setDrillDownMonth(null)} style={{ background: 'none', border: '1px solid var(--line)', borderRadius: 8, padding: '6px 12px', cursor: 'pointer', color: 'var(--ink-3)', fontFamily: 'inherit', fontSize: 13 }}>← Overview</button>
+                <div style={{ flex: 1 }}>
+                  <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)' }}>{fmtMonth(drillDownMonth)}</span>
+                  <span style={{ marginLeft: 10, fontSize: 13, color: 'var(--ink-3)' }}>{monthExps.length} expenses · {fmtMoney(monthTotal)}</span>
                 </div>
               </div>
-            )}
+              {sortedGroups.length === 0 ? (
+                <div className="card" style={{ textAlign: 'center', padding: '32px 0', color: 'var(--ink-3)', fontSize: 14 }}>No expenses this month.</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {sortedGroups.map(group => {
+                    const isExp = expandedMerchants.has(group.name);
+                    const pct = monthTotal > 0 ? (group.total / monthTotal) * 100 : 0;
+                    return (
+                      <div key={group.name} className="card" style={{ padding: 0, overflow: 'hidden' }}>
+                        <div
+                          onClick={() => setExpandedMerchants(prev => { const n = new Set(prev); isExp ? n.delete(group.name) : n.add(group.name); return n; })}
+                          style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', cursor: 'pointer', userSelect: 'none' }}
+                        >
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{group.name}</div>
+                            <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 2 }}>{group.exps.length} expense{group.exps.length !== 1 ? 's' : ''} · {pct.toFixed(0)}% of month</div>
+                          </div>
+                          <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>{fmtMoney(group.total)}</div>
+                          <div style={{ fontSize: 14, color: 'var(--ink-3)', width: 16, textAlign: 'center', flexShrink: 0 }}>{isExp ? '▾' : '▸'}</div>
+                        </div>
+                        {isExp && (
+                          <div style={{ borderTop: '1px solid var(--line)' }} className="txn-list">
+                            {[...group.exps].sort((a, b) => b.date.localeCompare(a.date)).map(e => {
+                              const catI = sharedCatById(e.category);
+                              const uColor = participantColors[e.user] || '#94a3b8';
+                              return (
+                                <div key={e.id} className="txn-row" style={{ gridTemplateColumns: '30px 1fr 24px 56px 80px', padding: '9px 16px' }}>
+                                  <div className="txn-icon" style={{ background: `${uColor}22`, color: uColor, fontSize: 14, width: 30, height: 30 }}>
+                                    {SHARED_ICONS[e.category] || '📦'}
+                                  </div>
+                                  <div className="txn-main">
+                                    <div className="txn-merchant" style={{ fontSize: 13 }}>{e.description}</div>
+                                    <div className="txn-meta">
+                                      <span className="cat-pill" style={{ color: catI.color }}>{catI.name}</span>
+                                      {e.notes && <><span className="dot-sep">·</span><span style={{ fontStyle: 'italic', color: 'var(--accent)', fontSize: 11 }}>{e.notes}</span></>}
+                                    </div>
+                                  </div>
+                                  <div title={e.display_name || e.user} style={{ width: 24, height: 24, borderRadius: '50%', background: uColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 8, fontWeight: 700, color: '#fff', flexShrink: 0 }}>
+                                    {(e.display_name || e.user).slice(0, 2).toUpperCase()}
+                                  </div>
+                                  <div className="txn-date">{e.date?.slice(5).replace('-', '/')}</div>
+                                  <div className="txn-amt neg">{fmtMoney(e.amount)}</div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        }
 
-            {/* ── RECURRING: monthly chart + table ── */}
-            {isRecurring && (
+        return (
+          <div>
+            {isRecurring ? (
               <>
-                {velocityStats && (
-                  <div style={{ fontSize: 13, color: 'var(--ink-3)', marginBottom: 14, padding: '8px 14px', background: 'var(--surface-2)', borderRadius: 10, display: 'flex', gap: 8, alignItems: 'center' }}>
-                    <span>📈</span>
-                    <span><b style={{ color: 'var(--ink)' }}>{fmtMoney(velocityStats.dailyRate)}/day</b> together this month · on pace for <b style={{ color: 'var(--ink)' }}>{fmtMoney(velocityStats.projected)}</b></span>
+                {/* ── Current month hero ── */}
+                {(() => {
+                  const thisMonthKey = new Date().toISOString().slice(0, 7);
+                  const curData = monthBreakdown[0]?.month === thisMonthKey ? monthBreakdown[0] : null;
+                  const prevData = curData ? monthBreakdown[1] : monthBreakdown[0];
+                  const moDelta = curData && prevData && prevData.amount > 0
+                    ? ((curData.amount - prevData.amount) / prevData.amount) * 100
+                    : null;
+                  return (
+                    <div className="card" style={{ marginBottom: 16 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: (curData?.byUser?.length || 0) > 0 ? 16 : 0 }}>
+                        <div>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>
+                            {fmtMonth(thisMonthKey)}
+                          </div>
+                          <div style={{ fontSize: 36, fontWeight: 800, color: 'var(--ink)', letterSpacing: '-0.03em', fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }}>
+                            {fmtMoney(curData?.amount || 0)}
+                          </div>
+                          {moDelta !== null ? (
+                            <div style={{ fontSize: 13, fontWeight: 600, marginTop: 6, color: moDelta >= 0 ? 'var(--terra)' : 'var(--green)' }}>
+                              {moDelta >= 0 ? '↑' : '↓'}{Math.abs(moDelta).toFixed(0)}% vs {fmtMonth(prevData.month).slice(0, 3)}
+                            </div>
+                          ) : !curData ? (
+                            <div style={{ fontSize: 13, color: 'var(--ink-3)', marginTop: 4 }}>No expenses this month yet</div>
+                          ) : null}
+                        </div>
+                        {avgPerMonth > 0 && (
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontSize: 11, color: 'var(--ink-3)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>
+                              {monthBreakdown.length}mo avg
+                            </div>
+                            <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>
+                              {fmtMoney(avgPerMonth)}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      {(curData?.byUser?.length || 0) > 0 && (
+                        <div style={{ display: 'flex', gap: 10 }}>
+                          {curData.byUser.map(bu => {
+                            const pct = curData.amount > 0 ? (bu.amount / curData.amount) * 100 : 0;
+                            const uColor = participantColors[bu.user] || '#94a3b8';
+                            const isMe = bu.user === me?.username;
+                            return (
+                              <div key={bu.user} style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 10, background: `${uColor}0d`, border: `1px solid ${uColor}28` }}>
+                                <div style={{ width: 30, height: 30, borderRadius: '50%', background: uColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: '#fff', flexShrink: 0 }}>
+                                  {bu.displayName.slice(0, 2).toUpperCase()}
+                                </div>
+                                <div>
+                                  <div style={{ fontSize: 11, color: uColor, fontWeight: 700, marginBottom: 1 }}>{bu.displayName}{isMe ? ' (you)' : ''}</div>
+                                  <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(bu.amount)}</div>
+                                </div>
+                                <div style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--ink-3)', fontWeight: 500 }}>{pct.toFixed(0)}%</div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {budget && (
+                  <div className="card" style={{ marginBottom: 16 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>Monthly budget</span>
+                      <span style={{ fontSize: 13, color: overBudget ? 'var(--terra)' : 'var(--ink-3)' }}>
+                        {fmtMoney(detail.total_spent || 0)} / {fmtMoney(budget)}
+                      </span>
+                    </div>
+                    <div style={{ height: 8, background: 'var(--line)', borderRadius: 4, overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${Math.min(budgetPct, 100)}%`, borderRadius: 4, background: overBudget ? 'var(--terra)' : 'var(--accent)', transition: 'width .3s' }} />
+                    </div>
                   </div>
                 )}
+
+                {/* ── Where we spent this month ── */}
+                {(() => {
+                  const thisMonthKey = new Date().toISOString().slice(0, 7);
+                  const thisMonthExps = expenses.filter(e => e.date?.startsWith(thisMonthKey));
+                  if (thisMonthExps.length === 0) return null;
+                  const gMap: Record<string, { name: string; total: number; count: number }> = {};
+                  thisMonthExps.forEach(e => {
+                    if (!gMap[e.description]) gMap[e.description] = { name: e.description, total: 0, count: 0 };
+                    gMap[e.description].total += e.amount;
+                    gMap[e.description].count += 1;
+                  });
+                  const groups = Object.values(gMap).sort((a, b) => b.total - a.total);
+                  const maxAmt = groups[0]?.total || 1;
+                  return (
+                    <div className="card" style={{ marginBottom: 16 }}>
+                      <div className="card-head" style={{ marginBottom: 10 }}>
+                        <h3>Where we spent</h3>
+                        <span className="muted">{fmtMonth(thisMonthKey)}</span>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        {groups.map(g => (
+                          <div key={g.name}
+                            onClick={() => setActiveMerchantShared(g.name)}
+                            style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '7px 0', cursor: 'pointer', borderBottom: '1px solid var(--line)' }}
+                            onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--surface-2)'}
+                            onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}
+                          >
+                            <span style={{ flex: 1, fontSize: 13, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{g.name}</span>
+                            <div style={{ width: 72, height: 4, background: 'var(--line)', borderRadius: 2, overflow: 'hidden', flexShrink: 0 }}>
+                              <div style={{ height: '100%', width: `${(g.total / maxAmt) * 100}%`, background: 'var(--accent)', borderRadius: 2 }} />
+                            </div>
+                            <span style={{ fontSize: 11, color: 'var(--ink-3)', flexShrink: 0, minWidth: 22, textAlign: 'right' }}>{g.count}×</span>
+                            <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums', flexShrink: 0, minWidth: 72, textAlign: 'right' }}>{fmtMoney(g.total)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {monthlyChartData.length > 0 && (
                   <div className="card">
@@ -1294,7 +1536,10 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
 
                 {monthBreakdown.length > 0 && (
                   <div className="card">
-                    <div className="card-head"><h3>Month by month</h3></div>
+                    <div className="card-head">
+                      <h3>Month by month</h3>
+                      <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>Click a row to drill in</span>
+                    </div>
                     <table className="trend-table">
                       <thead>
                         <tr>
@@ -1307,7 +1552,7 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
                         </tr>
                       </thead>
                       <tbody>
-                        {monthBreakdown.slice(0, 10).map((mb, i) => {
+                        {monthBreakdown.map((mb, i) => {
                           const prev = monthBreakdown[i + 1];
                           const moDelta = prev && prev.amount > 0
                             ? ((mb.amount - prev.amount) / prev.amount) * 100
@@ -1316,14 +1561,11 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
                           return (
                             <tr key={mb.month}
                               onClick={() => {
-                                const [y, mo] = mb.month.split('-');
-                                const last = new Date(+y, +mo, 0).getDate();
-                                setFilterFrom(`${mb.month}-01`);
-                                setFilterTo(`${mb.month}-${String(last).padStart(2, '0')}`);
-                                setDetailTab('expenses');
+                                setDrillDownMonth(mb.month);
+                                setExpandedMerchants(new Set());
                               }}
                               style={{ cursor: 'pointer', fontWeight: isCurrentMonth ? 600 : undefined }}>
-                              <td style={{ fontWeight: 500 }}>{fmtMonth(mb.month)}{isCurrentMonth ? ' ·' : ''}</td>
+                              <td style={{ fontWeight: 500 }}>{fmtMonth(mb.month)}</td>
                               {(detail.per_user || []).map(u => {
                                 const found = mb.byUser.find(bu => bu.user === u.user);
                                 return (
@@ -1346,12 +1588,45 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
 
                 <RecentStrip />
               </>
-            )}
-
-            {/* ── TRIP/EVENT: category donut + daily bars + per-person ── */}
-            {!isRecurring && (
+            ) : (
               <>
-                {/* Category donut — the main view for trips */}
+                {/* Summary cards for trips/events */}
+                <div className="grid-4" style={{ marginBottom: 16 }}>
+                  <SummaryCard label="Total spent" n={detail.total_spent || 0}
+                    sub={`${expenses.length} expense${expenses.length !== 1 ? 's' : ''}`} />
+                  <SummaryCard label="Your share" n={myTotal} accent="var(--accent)"
+                    sub={detail.total_spent > 0 ? `${((myTotal / detail.total_spent) * 100).toFixed(0)}% of total` : null} />
+                  <SummaryCard label={detail.per_user?.length === 2
+                    ? ((detail.per_user.find(u => u.user !== me?.username)?.display_name) || 'Others')
+                    : 'Others'} n={otherTotal}
+                    sub={detail.per_user?.length > 1 ? `${detail.per_user.length - 1} other${detail.per_user.length > 2 ? 's' : ''}` : null} />
+                  {budget ? (
+                    <SummaryCard label="Budget" n={budget} accent={overBudget ? 'var(--terra)' : 'var(--ink)'}
+                      sub={overBudget ? `${fmtMoney(detail.total_spent - budget)} over` : `${fmtMoney(budget - detail.total_spent)} left`} />
+                  ) : (
+                    <SummaryCard label="Daily avg"
+                      n={(detail.total_spent || 0) / Math.max(tripDays || dailyBreakdown.length || 1, 1)}
+                      accent="var(--ink)"
+                      sub={tripDays ? `${tripDays} day trip` : `${dailyBreakdown.length} days`} />
+                  )}
+                </div>
+
+                <SharedVibeBanner detail={detail} myUsername={me?.username} myTotal={myTotal} expenses={expenses} />
+
+                {budget && (
+                  <div className="card" style={{ marginBottom: 16 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>Budget progress</span>
+                      <span style={{ fontSize: 13, color: overBudget ? 'var(--terra)' : 'var(--ink-3)' }}>
+                        {fmtMoney(detail.total_spent || 0)} / {fmtMoney(budget)}
+                      </span>
+                    </div>
+                    <div style={{ height: 8, background: 'var(--line)', borderRadius: 4, overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${Math.min(budgetPct, 100)}%`, borderRadius: 4, background: overBudget ? 'var(--terra)' : 'var(--accent)', transition: 'width .3s' }} />
+                    </div>
+                  </div>
+                )}
+
                 {catBreakdown.length > 0 && (
                   <div className="card">
                     <div className="card-head"><h3>Spending by category</h3></div>
@@ -1379,7 +1654,6 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
                   </div>
                 )}
 
-                {/* Daily spending bars */}
                 {dailyBreakdown.length > 1 && (
                   <div className="card">
                     <div className="card-head">
@@ -1400,12 +1674,9 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
                   </div>
                 )}
 
-                {/* Per-person for trips */}
                 {filteredPerUser.length > 0 && (
                   <div className="card">
-                    <div className="card-head">
-                      <h3>By person</h3>
-                    </div>
+                    <div className="card-head"><h3>By person</h3></div>
                     <div style={{ display: 'flex', flexDirection: 'column' }}>
                       {filteredPerUser.map(u => {
                         const uTotal = u.filteredTotal || 0;

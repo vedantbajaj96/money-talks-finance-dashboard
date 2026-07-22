@@ -303,11 +303,11 @@ function AccountsTab({ onSync, syncing }) {
               {TYPE_LABEL[type] || type}
             </div>
             <div className="grid-2" style={{ marginBottom: 6 }}>
-              {grouped[type].map((b, i) => {
+              {[...grouped[type]].sort((a, b) => (b.current_balance || 0) - (a.current_balance || 0)).map((b, i) => {
                 const isCredit = type === 'credit' || type === 'loan';
                 const bal = b.current_balance || 0;
                 const avail = b.available_balance;
-                const limit = isCredit && avail != null ? bal + avail : null;
+                const limit = isCredit && avail != null && avail > 0 ? bal + avail : null;
                 const util = limit ? bal / limit : null;
                 const inst = plaidAccounts.find(a => a.institution_name === b.institution_name);
                 const liab = isCredit ? liabilities.find(l => l.institution === b.institution_name) : null;

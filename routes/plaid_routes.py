@@ -251,17 +251,21 @@ def plaid_sync(body: dict[str, Any] = {}, current_user: str = Depends(get_curren
             if restored:
                 clean_df = load_df(current_user)
                 if clean_df is not None and not clean_df.empty and "plaid_txn_id" in df.columns:
-                    # Drop rows for institutions that just did a full resync — their
-                    # fresh rows are already in `df` (new_rows below). Without this,
-                    # the restored backup rows for that institution concat with the new
-                    # rows → duplicates.
-                    full_resynced = stats.get("full_resynced_sources", [])
-                    if full_resynced and "source" in clean_df.columns:
-                        clean_df = clean_df[~clean_df["source"].isin(full_resynced)].copy()
+                    # Use semantic keys to find truly new rows — avoids dropping all
+                    # historical rows for re-linked institutions (which have less history
+                    # in the new item than was stored in the backup).
+                    _sem_keys = set(
+                        f"{r.get('description','')}|{str(r.get('date',''))[:10]}|{round(float(r.get('expense_amount') or 0), 2)}"
+                        for _, r in clean_df.iterrows()
+                    )
                     existing_ids = set(clean_df["plaid_txn_id"].dropna().astype(str))
                     new_rows = df[~df["plaid_txn_id"].astype(str).isin(existing_ids)]
-                    if not new_rows.empty:
-                        merged = pd.concat([clean_df, new_rows], ignore_index=True)
+                    truly_new = new_rows[new_rows.apply(
+                        lambda r: f"{r.get('description','')}|{str(r.get('date',''))[:10]}|{round(float(r.get('expense_amount') or 0), 2)}" not in _sem_keys,
+                        axis=1
+                    )]
+                    if not truly_new.empty:
+                        merged = pd.concat([clean_df, truly_new], ignore_index=True)
                         save_df(current_user, merged)
                     else:
                         save_df(current_user, clean_df)

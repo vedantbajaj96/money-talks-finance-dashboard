@@ -146,7 +146,7 @@ function ReviewTab({ refreshFin, setTab }) {
       map[key].txns.push(t);
     });
     return Object.values(map)
-      .sort((a, b) => b.txns.length - a.txns.length || a.name.localeCompare(b.name))
+      .sort((a, b) => b.total - a.total || b.txns.length - a.txns.length)
       .map(g => ({
         ...g,
         txns: g.txns.slice().sort((a, b) => (b.date > a.date ? 1 : -1)),

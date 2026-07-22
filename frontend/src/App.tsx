@@ -309,7 +309,6 @@ const TABS = [
   { id: 'txns',        name: 'Transactions',  icon: 'txns',       group: 'main' },
   { id: 'monthly',     name: 'Monthly',       icon: 'monthly',    group: 'main' },
   { id: 'review',      name: 'Review',        icon: 'review',     group: 'main' },
-  { id: 'trips',       name: 'Trips',         icon: 'trips',      group: 'main' },
   { id: 'shared',      name: 'Shared',        icon: 'shared',     group: 'main' },
   { id: 'cashflow',    name: 'Cash Flow',     icon: 'cashflow',   group: 'analysis' },
   { id: 'flow',        name: 'Flow',          icon: 'cashflow',   group: 'analysis' },
@@ -749,7 +748,11 @@ class ErrorBoundary extends Component<{ children: React.ReactNode }, { error: Er
 // ── App ───────────────────────────────────────────────────────────
 export default function App() {
   const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
-  const [tab, setTab]           = useState<string | null>(null);
+  const [tab, setTabRaw]        = useState<string | null>(() => window.location.hash.slice(2) || null);
+  const setTab = (t: string) => {
+    window.history.pushState({ tab: t }, '', `/#/${t}`);
+    setTabRaw(t);
+  };
   const [isAdmin, setIsAdmin]   = useState(false);
   const [monthKey, setMonthKey] = useState(MONTHS[MONTHS.length - 1]?.key || '');
   const [search, setSearch]     = useState('');
@@ -784,13 +787,21 @@ export default function App() {
   const [syncProgress, setSyncProgress] = useState<{ step: string; pct: number; error: boolean } | null>(null);
 
   useEffect(() => {
+    const onPop = () => setTabRaw(window.location.hash.slice(2) || 'overview');
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
+
+  useEffect(() => {
     apiFetch('/api/auth/me').then(r => r.json()).then(me => {
       if (me?.is_admin) { setIsAdmin(true); setTab('admin'); return; }
       if (pendingJoin) { setTab('shared'); return; }
+      if (tab) return; // already have a tab from URL hash
       apiFetch('/api/review').then(r => r.json()).then(d => {
         setTab(d.remaining === 0 ? 'monthly' : 'review');
       }).catch(() => setTab('monthly'));
     }).catch(() => {
+      if (tab) return;
       apiFetch('/api/review').then(r => r.json()).then(d => {
         setTab(d.remaining === 0 ? 'monthly' : 'review');
       }).catch(() => setTab('monthly'));
@@ -905,7 +916,6 @@ export default function App() {
       case 'txns':        return <TransactionsTab {...sharedProps} />;
       case 'monthly':     return <MonthlyTab {...sharedProps} />;
       case 'review':      return <ReviewTab refreshFin={refreshFin} setTab={setTab} />;
-      case 'trips':       return <TripsTab refreshFin={refreshFin} finVersion={finVersion} />;
       case 'shared':      return <SharedTab pendingJoin={pendingJoin} clearPendingJoin={() => setPendingJoin(null)} setTab={setTab} />;
       case 'cashflow':    return <CashFlowTab />;
       case 'flow':        return <FlowTab        {...sharedProps} />;

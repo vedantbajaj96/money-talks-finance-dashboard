@@ -256,7 +256,7 @@ function CategoriesTab({ monthKey, finVersion }) {
             {[
               { label: `Total (${chartMonths.length}mo)`, value: fmtMoney(allTimeTotal) },
               { label: 'Monthly avg', value: fmtMoney(monthlyAvg) },
-              { label: catMonthLabel, value: fmtMoney(breakdown.find(b => b.cat === selectedCat)?.amount || 0) },
+              { label: detailMonthLabel, value: fmtMoney(chartMonths.find(m => m.key === activeDmKey)?.value || 0) },
               { label: 'Peak month', value: peakMonth?.label || '—' },
             ].map((s, i, arr) => (
               <div key={s.label} style={{ flex: 1, padding: '10px 14px',
