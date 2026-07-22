@@ -145,17 +145,6 @@ function TransactionsTab({ monthKey, txnOverrides, setTxnOverrides, search: glob
 
   return (
     <div className="tab-body">
-      <TabHero
-        value={totalOut}
-        format={fmtMoney}
-        label={`Transactions · ${monthLabel}`}
-        sublabel="total spent"
-        positive={false}
-        stats={[
-          { val: fmtMoney(totalIn),         key: 'Income' },
-          { val: String(nonTransfer.length), key: 'Transactions' },
-        ]}
-      />
       <div className="card">
         {isGlobalSearch && (
           <div style={{

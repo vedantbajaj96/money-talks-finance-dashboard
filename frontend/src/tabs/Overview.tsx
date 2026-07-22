@@ -301,7 +301,6 @@ function MonthlyTab({ monthKey, txnOverrides, setTxnOverrides, refreshFin }) {
 
   return (
     <div className="tab-body">
-      <MonthHero summary={summary} monthLabel={monthLabel} />
       <div className="grid-4">
         <div onClick={() => setSelectedCat(c => c === 'income' ? null : 'income')}
           style={{ cursor: 'pointer', outline: selectedCat === 'income' ? '2px solid var(--green)' : 'none', borderRadius: 16 }}>

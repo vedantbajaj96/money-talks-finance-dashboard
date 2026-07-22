@@ -86,7 +86,7 @@ function DragCard({ id, index, order, onReorder, title, children, onNavigate }: 
   );
 }
 
-function OverviewTab({ setTab }: { setTab?: (t: string) => void }) {
+function OverviewTab({ setTab, monthKey: propMonthKey }: { setTab?: (t: string) => void; monthKey?: string }) {
   const savedOrder = (() => {
     try { return JSON.parse(localStorage.getItem(OVERVIEW_ORDER_KEY)); } catch(e) { return null; }
   })();
@@ -250,7 +250,7 @@ function OverviewTab({ setTab }: { setTab?: (t: string) => void }) {
   }, []);
 
   // Category spend: this month vs 6-month average
-  const curMonthKey = MONTHS[MONTHS.length - 1]?.key;
+  const curMonthKey = propMonthKey || MONTHS[MONTHS.length - 1]?.key;
   const vs6mo = useMemo(() => {
     const last6 = MONTHS.slice(-7, -1); // 6 months before current
     const curTxns = txnsForMonth(curMonthKey);
@@ -676,23 +676,6 @@ function OverviewTab({ setTab }: { setTab?: (t: string) => void }) {
 
   return (
     <div className="tab-body">
-      <div className="triple-hero">
-        <div className="triple-hero-eyebrow">{monthLabel}</div>
-        <div className="triple-hero-nums">
-          <div className="triple-hero-num">
-            <span className="triple-hero-val negative">{fmtMoney(curSummary.expenses)}</span>
-            <span className="triple-hero-key">Spent</span>
-          </div>
-          <div className="triple-hero-num">
-            <span className="triple-hero-val positive">{fmtMoney(curSummary.income)}</span>
-            <span className="triple-hero-key">Income</span>
-          </div>
-          <div className="triple-hero-num">
-            <span className={`triple-hero-val ${curSummary.net >= 0 ? 'positive' : 'negative'}`}>{fmtMoney(Math.abs(curSummary.net))}</span>
-            <span className="triple-hero-key">{curSummary.net >= 0 ? 'Saved' : 'Over Budget'}</span>
-          </div>
-        </div>
-      </div>
       <div className="grid-overview">
         {order.map((id, idx) => renderWidget(id, idx))}
       </div>

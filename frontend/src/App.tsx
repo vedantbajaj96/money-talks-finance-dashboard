@@ -444,7 +444,7 @@ function TopBar({ tab, monthKey, setMonthKey, search, setSearch, syncState, sync
   }
 
   const idx      = MONTHS.findIndex((m) => m.key === monthKey);
-  const showMonth = ['overview', 'txns', 'flow', 'categories', 'monthly'].includes(tab);
+  const showMonth = ['txns', 'flow', 'categories', 'monthly'].includes(tab);
   const tabName  = TABS.find((t) => t.id === tab)?.name || '';
   const displayName = me?.display_name || me?.username || '?';
   const initial     = displayName[0].toUpperCase();
