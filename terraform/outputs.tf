@@ -1,10 +1,10 @@
 output "public_ip" {
-  value       = try(oci_core_instance.main.public_ip, "YOUR_SERVER_IP")
+  value       = oci_core_instance.main.public_ip
   description = "E2.1.Micro (live) public IP"
 }
 
 output "ssh_command" {
-  value       = oci_core_instance.main.public_ip != null ? "ssh opc@${oci_core_instance.main.public_ip}" : "ssh opc@YOUR_SERVER_IP"
+  value       = "ssh opc@${oci_core_instance.main.public_ip}"
   description = "SSH into live E2.1.Micro"
 }
 

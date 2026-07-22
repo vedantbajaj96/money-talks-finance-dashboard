@@ -24,7 +24,7 @@ data "oci_core_images" "oracle_linux_arm" {
   state                    = "AVAILABLE"
 }
 
-# ── Current live instance (E2.1.Micro, YOUR_SERVER_IP) ───────────
+# ── Current live instance (E2.1.Micro) ───────────────────────────
 # ignore_changes = all so terraform never tries to recreate or modify it.
 # Import with: terraform import oci_core_instance.main <instance-ocid>
 resource "oci_core_instance" "main" {
