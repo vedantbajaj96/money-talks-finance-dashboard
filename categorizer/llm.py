@@ -122,7 +122,7 @@ def _categorize_batch_claude(
         client   = anthropic.Anthropic(api_key=resolved_key)
         prompt   = _build_prompt(descriptions, transaction_types, extra_expense_cats)
         response = client.messages.create(
-            model="claude-opus-4-6",
+            model="claude-haiku-4-5-20251001",
             max_tokens=1024,
             messages=[{"role": "user", "content": prompt}],
         )

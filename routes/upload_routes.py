@@ -14,6 +14,8 @@ from core.store import load_config, load_df, save_df, user_dir
 
 router = APIRouter()
 
+MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
+
 
 @router.post("/api/upload")
 async def upload_csv(
@@ -21,6 +23,8 @@ async def upload_csv(
     current_user: str = Depends(get_current_user),
 ) -> dict:
     content = await file.read()
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, f"File too large (max {MAX_UPLOAD_BYTES // 1024 // 1024} MB)")
     try:
         raw_df = pd.read_csv(io.BytesIO(content))
     except Exception as e:
