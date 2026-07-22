@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import logging
 import logging.handlers
+import os
 import sys
 import traceback
 import warnings
@@ -110,6 +111,28 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
+_SECURE_COOKIES = os.environ.get("SECURE_COOKIES", "false").lower() == "true"
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    if _SECURE_COOKIES:
+        response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' unpkg.com cdn.jsdelivr.net; "
+        "style-src 'self' 'unsafe-inline' fonts.googleapis.com; "
+        "font-src fonts.gstatic.com; "
+        "img-src 'self' data: https:; "
+        "connect-src 'self';"
+    )
+    return response
+
+
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     import time as _time
@@ -150,6 +173,13 @@ app.include_router(shared_router)
 app.include_router(verify_router)
 
 # ---------------------------------------------------------------------------
+# Health check (no auth — for Docker health checks / uptime monitoring)
+
+@app.get("/api/health")
+def health() -> dict:
+    return {"ok": True}
+
+
 # Serve the React frontend — must be last so /api/* routes take priority.
 # ---------------------------------------------------------------------------
 

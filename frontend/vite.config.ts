@@ -26,12 +26,12 @@ export default defineConfig({
         ],
       },
       workbox: {
-        // API calls: always go to network, fall back to cache
+        // Exclude /api/ from navigation fallback so auth callbacks reach the server
+        navigateFallbackDenylist: [/^\/api\//],
         runtimeCaching: [
           {
             urlPattern: /^\/api\//,
-            handler: 'NetworkFirst',
-            options: { cacheName: 'api-cache', networkTimeoutSeconds: 10 },
+            handler: 'NetworkOnly',
           },
         ],
       },
