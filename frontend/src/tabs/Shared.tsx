@@ -376,6 +376,13 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
     }).catch(() => setDetailLoading(false));
   }
 
+  function refreshDetail(space) {
+    setMenuExpId(null);
+    apiFetch(`/api/shared/${space.id}`).then(r => r.json()).then(d => {
+      setDetail(d);
+    }).catch(() => {});
+  }
+
   useEffect(() => {
     if (!pendingJoin) return;
     apiFetch(`/api/shared/join/${pendingJoin}`).then(r => r.json()).then(d => {
@@ -505,7 +512,7 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
         setExpenseModal(false);
         setExpForm({ description: '', amount: '', date: new Date().toISOString().slice(0,10), category: 'other' });
         setTxnSearch('');
-        loadDetail(detail);
+        refreshDetail(detail);
       }
     } finally {
       setExpSaving(false);
@@ -519,7 +526,7 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ txn_id: txn.id }),
     });
-    loadDetail(detail);
+    refreshDetail(detail);
   }
 
   async function addBulk() {
@@ -533,7 +540,7 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
       });
       setExpenseModal(false);
       setBulkSelected(new Set());
-      loadDetail(detail);
+      refreshDetail(detail);
     } finally {
       setExpSaving(false);
     }
@@ -543,7 +550,7 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
     if (!detail) return;
     await apiFetch(`/api/shared/${detail.id}/expenses/${expenseId}`, { method: 'DELETE' });
     setMenuExpId(null);
-    loadDetail(detail);
+    refreshDetail(detail);
   }
 
   async function saveEditedExpense() {
@@ -556,7 +563,7 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
         body: JSON.stringify({ description: editExpModal.description, amount: parseFloat(editExpModal.amount), date: editExpModal.date, category: editExpModal.category }),
       });
       setEditExpModal(null);
-      loadDetail(detail);
+      refreshDetail(detail);
     } finally {
       setEditExpSaving(false);
     }
@@ -579,7 +586,7 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
       body: JSON.stringify({ notes: value }),
     });
     setEditingNote(null);
-    loadDetail(detail);
+    refreshDetail(detail);
   }
 
   const txnCandidates = useMemo(() => {
@@ -1763,57 +1770,6 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
                   </div>
                 )}
 
-                {dailyBreakdown.length > 1 && detail.type !== 'trip' && (
-                  <div className="card">
-                    <div className="card-head">
-                      <h3>Daily spending</h3>
-                      <span className="muted">{fmtMoney((detail.total_spent || 0) / Math.max(dailyBreakdown.length, 1))} avg/day</span>
-                    </div>
-                    <div style={{ overflowX: 'auto', padding: '0 4px 8px' }}>
-                      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 5, height: 120, minWidth: dailyBreakdown.length * 42 }}>
-                        {dailyBreakdown.map(d => (
-                          <div key={d.date} style={{ flex: 1, minWidth: 34, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                            <div style={{ fontSize: 9, color: 'var(--ink-3)', textAlign: 'center' }}>{fmtAbbr(d.amount)}</div>
-                            <div style={{ width: '100%', borderRadius: 4, minHeight: 4, height: `${Math.max(4, Math.round((d.amount / maxDailySpend) * 80))}px`, background: 'var(--accent)', opacity: 0.85 }} />
-                            <div style={{ fontSize: 9, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>{d.date.slice(5)}</div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {filteredPerUser.length > 0 && (
-                  <div className="card">
-                    <div className="card-head"><h3>By person</h3></div>
-                    <div style={{ display: 'flex', flexDirection: 'column' }}>
-                      {filteredPerUser.map(u => {
-                        const uTotal = u.filteredTotal || 0;
-                        const periodTotal = filteredPerUser.reduce((s, x) => s + (x.filteredTotal || 0), 0);
-                        const pct = periodTotal > 0 ? (uTotal / periodTotal) * 100 : 0;
-                        const isMe = u.user === me?.username;
-                        const uColor = participantColors[u.user];
-                        return (
-                          <div key={u.user}
-                            onClick={() => { setFilterUser(u.user); setDetailTab('expenses'); }}
-                            className="month-row"
-                            style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 6px', margin: '0 -6px', borderBottom: '1px solid var(--line)', cursor: 'pointer' }}>
-                            <div style={{ width: 28, height: 28, borderRadius: '50%', background: uColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: '#fff', flexShrink: 0 }}>
-                              {(u.display_name || u.user).slice(0, 2).toUpperCase()}
-                            </div>
-                            <span style={{ flex: 1, fontSize: 14, color: 'var(--ink)' }}>{u.display_name || u.user}{isMe ? ' (you)' : ''}</span>
-                            <div style={{ width: 100, height: 5, background: 'var(--line)', borderRadius: 3, overflow: 'hidden' }}>
-                              <div style={{ height: '100%', width: `${pct}%`, borderRadius: 3, background: uColor }} />
-                            </div>
-                            <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', minWidth: 70, textAlign: 'right', fontFamily: 'var(--font-mono)', fontFeatureSettings: '"tnum"' }}>{fmtMoney(uTotal)}</span>
-                            <span style={{ fontSize: 12, color: 'var(--ink-3)', minWidth: 32, textAlign: 'right' }}>{pct.toFixed(0)}%</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
                 <RecentStrip />
               </>
             )}
@@ -1957,7 +1913,7 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
                                 body: JSON.stringify({ category: newCat }),
                               });
                             }
-                            loadDetail(detail);
+                            refreshDetail(detail);
                           }} />
                         ) : (
                           <span className="cat-pill" style={{ color: catI.color }}>{catI.name}</span>
