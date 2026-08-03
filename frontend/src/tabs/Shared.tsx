@@ -493,15 +493,13 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
     if (!detail || !editExpModal) return;
     setEditExpSaving(true);
     try {
+      const body = editExpModal.isRef
+        ? { category: editExpModal.category }
+        : { description: editExpModal.description, amount: parseFloat(editExpModal.amount), date: editExpModal.date, category: editExpModal.category };
       await apiFetch(`/api/shared/${detail.id}/expenses/${editExpModal.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          description: editExpModal.description,
-          amount:      parseFloat(editExpModal.amount),
-          date:        editExpModal.date,
-          category:    editExpModal.category,
-        }),
+        body: JSON.stringify(body),
       });
       setEditExpModal(null);
       loadDetail(detail);
@@ -1097,25 +1095,29 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
         <Portal>
         <div style={{ position: 'fixed', inset: 0, zIndex: 800, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setEditExpModal(null)}>
           <div className="card" style={{ width: 380, margin: 0 }} onClick={e => e.stopPropagation()}>
-            <h3 style={{ marginBottom: 16 }}>Edit expense</h3>
+            <h3 style={{ marginBottom: 16 }}>{editExpModal.isRef ? 'Change category' : 'Edit expense'}</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div>
-                <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>Description</label>
-                <input value={editExpModal.description} onChange={e => setEditExpModal(m => ({ ...m, description: e.target.value }))}
-                  style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--surface-2)', color: 'var(--ink)', fontFamily: 'inherit', fontSize: 14, outline: 'none', boxSizing: 'border-box' }} />
-              </div>
-              <div style={{ display: 'flex', gap: 10 }}>
-                <div style={{ flex: 1 }}>
-                  <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>Amount ($)</label>
-                  <input type="number" value={editExpModal.amount} onChange={e => setEditExpModal(m => ({ ...m, amount: e.target.value }))}
-                    style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--surface-2)', color: 'var(--ink)', fontFamily: 'inherit', fontSize: 14, outline: 'none', boxSizing: 'border-box' }} />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>Date</label>
-                  <input type="date" value={editExpModal.date} onChange={e => setEditExpModal(m => ({ ...m, date: e.target.value }))}
-                    style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--surface-2)', color: 'var(--ink)', fontFamily: 'inherit', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
-                </div>
-              </div>
+              {!editExpModal.isRef && (
+                <>
+                  <div>
+                    <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>Description</label>
+                    <input value={editExpModal.description} onChange={e => setEditExpModal(m => ({ ...m, description: e.target.value }))}
+                      style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--surface-2)', color: 'var(--ink)', fontFamily: 'inherit', fontSize: 14, outline: 'none', boxSizing: 'border-box' }} />
+                  </div>
+                  <div style={{ display: 'flex', gap: 10 }}>
+                    <div style={{ flex: 1 }}>
+                      <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>Amount ($)</label>
+                      <input type="number" value={editExpModal.amount} onChange={e => setEditExpModal(m => ({ ...m, amount: e.target.value }))}
+                        style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--surface-2)', color: 'var(--ink)', fontFamily: 'inherit', fontSize: 14, outline: 'none', boxSizing: 'border-box' }} />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>Date</label>
+                      <input type="date" value={editExpModal.date} onChange={e => setEditExpModal(m => ({ ...m, date: e.target.value }))}
+                        style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--surface-2)', color: 'var(--ink)', fontFamily: 'inherit', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+                    </div>
+                  </div>
+                </>
+              )}
               <div>
                 <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>Category</label>
                 <select value={editExpModal.category} onChange={e => setEditExpModal(m => ({ ...m, category: e.target.value }))}
@@ -1126,9 +1128,9 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
             </div>
             <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
               <button onClick={() => setEditExpModal(null)} style={{ flex: 1, padding: '10px 0', border: '1px solid var(--line)', borderRadius: 10, background: 'none', cursor: 'pointer', color: 'var(--ink-3)', fontFamily: 'inherit' }}>Cancel</button>
-              <button onClick={saveEditedExpense} disabled={editExpSaving || !editExpModal.description || !editExpModal.amount}
+              <button onClick={saveEditedExpense} disabled={editExpSaving || (!editExpModal.isRef && (!editExpModal.description || !editExpModal.amount))}
                 style={{ flex: 1, padding: '10px 0', border: 'none', borderRadius: 10, background: 'var(--accent)', color: '#fff', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
-                {editExpSaving ? 'Saving…' : 'Save changes'}
+                {editExpSaving ? 'Saving…' : 'Save'}
               </button>
             </div>
           </div>
@@ -1287,11 +1289,14 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
 
         const RecentStrip = () => {
           if (!expenses.length) return null;
-          const recent = [...expenses].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5);
+          const source = detailSelectedCat ? expenses.filter(e => e.category === detailSelectedCat) : expenses;
+          const recent = [...source].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5);
+          if (detailSelectedCat && recent.length === 0) return null;
+          const catLabel = detailSelectedCat ? sharedCatById(detailSelectedCat).name : null;
           return (
             <div className="card">
               <div className="card-head" style={{ marginBottom: 8 }}>
-                <h3>Recent</h3>
+                <h3>{catLabel ? catLabel : 'Recent'}</h3>
                 <button onClick={() => setDetailTab('expenses')} style={{ fontSize: 12, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>See all →</button>
               </div>
               <div className="txn-list">
@@ -1654,7 +1659,7 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
                   </div>
                 )}
 
-                {dailyBreakdown.length > 1 && (
+                {dailyBreakdown.length > 1 && detail.type !== 'trip' && (
                   <div className="card">
                     <div className="card-head">
                       <h3>Daily spending</h3>
@@ -1882,10 +1887,13 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
                               label: e.notes ? '✏️ Edit note' : '💬 Add note',
                               action: () => { setEditingNote({ id: e.id, value: e.notes || '' }); setMenuExpId(null); },
                             },
-                            ...(!e.txn_id ? [{
+                            ...(e.txn_id ? [{
+                              label: '🏷️ Change category',
+                              action: () => { setEditExpModal({ id: e.id, description: e.description, amount: e.amount, date: e.date, category: e.category || 'other', isRef: true }); setMenuExpId(null); },
+                            }] : [{
                               label: '✏️ Edit expense',
-                              action: () => { setEditExpModal({ id: e.id, description: e.description, amount: e.amount, date: e.date, category: e.category || 'other' }); setMenuExpId(null); },
-                            }] : []),
+                              action: () => { setEditExpModal({ id: e.id, description: e.description, amount: e.amount, date: e.date, category: e.category || 'other', isRef: false }); setMenuExpId(null); },
+                            }]),
                             ...(isMe || isOwnerUser ? [{
                               label: 'Delete',
                               action: () => deleteExpense(e.id),

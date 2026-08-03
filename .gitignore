@@ -2,6 +2,7 @@
 config.json
 data/
 .env
+deploy.env
 
 # Python
 __pycache__/

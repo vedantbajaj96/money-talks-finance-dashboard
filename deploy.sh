@@ -3,10 +3,11 @@
 # Copy this file and fill in your server details before use.
 set -e
 
-# Set these before running:
-#   SERVER=user@your-server-ip
-#   APP=/path/to/your/local/finance-dashboard
-SERVER="${MONEYTALKS_SERVER:?Set MONEYTALKS_SERVER=user@your-server-ip}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=deploy.env
+[ -f "$SCRIPT_DIR/deploy.env" ] && source "$SCRIPT_DIR/deploy.env"
+
+SERVER="${MONEYTALKS_SERVER:?Set MONEYTALKS_SERVER in deploy.env or as an env var}"
 APP="${MONEYTALKS_APP_DIR:-$(cd "$(dirname "$0")" && pwd)}"
 
 echo "=== Building frontend ==="

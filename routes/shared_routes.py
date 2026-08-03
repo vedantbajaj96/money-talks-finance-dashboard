@@ -134,11 +134,12 @@ def _resolve_space(space_id: str, current_user: str) -> tuple[str, dict]:
     raise HTTPException(404, "Space not found")
 
 
-def _resolve_expense(e: dict) -> dict | None:
+def _resolve_expense(e: dict, df_cache: dict | None = None) -> dict | None:
     """
     For ref-type expenses, look up the live transaction in the user's parquet.
     Returns None if the transaction has been deleted.
     Manual expenses are returned unchanged.
+    df_cache is a {username: DataFrame} dict to avoid reloading parquet per expense.
     """
     if e.get("type") != "ref":
         return e
@@ -149,7 +150,11 @@ def _resolve_expense(e: dict) -> dict | None:
         return None
     try:
         from core.categories import map_category
-        df = load_df(user)
+        if df_cache is None:
+            df_cache = {}
+        if user not in df_cache:
+            df_cache[user] = load_df(user)
+        df = df_cache[user]
         if df is None or "txn_id" not in df.columns:
             return None
         row = df[df["txn_id"] == txn_id]
@@ -165,7 +170,7 @@ def _resolve_expense(e: dict) -> dict | None:
             "description": str(r.get("description", "")),
             "amount":      float(r.get("expense_amount", 0)),
             "date":        str(r.get("date", ""))[:10],
-            "category":    map_category(str(r.get("category", ""))),
+            "category":    e.get("category") or map_category(str(r.get("category", ""))),
             "notes":       str(e.get("notes", "") or ""),
             "created_at":  e.get("created_at", ""),
         }
@@ -173,27 +178,27 @@ def _resolve_expense(e: dict) -> dict | None:
         return None
 
 
-def _resolve_space_expenses(space_id: str, raw_expenses: list[dict]) -> list[dict]:
+def _resolve_space_expenses(space_id: str, raw_expenses: list[dict], df_cache: dict | None = None) -> list[dict]:
     """Filter to space, resolve refs, drop deleted transactions."""
+    if df_cache is None:
+        df_cache = {}
     resolved = []
     for e in raw_expenses:
         if e.get("space_id") != space_id:
             continue
-        r = _resolve_expense(e)
+        r = _resolve_expense(e, df_cache)
         if r is not None:
             resolved.append(r)
     return resolved
 
 
-def _space_total(space_id: str, expenses: list[dict]) -> float:
-    resolved = _resolve_space_expenses(space_id, expenses)
-    return round(sum(e["amount"] for e in resolved), 2)
-
-
-def _space_last_activity(space_id: str, expenses: list[dict]) -> str | None:
-    resolved = _resolve_space_expenses(space_id, expenses)
+def _space_summary(space_id: str, expenses: list[dict], df_cache: dict | None = None) -> tuple[float, str | None]:
+    """Return (total, last_activity) for a space in a single pass."""
+    resolved = _resolve_space_expenses(space_id, expenses, df_cache)
+    total = round(sum(e["amount"] for e in resolved), 2)
     dated = [e["date"] for e in resolved if e.get("date")]
-    return max(dated) if dated else None
+    last = max(dated) if dated else None
+    return total, last
 
 
 def _display_names(usernames: list[str]) -> dict[str, str]:
@@ -269,13 +274,13 @@ def invite_user(space_id: str, body: dict[str, Any], current_user: str = Depends
 def list_spaces(current_user: str = Depends(get_current_user)) -> dict:
     """Return owned spaces + joined spaces, each with total and last_activity."""
     all_spaces = []
+    df_cache: dict = {}
 
     # Owned spaces
     own_expenses = _load_expenses(current_user)
     for space in _load_spaces(current_user):
         sid = space["id"]
-        total = _space_total(sid, own_expenses)
-        last  = _space_last_activity(sid, own_expenses)
+        total, last = _space_summary(sid, own_expenses, df_cache)
         all_spaces.append({
             **space,
             "role":          "owner",
@@ -296,8 +301,7 @@ def list_spaces(current_user: str = Depends(get_current_user)) -> dict:
         if not space or current_user not in space.get("participants", []):
             continue  # stale pointer or removed participant
         expenses = _load_expenses(owner)
-        total    = _space_total(space_id, expenses)
-        last     = _space_last_activity(space_id, expenses)
+        total, last = _space_summary(space_id, expenses, df_cache)
         owner_dn = _display_names([owner]).get(owner, owner)
         all_spaces.append({
             **space,
@@ -424,7 +428,8 @@ def join_space(token: str, current_user: str = Depends(get_current_user)) -> dic
 def get_space(space_id: str, current_user: str = Depends(get_current_user)) -> dict:
     owner, space = _resolve_space(space_id, current_user)
     raw_expenses = _load_expenses(owner)
-    expenses     = _resolve_space_expenses(space_id, raw_expenses)
+    df_cache: dict = {}
+    expenses     = _resolve_space_expenses(space_id, raw_expenses, df_cache)
 
     total = round(sum(e["amount"] for e in expenses), 2)
 
@@ -668,6 +673,8 @@ def patch_expense(space_id: str, expense_id: str, body: dict[str, Any], current_
         raise HTTPException(404, "Expense not found")
     if "notes" in body:
         expenses[idx]["notes"] = (body["notes"] or "").strip()[:500]
+    if body.get("category"):
+        expenses[idx]["category"] = str(body["category"])
     if expenses[idx].get("type") == "manual":
         if body.get("description"):
             expenses[idx]["description"] = str(body["description"]).strip()[:200]
@@ -676,8 +683,6 @@ def patch_expense(space_id: str, expense_id: str, body: dict[str, Any], current_
         if body.get("date"):
             datetime.date.fromisoformat(body["date"])  # validate format
             expenses[idx]["date"] = body["date"]
-        if body.get("category"):
-            expenses[idx]["category"] = str(body["category"])
     _save_expenses(owner, expenses)
     return {"ok": True}
 
