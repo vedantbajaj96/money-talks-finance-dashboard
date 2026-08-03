@@ -679,22 +679,20 @@ def sync_all_transactions(
 
                 # Intra-batch fingerprint check: catches pending+posted arriving in the same sync
                 # response (banks that don't reliably populate Plaid's removed list).
-                # Skip during full resyncs — Plaid's full history is already deduplicated by ID;
-                # running this on historical data produces false positives for recurring charges.
-                if not is_full_resync:
-                    batch_entries = batch_fps.get(key, [])
-                    if batch_entries and _within_window(str(row["date"])[:10], batch_entries):
-                        if all(eid != txn_id for _, eid in batch_entries):
-                            new_date = str(row["date"])[:10]
-                            if any(ds == new_date for ds, _ in batch_entries):
-                                logger.info("[sync:%s] skipped intra-batch exact dup: %s %.2f on %s", inst_name, row["description"], row["expense_amount"], new_date)
-                                skipped += 1
-                                continue
-                            else:
-                                logger.info("[sync:%s] flagging intra-batch possible dup: %s %.2f", inst_name, row["description"], row["expense_amount"])
-                                if not row.get("notes"):
-                                    row["notes"] = "⚠ Possible duplicate — review and delete if needed"
-                                    row["category"] = "Pending Review"
+                # During full resyncs we only block exact same-date matches (not the ±3-day
+                # window) to avoid false positives on recurring charges with the same amount.
+                batch_entries = batch_fps.get(key, [])
+                if batch_entries and all(eid != txn_id for _, eid in batch_entries):
+                    new_date = str(row["date"])[:10]
+                    if any(ds == new_date for ds, _ in batch_entries):
+                        logger.info("[sync:%s] skipped intra-batch exact dup: %s %.2f on %s", inst_name, row["description"], row["expense_amount"], new_date)
+                        skipped += 1
+                        continue
+                    elif not is_full_resync and _within_window(new_date, batch_entries):
+                        logger.info("[sync:%s] flagging intra-batch possible dup: %s %.2f", inst_name, row["description"], row["expense_amount"])
+                        if not row.get("notes"):
+                            row["notes"] = "⚠ Possible duplicate — review and delete if needed"
+                            row["category"] = "Pending Review"
 
                 batch_fps.setdefault(key, []).append((str(row["date"])[:10], txn_id))
                 deduped.append(row)
