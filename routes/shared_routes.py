@@ -179,16 +179,57 @@ def _resolve_expense(e: dict, df_cache: dict | None = None) -> dict | None:
 
 
 def _resolve_space_expenses(space_id: str, raw_expenses: list[dict], df_cache: dict | None = None) -> list[dict]:
-    """Filter to space, resolve refs, drop deleted transactions."""
+    """Filter to space, resolve refs in a single batch query per user."""
     if df_cache is None:
         df_cache = {}
-    resolved = []
-    for e in raw_expenses:
-        if e.get("space_id") != space_id:
+
+    space_exps = [e for e in raw_expenses if e.get("space_id") == space_id]
+    if not space_exps:
+        return []
+
+    from core.categories import map_category
+
+    # Group ref expenses by user so we do one DataFrame query per user
+    ref_by_user: dict[str, list[dict]] = {}
+    for e in space_exps:
+        if e.get("type") == "ref" and e.get("user") and e.get("txn_id"):
+            ref_by_user.setdefault(e["user"], []).append(e)
+
+    # Build txn_id → row dict per user (single isin() query per user)
+    txn_rows: dict[str, object] = {}  # txn_id -> DataFrame row
+    for user, user_exps in ref_by_user.items():
+        if user not in df_cache:
+            df_cache[user] = load_df(user)
+        df = df_cache[user]
+        if df is None or "txn_id" not in df.columns:
             continue
-        r = _resolve_expense(e, df_cache)
-        if r is not None:
-            resolved.append(r)
+        ids = {e["txn_id"] for e in user_exps}
+        matches = df[df["txn_id"].isin(ids)]
+        for _, row in matches.iterrows():
+            txn_rows[str(row.get("txn_id", ""))] = row
+
+    resolved = []
+    for e in space_exps:
+        if e.get("type") != "ref":
+            resolved.append(e)
+            continue
+        txn_id = e.get("txn_id", "")
+        row = txn_rows.get(txn_id)
+        if row is None:
+            continue  # original transaction was deleted
+        resolved.append({
+            "id":          e["id"],
+            "space_id":    e["space_id"],
+            "type":        "ref",
+            "user":        e.get("user", ""),
+            "txn_id":      txn_id,
+            "description": str(row.get("description", "")),
+            "amount":      float(row.get("expense_amount", 0)),
+            "date":        str(row.get("date", ""))[:10],
+            "category":    e.get("category") or map_category(str(row.get("category", ""))),
+            "notes":       str(e.get("notes", "") or ""),
+            "created_at":  e.get("created_at", ""),
+        })
     return resolved
 
 
