@@ -52,9 +52,12 @@ _log_file    = _BASE_DIR_EARLY / "server.log"
 _log_handler = logging.handlers.RotatingFileHandler(
     _log_file, maxBytes=1 * 1024 * 1024, backupCount=3, encoding="utf-8"
 )
-_log_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s — %(message)s"))
+_log_fmt = logging.Formatter("%(asctime)s %(levelname)s %(name)s — %(message)s")
+_log_handler.setFormatter(_log_fmt)
+_stdout_handler = logging.StreamHandler(sys.stdout)
+_stdout_handler.setFormatter(_log_fmt)
 
-logging.basicConfig(level=logging.INFO, handlers=[_log_handler])
+logging.basicConfig(level=logging.INFO, handlers=[_log_handler, _stdout_handler])
 for _name in ("uvicorn", "uvicorn.access", "uvicorn.error", "fastapi"):
     logging.getLogger(_name).addHandler(_log_handler)
 
@@ -133,6 +136,8 @@ async def security_headers(request: Request, call_next):
     return response
 
 
+_SKIP_TIMING = {"/api/auth/me", "/api/plaid/sync_status", "/api/health"}
+
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     import time as _time
@@ -140,10 +145,11 @@ async def log_requests(request: Request, call_next):
     try:
         response = await call_next(request)
         _ms = (_time.monotonic() - _t0) * 1000
-        if _ms > 200:  # only log slow requests (>200ms) to avoid noise
-            logger.info("SLOW %s %s → %s in %.0fms", request.method, request.url.path, response.status_code, _ms)
+        path = request.url.path
+        if path.startswith("/api/") and path not in _SKIP_TIMING:
+            logger.info("%s %s → %s in %.0fms", request.method, path, response.status_code, _ms)
         # Never cache API responses
-        if request.url.path.startswith("/api/"):
+        if path.startswith("/api/"):
             response.headers["Cache-Control"] = "no-store"
         return response
     except Exception as exc:
