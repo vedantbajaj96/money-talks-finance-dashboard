@@ -14,7 +14,7 @@ echo "=== Building frontend ==="
 cd "$APP/frontend" && npm run build && cd "$APP"
 
 echo "=== Syncing code ==="
-rsync -a "$APP/server.py" "$APP/requirements.txt" "$APP/user_rules.py" "$SERVER:/opt/moneytalks/app/"
+rsync -a "$APP/server.py" "$APP/requirements.txt" "$APP/user_rules.py" "$APP/landing.html" "$SERVER:/opt/moneytalks/app/"
 rsync -a "$APP/routes/" "$SERVER:/opt/moneytalks/app/routes/"
 rsync -a "$APP/core/" "$SERVER:/opt/moneytalks/app/core/"
 rsync -a "$APP/categorizer/" "$SERVER:/opt/moneytalks/app/categorizer/"
