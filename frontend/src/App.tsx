@@ -140,7 +140,7 @@ function ProfilePanel({ me, onClose, onDisplayNameChange }: { me: any; onClose: 
         <div className="profile-avatar" style={{ background: color }}>{initial}</div>
         <div>
           <div className="profile-name">{displayName}</div>
-          <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 2 }}>@{me?.username}</div>
+          <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 2 }}>{me?.email || me?.username}</div>
           {me?.is_admin && <div className="profile-badge">Admin</div>}
         </div>
       </div>
@@ -375,7 +375,7 @@ function Sidebar({ active, onChange, layout, syncState }: { active: string | nul
 
       <nav className="nav">
         {TAB_GROUPS.map((g) => (
-          <div key={g.id} className="nav-group">
+          <div key={g.id} className={`nav-group nav-group--${g.id}`}>
             {!collapsed && <div className="nav-group-label">{g.label}</div>}
             {TABS.filter((t) => t.group === g.id).map((t) => (
               <button key={t.id}

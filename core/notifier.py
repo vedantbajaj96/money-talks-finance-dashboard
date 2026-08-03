@@ -49,7 +49,7 @@ def send_market_drop_alert(
     body = f"""
     <div style="font-family: -apple-system, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px 24px;">
       <h2 style="margin: 0 0 8px; font-size: 20px; color: #111;">Market Drop Alert</h2>
-      <p style="margin: 0 0 24px; color: #6b7280; font-size: 14px;">MoneyTalks · {__import__('datetime').date.today().strftime('%B %d, %Y')}</p>
+      <p style="margin: 0 0 24px; color: #6b7280; font-size: 14px;">MoneyTalk · {__import__('datetime').date.today().strftime('%B %d, %Y')}</p>
 
       <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 12px; padding: 20px 24px; margin-bottom: 24px;">
         <div style="font-size: 13px; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px;">{ticker} Today</div>
@@ -65,7 +65,7 @@ def send_market_drop_alert(
 
       <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;">
       <p style="font-size: 12px; color: #9ca3af;">
-        You're receiving this because you enabled market drop alerts in MoneyTalks.
+        You're receiving this because you enabled market drop alerts in MoneyTalk.
         To disable, remove your alert email in Settings.
       </p>
     </div>
@@ -88,7 +88,7 @@ def send_dca_reminder(
     body = f"""
     <div style="font-family: -apple-system, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px 24px;">
       <h2 style="margin: 0 0 8px; font-size: 20px; color: #111;">Monthly DCA Reminder</h2>
-      <p style="margin: 0 0 24px; color: #6b7280; font-size: 14px;">MoneyTalks · {__import__('datetime').date.today().strftime('%B %d, %Y')}</p>
+      <p style="margin: 0 0 24px; color: #6b7280; font-size: 14px;">MoneyTalk · {__import__('datetime').date.today().strftime('%B %d, %Y')}</p>
 
       <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 20px 24px; margin-bottom: 24px;">
         <div style="font-size: 13px; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px;">This Month's Deposit</div>
@@ -120,7 +120,7 @@ def send_portfolio_drop_alert(
     body = f"""
     <div style="font-family: -apple-system, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px 24px;">
       <h2 style="margin: 0 0 8px; font-size: 20px; color: #111;">Portfolio Drop Alert</h2>
-      <p style="margin: 0 0 24px; color: #6b7280; font-size: 14px;">MoneyTalks · {__import__('datetime').date.today().strftime('%B %d, %Y')}</p>
+      <p style="margin: 0 0 24px; color: #6b7280; font-size: 14px;">MoneyTalk · {__import__('datetime').date.today().strftime('%B %d, %Y')}</p>
 
       <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 12px; padding: 20px 24px; margin-bottom: 24px;">
         <div style="font-size: 13px; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px;">Your Wealthfront Portfolio</div>
@@ -138,7 +138,7 @@ def send_portfolio_drop_alert(
       </p>
 
       <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;">
-      <p style="font-size: 12px; color: #9ca3af;">Disable in MoneyTalks → Settings → Notifications.</p>
+      <p style="font-size: 12px; color: #9ca3af;">Disable in MoneyTalk → Settings → Notifications.</p>
     </div>
     """
     send_email(to=to, subject=subject, body_html=body, smtp_password=smtp_password, from_email=from_email)
@@ -174,7 +174,7 @@ def send_daily_brief(
     body = f"""
     <div style="font-family: -apple-system, sans-serif; max-width: 520px; margin: 0 auto; padding: 32px 24px;">
       <h2 style="margin: 0 0 4px; font-size: 20px; color: #111;">Daily Market Brief</h2>
-      <p style="margin: 0 0 24px; color: #6b7280; font-size: 14px;">MoneyTalks · {today_str}</p>
+      <p style="margin: 0 0 24px; color: #6b7280; font-size: 14px;">MoneyTalk · {today_str}</p>
 
       <div style="background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden; margin-bottom: 24px;">
         <table style="width:100%;border-collapse:collapse;font-size:13px;">
@@ -194,7 +194,7 @@ def send_daily_brief(
         <p style="margin:0;font-size:14px;color:#1e40af;line-height:1.7;">{ai_summary}</p>
       </div>
 
-      <p style="font-size:12px;color:#9ca3af;">MoneyTalks daily brief · disable in Settings → Notifications.</p>
+      <p style="font-size:12px;color:#9ca3af;">MoneyTalk daily brief · disable in Settings → Notifications.</p>
     </div>
     """
     send_email(to=to, subject=subject, body_html=body, smtp_password=smtp_password, from_email=from_email)
@@ -229,7 +229,7 @@ def send_monthly_digest(
     body = f"""
     <div style="font-family:-apple-system,sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;">
       <h2 style="margin:0 0 4px;font-size:20px;color:#111;">Monthly Portfolio Digest</h2>
-      <p style="margin:0 0 24px;color:#6b7280;font-size:14px;">MoneyTalks · {month_label}</p>
+      <p style="margin:0 0 24px;color:#6b7280;font-size:14px;">MoneyTalk · {month_label}</p>
 
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:24px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:12px;padding:20px 16px;">
         {stat('Portfolio', f'${portfolio_value:,.0f}')}
@@ -246,7 +246,7 @@ def send_monthly_digest(
         <p style="margin:0;font-size:14px;color:#1e40af;line-height:1.7;">{ai_summary}</p>
       </div>
 
-      <p style="font-size:12px;color:#9ca3af;">MoneyTalks monthly digest · disable in Settings → Notifications.</p>
+      <p style="font-size:12px;color:#9ca3af;">MoneyTalk monthly digest · disable in Settings → Notifications.</p>
     </div>
     """
     send_email(to=to, subject=subject, body_html=body, smtp_password=smtp_password, from_email=from_email)
@@ -257,11 +257,11 @@ def send_test_email(*, to: str, smtp_password: str) -> None:
     body = """
     <div style="font-family:-apple-system,sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;">
       <h2 style="margin:0 0 8px;font-size:20px;color:#111;">Test Email</h2>
-      <p style="color:#6b7280;font-size:14px;">MoneyTalks notifications are working correctly.</p>
+      <p style="color:#6b7280;font-size:14px;">MoneyTalk notifications are working correctly.</p>
       <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:20px 24px;">
         <p style="margin:0;font-size:14px;color:#16a34a;font-weight:600;">Your email and SMTP password are configured correctly.</p>
       </div>
     </div>
     """
-    send_email(to=to, subject="MoneyTalks — Test Email", body_html=body, smtp_password=smtp_password)
+    send_email(to=to, subject="MoneyTalk — Test Email", body_html=body, smtp_password=smtp_password)
     logger.info("[notifier] test email sent to %s", to)

@@ -1,26 +1,32 @@
-/* ─── MoneyTalks — refined light theme ─────────────────────────── */
+/* ─── MoneyTalk — refined light theme ─────────────────────────── */
 
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Sora:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 :root {
   /* Palette */
-  --bg:       #f4f3ef;
+  --bg:       #f2f0ea;
   --surface:  #ffffff;
-  --surface-2:#faf9f6;
-  --surface-3:#f0ede6;
-  --line:     rgba(20,24,32,0.07);
-  --line-2:   rgba(20,24,32,0.14);
-  --ink:      #111318;
-  --ink-2:    #454d5c;
-  --ink-3:    #6d7585;
-  --ink-4:    #9aa2b0;
+  --surface-2:#faf8f4;
+  --surface-3:#f0ece3;
+  --line:     rgba(20,24,32,0.08);
+  --line-2:   rgba(20,24,32,0.16);
+  --ink:      #0d1117;
+  --ink-2:    #3d4556;
+  --ink-3:    #657082;
+  --ink-4:    #96a0b0;
 
-  --accent:   #0d9e64;
-  --accent-2: #5ae8d0;
-  --terra:    #e05a3a;
-  --green:    #0d9e64;
-  --amber:    #f59e0b;
-  --blue:     #3b82f6;
+  --accent:   #0a8f5a;
+  --accent-2: #3dd6b8;
+  --terra:    #d94f2e;
+  --green:    #0a8f5a;
+  --amber:    #e8920a;
+  --blue:     #2563eb;
+
+  /* Per-group nav colors */
+  --color-money:    #0a8f5a;
+  --color-analysis: #2563eb;
+  --color-wealth:   #7c3aed;
+  --color-tools:    #e8920a;
 
   /* Radius */
   --radius:    16px;

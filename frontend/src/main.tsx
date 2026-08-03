@@ -47,7 +47,7 @@ function showLoadingScreen() {
     <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;gap:20px;font-family:sans-serif;background:#f6f5f2">
       <div style="display:flex;gap:8px"><span class="_c">💰</span><span class="_c">📈</span><span class="_c">💸</span></div>
       <div style="text-align:center">
-        <div style="font-size:18px;font-weight:700;color:#14181f;margin-bottom:6px">MoneyTalks</div>
+        <div style="font-size:18px;font-weight:700;color:#14181f;margin-bottom:6px">MoneyTalk</div>
         <div id="_quip" style="font-size:14px;color:#7a8090;font-weight:500;min-height:1.4em"></div>
       </div>
     </div>

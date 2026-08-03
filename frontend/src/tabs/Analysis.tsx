@@ -209,9 +209,10 @@ function CategoriesTab({ monthKey, finVersion }) {
               <div key={b.cat} className="cat-card"
                 onClick={() => selectCat(b.cat)}
                 style={{
-                  borderColor: isSelected ? b.color : b.color + '30',
+                  '--cat-color': b.color,
+                  borderColor: isSelected ? b.color : b.color + '38',
                   cursor: 'pointer',
-                  background: isSelected ? b.color + '10' : undefined,
+                  background: isSelected ? b.color + '14' : undefined,
                   outline: isSelected ? `2px solid ${b.color}` : undefined,
                   transition: 'all 0.15s',
                 }}
