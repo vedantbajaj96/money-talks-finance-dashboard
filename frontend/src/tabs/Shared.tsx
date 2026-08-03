@@ -19,6 +19,63 @@ function sharedCatById(id) {
   return SHARED_CATS.find(c => c.id === id) || { id, name: id, color: '#94a3b8' };
 }
 
+// Maps shared cat IDs to closest personal category IDs for transaction patching
+const SHARED_TO_PERSONAL: Record<string, string> = {
+  'eating-out': 'dining', 'groceries': 'groceries', 'transport': 'transport',
+  'accommodation': 'accommodation', 'entertainment': 'entertainment',
+  'shopping': 'shopping', 'utilities': 'utilities', 'household': 'household',
+  'activities': 'activities', 'other': 'other',
+};
+
+function SharedCatPicker({ catId, onPick }: { catId: string; onPick: (id: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos]   = useState({ top: 0, left: 0 });
+  const btnRef          = useRef<HTMLButtonElement>(null);
+  const cat             = sharedCatById(catId);
+
+  function handleOpen(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect();
+      setPos({ top: r.bottom + 4, left: r.left });
+    }
+    setOpen(o => !o);
+  }
+
+  return (
+    <div style={{ display: 'inline-block' }}>
+      <button ref={btnRef} onClick={handleOpen} className="cat-pill"
+        style={{ color: cat.color, cursor: 'pointer', border: `1px solid ${cat.color}50`,
+          background: `${cat.color}12`, padding: '1px 7px', borderRadius: 4,
+          fontFamily: 'inherit', fontSize: 11, fontWeight: 600 }}>
+        {cat.name} <span style={{ opacity: 0.5, fontSize: 9 }}>⌄</span>
+      </button>
+      {open && createPortal(
+        <>
+          <div style={{ position: 'fixed', inset: 0, zIndex: 8999 }} onClick={() => setOpen(false)} />
+          <div style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 9000,
+            background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 8,
+            boxShadow: '0 4px 16px rgba(0,0,0,0.15)', minWidth: 160, overflow: 'hidden' }}>
+            {SHARED_CATS.map(c => (
+              <button key={c.id} onClick={() => { onPick(c.id); setOpen(false); }}
+                style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+                  padding: '8px 12px', border: 'none', cursor: 'pointer', fontFamily: 'inherit',
+                  fontSize: 13, color: 'var(--ink)', textAlign: 'left',
+                  background: c.id === catId ? 'var(--surface-2)' : 'none' }}
+                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--surface-2)'}
+                onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = c.id === catId ? 'var(--surface-2)' : 'none'}>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: c.color, flexShrink: 0 }} />
+                {c.name}
+              </button>
+            ))}
+          </div>
+        </>,
+        document.body
+      )}
+    </div>
+  );
+}
+
 // Renders children into document.body so position:fixed modals are always
 // relative to the viewport, regardless of ancestor CSS transforms.
 function Portal({ children }) {
@@ -493,20 +550,11 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
     if (!detail || !editExpModal) return;
     setEditExpSaving(true);
     try {
-      if (editExpModal.isRef) {
-        // Patch the original transaction (owned by current user)
-        await apiFetch(`/api/transactions/${editExpModal.txn_id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ category: editExpModal.category }),
-        });
-      } else {
-        await apiFetch(`/api/shared/${detail.id}/expenses/${editExpModal.id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ description: editExpModal.description, amount: parseFloat(editExpModal.amount), date: editExpModal.date, category: editExpModal.category }),
-        });
-      }
+      await apiFetch(`/api/shared/${detail.id}/expenses/${editExpModal.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ description: editExpModal.description, amount: parseFloat(editExpModal.amount), date: editExpModal.date, category: editExpModal.category }),
+      });
       setEditExpModal(null);
       loadDetail(detail);
     } finally {
@@ -1101,29 +1149,25 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
         <Portal>
         <div style={{ position: 'fixed', inset: 0, zIndex: 800, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setEditExpModal(null)}>
           <div className="card" style={{ width: 380, margin: 0 }} onClick={e => e.stopPropagation()}>
-            <h3 style={{ marginBottom: 16 }}>{editExpModal.isRef ? 'Change category' : 'Edit expense'}</h3>
+            <h3 style={{ marginBottom: 16 }}>Edit expense</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {!editExpModal.isRef && (
-                <>
-                  <div>
-                    <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>Description</label>
-                    <input value={editExpModal.description} onChange={e => setEditExpModal(m => ({ ...m, description: e.target.value }))}
-                      style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--surface-2)', color: 'var(--ink)', fontFamily: 'inherit', fontSize: 14, outline: 'none', boxSizing: 'border-box' }} />
-                  </div>
-                  <div style={{ display: 'flex', gap: 10 }}>
-                    <div style={{ flex: 1 }}>
-                      <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>Amount ($)</label>
-                      <input type="number" value={editExpModal.amount} onChange={e => setEditExpModal(m => ({ ...m, amount: e.target.value }))}
-                        style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--surface-2)', color: 'var(--ink)', fontFamily: 'inherit', fontSize: 14, outline: 'none', boxSizing: 'border-box' }} />
-                    </div>
-                    <div style={{ flex: 1 }}>
-                      <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>Date</label>
-                      <input type="date" value={editExpModal.date} onChange={e => setEditExpModal(m => ({ ...m, date: e.target.value }))}
-                        style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--surface-2)', color: 'var(--ink)', fontFamily: 'inherit', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
-                    </div>
-                  </div>
-                </>
-              )}
+              <div>
+                <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>Description</label>
+                <input value={editExpModal.description} onChange={e => setEditExpModal(m => ({ ...m, description: e.target.value }))}
+                  style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--surface-2)', color: 'var(--ink)', fontFamily: 'inherit', fontSize: 14, outline: 'none', boxSizing: 'border-box' }} />
+              </div>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>Amount ($)</label>
+                  <input type="number" value={editExpModal.amount} onChange={e => setEditExpModal(m => ({ ...m, amount: e.target.value }))}
+                    style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--surface-2)', color: 'var(--ink)', fontFamily: 'inherit', fontSize: 14, outline: 'none', boxSizing: 'border-box' }} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>Date</label>
+                  <input type="date" value={editExpModal.date} onChange={e => setEditExpModal(m => ({ ...m, date: e.target.value }))}
+                    style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--surface-2)', color: 'var(--ink)', fontFamily: 'inherit', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+                </div>
+              </div>
               <div>
                 <label style={{ fontSize: 12, color: 'var(--ink-3)', display: 'block', marginBottom: 4 }}>Category</label>
                 <select value={editExpModal.category} onChange={e => setEditExpModal(m => ({ ...m, category: e.target.value }))}
@@ -1134,7 +1178,7 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
             </div>
             <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
               <button onClick={() => setEditExpModal(null)} style={{ flex: 1, padding: '10px 0', border: '1px solid var(--line)', borderRadius: 10, background: 'none', cursor: 'pointer', color: 'var(--ink-3)', fontFamily: 'inherit' }}>Cancel</button>
-              <button onClick={saveEditedExpense} disabled={editExpSaving || (!editExpModal.isRef && (!editExpModal.description || !editExpModal.amount))}
+              <button onClick={saveEditedExpense} disabled={editExpSaving || !editExpModal.description || !editExpModal.amount}
                 style={{ flex: 1, padding: '10px 0', border: 'none', borderRadius: 10, background: 'var(--accent)', color: '#fff', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
                 {editExpSaving ? 'Saving…' : 'Save'}
               </button>
@@ -1295,14 +1339,68 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
 
         const RecentStrip = () => {
           if (!expenses.length) return null;
-          const source = detailSelectedCat ? expenses.filter(e => e.category === detailSelectedCat) : expenses;
-          const recent = [...source].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5);
-          if (detailSelectedCat && recent.length === 0) return null;
-          const catLabel = detailSelectedCat ? sharedCatById(detailSelectedCat).name : null;
+
+          if (detailSelectedCat) {
+            const catInfo = sharedCatById(detailSelectedCat);
+            const catExps = expenses.filter(e => e.category === detailSelectedCat);
+            if (catExps.length === 0) return null;
+            const [catSortBy, setCatSortBy] = useState<'amount'|'date'>('amount');
+            const sorted = [...catExps].sort((a, b) =>
+              catSortBy === 'amount' ? b.amount - a.amount : b.date.localeCompare(a.date)
+            );
+            const catTotal = catExps.reduce((s, e) => s + e.amount, 0);
+            return (
+              <div className="card">
+                <div className="card-head" style={{ marginBottom: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: catInfo.color, display: 'inline-block' }} />
+                    <h3 style={{ textTransform: 'uppercase', fontSize: 12, letterSpacing: '0.06em', color: 'var(--ink-3)' }}>{catInfo.name}</h3>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(catTotal)}</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    {(['amount', 'date'] as const).map(s => (
+                      <button key={s} onClick={() => setCatSortBy(s)} style={{
+                        padding: '3px 10px', borderRadius: 6, fontSize: 12, fontFamily: 'inherit', cursor: 'pointer',
+                        border: `1px solid ${catSortBy === s ? catInfo.color : 'var(--line)'}`,
+                        background: catSortBy === s ? `${catInfo.color}18` : 'none',
+                        color: catSortBy === s ? catInfo.color : 'var(--ink-3)', fontWeight: catSortBy === s ? 600 : 400,
+                      }}>{s === 'amount' ? '$ Amount' : '📅 Date'}</button>
+                    ))}
+                  </div>
+                </div>
+                <div className="txn-list">
+                  {sorted.map(e => {
+                    const uColor = participantColors[e.user] || '#94a3b8';
+                    return (
+                      <div key={e.id} className="txn-row" style={{ gridTemplateColumns: '30px 1fr 28px 56px 80px' }}>
+                        <div className="txn-icon" style={{ background: `${uColor}22`, color: uColor, fontSize: 14, width: 30, height: 30 }}>
+                          {SHARED_ICONS[e.category] || '📦'}
+                        </div>
+                        <div className="txn-main">
+                          <div className="txn-merchant" style={{ fontSize: 13 }}>{e.description}</div>
+                          <div className="txn-meta">
+                            <span className="cat-pill" style={{ color: catInfo.color }}>{catInfo.name}</span>
+                            {e.notes && <><span className="dot-sep">·</span><span style={{ fontStyle: 'italic', color: 'var(--accent)', fontSize: 11 }}>{e.notes}</span></>}
+                          </div>
+                        </div>
+                        <div title={e.display_name || e.user} style={{ width: 24, height: 24, borderRadius: '50%', background: uColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 8, fontWeight: 700, color: '#fff', flexShrink: 0 }}>
+                          {(e.display_name || e.user).slice(0, 2).toUpperCase()}
+                        </div>
+                        <div className="txn-date">{e.date?.slice(5).replace('-', '/')}</div>
+                        <div className="txn-amt neg">{fmtMoney(e.amount)}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          }
+
+          const recent = [...expenses].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5);
           return (
             <div className="card">
               <div className="card-head" style={{ marginBottom: 8 }}>
-                <h3>{catLabel ? catLabel : 'Recent'}</h3>
+                <h3>Recent</h3>
                 <button onClick={() => setDetailTab('expenses')} style={{ fontSize: 12, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>See all →</button>
               </div>
               <div className="txn-list">
@@ -1846,7 +1944,24 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
                         )}
                       </div>
                       <div className="txn-meta">
-                        <span className="cat-pill" style={{ color: catI.color }}>{catI.name}</span>
+                        {isMe ? (
+                          <SharedCatPicker catId={e.category || 'other'} onPick={async (newCat) => {
+                            if (e.txn_id) {
+                              await apiFetch(`/api/transactions/${e.txn_id}`, {
+                                method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ category: SHARED_TO_PERSONAL[newCat] || newCat }),
+                              });
+                            } else {
+                              await apiFetch(`/api/shared/${detail.id}/expenses/${e.id}`, {
+                                method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ category: newCat }),
+                              });
+                            }
+                            loadDetail(detail);
+                          }} />
+                        ) : (
+                          <span className="cat-pill" style={{ color: catI.color }}>{catI.name}</span>
+                        )}
                       </div>
                       {isEditingThis && (
                         <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
@@ -1893,13 +2008,10 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
                               label: e.notes ? '✏️ Edit note' : '💬 Add note',
                               action: () => { setEditingNote({ id: e.id, value: e.notes || '' }); setMenuExpId(null); },
                             },
-                            ...(e.txn_id && e.user === me?.username ? [{
-                              label: '🏷️ Change category',
-                              action: () => { setEditExpModal({ id: e.id, description: e.description, amount: e.amount, date: e.date, category: e.category || 'other', isRef: true, txn_id: e.txn_id, expUser: e.user }); setMenuExpId(null); },
-                            }] : e.txn_id ? [] : [{
+                            ...(!e.txn_id ? [{
                               label: '✏️ Edit expense',
-                              action: () => { setEditExpModal({ id: e.id, description: e.description, amount: e.amount, date: e.date, category: e.category || 'other', isRef: false }); setMenuExpId(null); },
-                            }]),
+                              action: () => { setEditExpModal({ id: e.id, description: e.description, amount: e.amount, date: e.date, category: e.category || 'other' }); setMenuExpId(null); },
+                            }] : []),
                             ...(isMe || isOwnerUser ? [{
                               label: 'Delete',
                               action: () => deleteExpense(e.id),
