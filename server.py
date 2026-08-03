@@ -189,6 +189,13 @@ def serve_frontend(filename: str = "", request: Request = None) -> Response:
         from fastapi.responses import JSONResponse
         return JSONResponse({"detail": "Not found"}, status_code=404)
 
+    # Root: serve landing page for logged-out visitors
+    if not filename:
+        from core.auth import SESSION_COOKIE, _sessions
+        token = request.cookies.get(SESSION_COOKIE) if request else None
+        if not (token and _sessions.get(token)):
+            return FileResponse(BASE_DIR / "landing.html", headers={"Cache-Control": "no-store"})
+
     path = DIST_DIR / filename if filename else DIST_DIR / "index.html"
 
     # SPA fallback: any unknown path serves index.html so client-side routing works

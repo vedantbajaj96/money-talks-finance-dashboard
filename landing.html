@@ -1,0 +1,1270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MoneyTalk — Your Financial Copilot</title>
+  <meta name="description" content="Ask questions. Get answers. MoneyTalk is the AI copilot for your personal finances.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Sora:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      --bg:        #f2f0ea;
+      --surface:   #ffffff;
+      --surface-2: #faf8f4;
+      --surface-3: #f0ece3;
+      --line:      rgba(20,24,32,0.08);
+      --line-2:    rgba(20,24,32,0.16);
+      --ink:       #0d1117;
+      --ink-2:     #3d4556;
+      --ink-3:     #657082;
+      --ink-4:     #96a0b0;
+      --accent:    #0a8f5a;
+      --accent-lt: rgba(10,143,90,0.1);
+      --accent-2:  #3dd6b8;
+      --terra:     #d94f2e;
+      --amber:     #e8920a;
+      --blue:      #2563eb;
+      --radius:    16px;
+      --shadow-sm: 0 1px 3px rgba(20,24,32,0.06),0 1px 2px rgba(20,24,32,0.04);
+      --shadow-md: 0 4px 16px rgba(20,24,32,0.09),0 1px 4px rgba(20,24,32,0.05);
+      --shadow-lg: 0 12px 36px rgba(20,24,32,0.12),0 2px 8px rgba(20,24,32,0.06);
+      --font-sans:    'DM Sans', ui-sans-serif, system-ui, sans-serif;
+      --font-display: 'Sora', var(--font-sans);
+      --font-mono:    'JetBrains Mono', ui-monospace, monospace;
+    }
+
+    *,*::before,*::after { box-sizing:border-box; margin:0; padding:0; }
+    html { scroll-behavior:smooth; }
+    body {
+      font-family: var(--font-sans);
+      background: var(--bg);
+      color: var(--ink);
+      -webkit-font-smoothing: antialiased;
+      letter-spacing: -0.01em;
+      overflow-x: hidden;
+    }
+
+    /* Ambient pools */
+    body::before {
+      content:''; position:fixed; inset:0; z-index:0; pointer-events:none;
+      background:
+        radial-gradient(ellipse 80% 70% at 5% 5%, rgba(10,143,90,0.07) 0%, transparent 60%),
+        radial-gradient(ellipse 50% 50% at 95% 90%, rgba(61,214,184,0.05) 0%, transparent 55%);
+    }
+
+    /* ── NAV ──────────────────────────────────────────────────── */
+    nav {
+      position:fixed; top:0; left:0; right:0; z-index:100;
+      display:flex; align-items:center; justify-content:space-between;
+      padding: 20px 48px;
+      transition: background .3s, padding .3s, border-color .3s;
+    }
+    nav.scrolled {
+      background: rgba(242,240,234,0.9);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border-bottom: 1px solid var(--line);
+      padding: 14px 48px;
+    }
+    .nav-brand { display:flex; align-items:center; gap:10px; text-decoration:none; }
+    .nav-mark {
+      width:32px; height:32px; border-radius:9px;
+      background: linear-gradient(135deg,#0a8f5a 0%,#3dd6b8 100%);
+      display:flex; align-items:center; justify-content:center;
+      box-shadow: 0 2px 8px rgba(10,143,90,0.3);
+      flex-shrink:0;
+    }
+    .nav-mark svg { width:18px; height:18px; fill:none; color:#fff; }
+    .nav-name {
+      font-family:var(--font-display); font-weight:700; font-size:15px;
+      color:var(--ink); letter-spacing:-0.02em;
+    }
+    .nav-right { display:flex; align-items:center; gap:8px; }
+    .nav-link {
+      font-size:14px; font-weight:400; color:var(--ink-3);
+      text-decoration:none; padding:8px 12px; border-radius:8px;
+      transition: color .15s, background .15s;
+    }
+    .nav-link:hover { color:var(--ink); background:var(--surface); }
+    .btn-nav {
+      display:inline-flex; align-items:center;
+      padding:8px 20px; border-radius:99px;
+      background:var(--ink); color:#fff;
+      font-size:13.5px; font-weight:500; font-family:var(--font-sans);
+      text-decoration:none; letter-spacing:-0.01em;
+      transition: background .15s, transform .1s;
+    }
+    .btn-nav:hover { background:#1c2333; transform:translateY(-1px); }
+
+    /* ── HERO ─────────────────────────────────────────────────── */
+    .hero {
+      position:relative; z-index:1;
+      min-height:100dvh;
+      display:grid; grid-template-columns:1fr 1fr;
+      align-items:center; gap:60px;
+      padding: 120px 64px 80px;
+      max-width:1280px; margin:0 auto;
+    }
+    .hero-left { display:flex; flex-direction:column; align-items:flex-start; }
+
+    .live-badge {
+      display:inline-flex; align-items:center; gap:8px;
+      padding:5px 14px 5px 8px; border-radius:99px;
+      border:1px solid rgba(10,143,90,0.22);
+      background:rgba(10,143,90,0.06);
+      font-size:12px; font-weight:600; letter-spacing:0.04em;
+      text-transform:uppercase; color:var(--accent);
+      margin-bottom:28px;
+      opacity:0; animation: fadeUp .5s .1s ease forwards;
+    }
+    .live-dot {
+      width:8px; height:8px; border-radius:50%;
+      background:var(--accent);
+      animation: livePulse 2s ease-in-out infinite;
+    }
+    @keyframes livePulse {
+      0%,100% { box-shadow:0 0 0 0 rgba(10,143,90,0.5); }
+      50%      { box-shadow:0 0 0 5px rgba(10,143,90,0); }
+    }
+
+    .hero-h1 {
+      font-family:var(--font-display);
+      font-size:clamp(40px,5.5vw,72px);
+      font-weight:800; line-height:1.05;
+      letter-spacing:-0.04em; color:var(--ink);
+      margin-bottom:20px;
+      opacity:0; animation: fadeUp .6s .2s ease forwards;
+    }
+    .hero-h1 em { font-style:normal; color:var(--accent); }
+
+    .hero-sub {
+      font-size:17px; line-height:1.65; color:var(--ink-2);
+      max-width:440px; margin-bottom:36px;
+      opacity:0; animation: fadeUp .6s .35s ease forwards;
+    }
+
+    .hero-actions {
+      display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+      opacity:0; animation: fadeUp .6s .5s ease forwards;
+    }
+    .btn-primary {
+      display:inline-flex; align-items:center; gap:8px;
+      padding:13px 26px; border-radius:99px;
+      background:var(--ink); color:#fff;
+      font-size:15px; font-weight:600; font-family:var(--font-sans);
+      text-decoration:none; letter-spacing:-0.01em;
+      transition: transform .15s, box-shadow .15s;
+      box-shadow: 0 4px 14px rgba(13,17,23,0.25);
+    }
+    .btn-primary:hover { transform:translateY(-2px); box-shadow:0 8px 24px rgba(13,17,23,0.3); }
+    .btn-primary svg { width:14px; height:14px; fill:rgba(255,255,255,0.65); }
+    .btn-ghost {
+      display:inline-flex; align-items:center;
+      padding:13px 26px; border-radius:99px;
+      border:1.5px solid var(--line-2); background:var(--surface);
+      font-size:15px; font-weight:500; color:var(--ink-2);
+      font-family:var(--font-sans);
+      text-decoration:none; letter-spacing:-0.01em;
+      transition: border-color .15s, color .15s, transform .15s;
+    }
+    .btn-ghost:hover { border-color:var(--ink); color:var(--ink); transform:translateY(-1px); }
+
+    /* ── HERO CHAT ────────────────────────────────────────────── */
+    .hero-right {
+      opacity:0; animation: fadeUp .8s .6s ease forwards;
+    }
+    .chat-shell {
+      background:var(--surface);
+      border-radius:20px;
+      border:1px solid var(--line);
+      box-shadow: var(--shadow-lg);
+      overflow:hidden;
+    }
+
+    /* Chat header — "● MoneyTalk  Connected · 4 accounts" */
+    .chat-header {
+      display:flex; align-items:center; justify-content:space-between;
+      padding:12px 16px;
+      border-bottom:1px solid var(--line);
+      background:var(--surface-2);
+    }
+    .chat-header-left { display:flex; align-items:center; gap:10px; }
+    .chat-header-dot {
+      width:8px; height:8px; border-radius:50%; background:var(--accent);
+      animation: livePulse 2s ease-in-out infinite;
+      flex-shrink:0;
+    }
+    .chat-header-name {
+      font-family:var(--font-display);
+      font-size:13px; font-weight:700; color:var(--ink); letter-spacing:-0.02em;
+    }
+    .sync-badge {
+      font-size:11px; font-weight:500; color:var(--ink-4);
+      background:var(--surface-3); padding:3px 10px; border-radius:99px;
+      border:1px solid var(--line);
+    }
+
+    /* Messages */
+    .chat-messages {
+      padding:16px 16px 8px;
+      display:flex; flex-direction:column; gap:12px;
+      min-height:260px;
+    }
+    .msg { display:flex; gap:8px; align-items:flex-end; }
+    .msg.user { flex-direction:row-reverse; }
+
+    .msg-av {
+      width:28px; height:28px; border-radius:50%; flex-shrink:0;
+      display:flex; align-items:center; justify-content:center;
+      font-size:11px; font-weight:700; letter-spacing:0;
+    }
+    .msg-av.av-ai {
+      background:linear-gradient(135deg,#0a8f5a,#3dd6b8); color:#fff; font-size:9px;
+    }
+    .msg-av.av-user {
+      background:var(--surface-3); color:var(--ink-2);
+    }
+
+    .msg-bbl {
+      max-width:360px; padding:10px 14px; font-size:14px; line-height:1.55;
+    }
+    .msg.user .msg-bbl {
+      background:var(--ink); color:#fff;
+      border-radius:16px 16px 4px 16px;
+    }
+    .msg.ai .msg-bbl {
+      background:var(--surface-2); color:var(--ink);
+      border:1px solid var(--line);
+      border-radius:4px 16px 16px 16px;
+    }
+
+    /* Inline stat chips inside AI bubbles */
+    .chip-pos {
+      display:inline-flex; align-items:center; gap:3px;
+      background:rgba(10,143,90,0.1); color:#0a7a4d;
+      font-family:var(--font-mono); font-size:12px; font-weight:600;
+      padding:1px 7px; border-radius:4px;
+      border:1px solid rgba(10,143,90,0.18);
+    }
+    .chip-neg {
+      display:inline-flex; align-items:center; gap:3px;
+      background:rgba(217,79,46,0.08); color:#c43c1c;
+      font-family:var(--font-mono); font-size:12px; font-weight:600;
+      padding:1px 7px; border-radius:4px;
+      border:1px solid rgba(217,79,46,0.15);
+    }
+    .chip-num {
+      font-family:var(--font-mono); font-weight:700; color:var(--ink);
+    }
+
+    /* Typing dots */
+    .typing-dots {
+      display:inline-flex; align-items:center; gap:4px; padding:4px 2px;
+    }
+    .typing-dots span {
+      width:7px; height:7px; border-radius:50%;
+      background:var(--ink-4);
+      animation: dotBounce 1.2s ease-in-out infinite;
+    }
+    .typing-dots span:nth-child(2) { animation-delay:.2s; }
+    .typing-dots span:nth-child(3) { animation-delay:.4s; }
+    @keyframes dotBounce {
+      0%,60%,100% { transform:translateY(0); opacity:.4; }
+      30%          { transform:translateY(-5px); opacity:1; }
+    }
+
+    /* Message entry animation */
+    .msg { opacity:0; transform:translateY(8px); transition:opacity .3s ease, transform .3s ease; }
+    .msg.show { opacity:1; transform:translateY(0); }
+
+    /* Chat input */
+    .chat-input-bar {
+      display:flex; align-items:center; gap:10px;
+      padding:12px 16px;
+      border-top:1px solid var(--line);
+    }
+    .chat-input-mock {
+      flex:1; padding:9px 16px; border-radius:99px;
+      border:1.5px solid var(--line-2); background:var(--surface-2);
+      font-family:var(--font-sans); font-size:14px; color:var(--ink-3);
+      display:flex; align-items:center;
+    }
+    .chat-send {
+      width:34px; height:34px; border-radius:50%; background:var(--accent);
+      display:flex; align-items:center; justify-content:center; flex-shrink:0;
+    }
+    .chat-send svg { width:13px; height:13px; fill:#fff; }
+
+
+    /* ── CHARTS SECTION ───────────────────────────────────────── */
+    .charts-section {
+      position:relative; z-index:1;
+      padding:80px 64px;
+      max-width:1280px; margin:0 auto;
+    }
+    .section-eyebrow {
+      font-size:11px; font-weight:700; letter-spacing:0.1em;
+      text-transform:uppercase; color:var(--accent); margin-bottom:12px;
+    }
+    .section-h2 {
+      font-family:var(--font-display); font-size:clamp(28px,4vw,44px);
+      font-weight:700; letter-spacing:-0.03em; color:var(--ink); line-height:1.1;
+    }
+    .section-sub {
+      margin-top:12px; font-size:16px; line-height:1.65;
+      color:var(--ink-2); max-width:480px;
+    }
+
+    /* App mockup — pixel-faithful Monthly view replica */
+    .app-mockup {
+      margin-top:52px; border-radius:16px;
+      border:1px solid rgba(0,0,0,0.1);
+      box-shadow:0 24px 64px rgba(0,0,0,0.12),0 4px 16px rgba(0,0,0,0.06);
+      overflow:hidden; display:flex; height:540px;
+    }
+    /* Sidebar */
+    .mock-sb {
+      width:200px; flex-shrink:0; background:#fff;
+      border-right:1px solid rgba(0,0,0,0.07);
+      padding:14px 0; display:flex; flex-direction:column; overflow:hidden;
+    }
+    .mock-sb-logo {
+      display:flex; align-items:center; gap:9px;
+      padding:2px 14px 14px;
+      font-family:var(--font-display); font-size:14px; font-weight:700;
+      letter-spacing:-0.02em; color:var(--ink);
+    }
+    .mock-sb-logo-icon {
+      width:28px; height:28px; background:var(--accent); border-radius:7px;
+      display:flex; align-items:center; justify-content:center; flex-shrink:0; color:#fff;
+    }
+    .mock-sb-grp { margin-bottom:2px; }
+    .mock-sb-sec {
+      font-size:9.5px; font-weight:700; letter-spacing:0.1em;
+      text-transform:uppercase; color:var(--ink-4); padding:7px 14px 2px;
+    }
+    .mock-sb-item {
+      display:flex; align-items:center; gap:8px;
+      padding:5px 14px; font-size:12.5px; font-weight:500;
+      color:var(--ink-3); border-left:2px solid transparent; cursor:default;
+    }
+    .mock-sb-item.active {
+      color:var(--accent); border-left-color:var(--accent);
+      background:rgba(10,143,90,0.05); font-weight:600;
+    }
+    /* Main area */
+    .mock-main { flex:1; display:flex; flex-direction:column; background:var(--bg); min-width:0; }
+    .mock-topbar {
+      background:var(--surface); border-bottom:1px solid rgba(0,0,0,0.07);
+      padding:0 20px; height:50px;
+      display:flex; align-items:center; gap:8px; flex-shrink:0;
+    }
+    .mock-topbar-title {
+      font-family:var(--font-display); font-size:17px; font-weight:700;
+      letter-spacing:-0.03em; flex:1;
+    }
+    .mock-month-pill {
+      display:flex; align-items:center; gap:6px; font-size:12px; font-weight:600;
+      color:var(--ink-2); background:var(--surface-2);
+      border:1px solid var(--line); border-radius:7px; padding:4px 10px;
+    }
+    .mock-month-arr { color:var(--ink-4); font-size:10px; }
+    .mock-hbtn {
+      display:flex; align-items:center; gap:5px; font-size:11.5px; font-weight:600;
+      color:var(--ink-2); background:var(--surface-2);
+      border:1px solid var(--line); border-radius:7px; padding:4px 9px; cursor:default;
+    }
+    .mock-search-pill {
+      display:flex; align-items:center; gap:5px; font-size:11px; color:var(--ink-4);
+      background:var(--surface-2); border:1px solid var(--line);
+      border-radius:7px; padding:4px 9px; width:140px; cursor:default;
+    }
+    .mock-avatar {
+      width:26px; height:26px; border-radius:50%; background:#e05c48;
+      display:flex; align-items:center; justify-content:center;
+      font-size:10px; font-weight:700; color:#fff; flex-shrink:0;
+    }
+    .mock-accent-bar {
+      height:3px; flex-shrink:0;
+      background:linear-gradient(90deg,var(--accent) 0%,#5ec98a 40%,#b8f0d5 100%);
+    }
+    .mock-body {
+      flex:1; overflow:hidden; padding:16px 20px;
+      display:flex; flex-direction:column; gap:12px;
+    }
+    /* Stat cards */
+    .mock-stat-row { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
+    .mock-sc {
+      background:var(--surface); border:1px solid rgba(0,0,0,0.07);
+      border-radius:11px; padding:13px 14px;
+    }
+    .mock-sc-lbl {
+      font-size:9.5px; font-weight:700; letter-spacing:0.09em;
+      text-transform:uppercase; color:var(--ink-4); margin-bottom:5px;
+    }
+    .mock-sc-val {
+      font-family:var(--font-display); font-size:24px; font-weight:700;
+      letter-spacing:-0.03em; line-height:1.1;
+    }
+    .mock-sc-sub { font-size:10.5px; color:var(--ink-4); margin-top:3px; }
+    .cv-inc { color:#0a8f5a; }
+    .cv-exp { color:#e05c48; }
+    .cv-net { color:#0a8f5a; }
+    .cv-sav { color:#3b82f6; }
+    /* Chart row */
+    .mock-charts-row {
+      display:grid; grid-template-columns:1.85fr 1fr; gap:10px; flex:1; min-height:0;
+    }
+    .mock-mc {
+      background:var(--surface); border:1px solid rgba(0,0,0,0.07);
+      border-radius:11px; padding:13px 14px; display:flex; flex-direction:column; overflow:hidden;
+    }
+    .mock-mc-hdr {
+      display:flex; align-items:center; gap:6px;
+      font-size:9.5px; font-weight:700; letter-spacing:0.09em;
+      text-transform:uppercase; color:var(--ink-4); margin-bottom:8px; flex-shrink:0;
+    }
+    .mock-mc-hdr::before {
+      content:''; width:3px; height:11px; background:var(--accent); border-radius:2px;
+    }
+    .mock-mc-meta { margin-left:auto; font-weight:400; letter-spacing:0; text-transform:none; }
+    .mock-cf-wrap { flex:1; min-height:0; overflow:hidden; }
+    .cf-legend {
+      display:flex; gap:14px; margin-top:6px; font-size:10.5px; color:var(--ink-3); flex-shrink:0;
+    }
+    .cf-dot { width:8px; height:8px; border-radius:50%; display:inline-block; margin-right:4px; }
+    .mock-donut-inner {
+      display:flex; align-items:center; gap:10px; flex:1; min-height:0;
+    }
+    .mock-donut-leg {
+      flex:1; display:flex; flex-direction:column; gap:1px; overflow:hidden;
+    }
+    .mock-leg-row {
+      display:grid; grid-template-columns:7px 1fr auto;
+      align-items:center; gap:7px; padding:3px 5px; border-radius:5px;
+    }
+    .mock-leg-dot { width:7px; height:7px; border-radius:2px; flex-shrink:0; }
+    .mock-leg-name {
+      font-size:11px; color:var(--ink-2); font-weight:500;
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    }
+    .mock-leg-amt { font-family:var(--font-mono); font-weight:600; font-size:11px; color:var(--ink); }
+    /* chart axis */
+    .chart-axis-label {
+      font-size:10px; fill:#96a0b0;
+      font-family:'JetBrains Mono',monospace; font-feature-settings:"tnum";
+    }
+
+    /* ── HOW IT WORKS ─────────────────────────────────────────── */
+    .how-section {
+      position:relative; z-index:1;
+      padding:80px 64px;
+      background:var(--surface);
+      border-top:1px solid var(--line);
+      border-bottom:1px solid var(--line);
+    }
+    .how-inner { max-width:1000px; margin:0 auto; }
+    .how-header { text-align:center; margin-bottom:56px; }
+    .steps { display:grid; grid-template-columns:repeat(3,1fr); gap:20px; }
+    .step {
+      display:flex; flex-direction:column; gap:16px;
+      background:var(--surface); border:1px solid var(--line);
+      border-radius:18px; padding:28px 26px;
+    }
+    .step-icon {
+      width:44px; height:44px; border-radius:12px; background:var(--accent-lt);
+      display:flex; align-items:center; justify-content:center;
+    }
+    .step-icon svg { width:22px; height:22px; stroke:var(--accent); stroke-width:1.8; fill:none; }
+    .step-title { font-family:var(--font-display); font-size:18px; font-weight:700; letter-spacing:-0.02em; }
+    .step-desc { font-size:14px; line-height:1.7; color:var(--ink-2); }
+
+    /* ── FEATURES CHECKLIST ──────────────────────────────────── */
+    .features-section {
+      position:relative; z-index:1;
+      padding:80px 64px; max-width:1280px; margin:0 auto;
+    }
+    .features-header { text-align:center; margin-bottom:64px; }
+    .feat-grid { display:grid; grid-template-columns:1fr 1fr; gap:52px 80px; }
+    .feat-item { display:flex; flex-direction:column; gap:12px; }
+    .feat-check {
+      width:30px; height:30px; border-radius:9px; background:var(--accent-lt);
+      display:flex; align-items:center; justify-content:center; flex-shrink:0;
+    }
+    .feat-check svg { width:15px; height:15px; stroke:var(--accent); stroke-width:2.5; fill:none; }
+    .feat-title {
+      font-family:var(--font-display); font-size:clamp(18px,1.8vw,22px);
+      font-weight:700; letter-spacing:-0.03em; color:var(--ink); line-height:1.2;
+    }
+    .feat-desc { font-size:15px; line-height:1.75; color:var(--ink-2); }
+
+    /* ── FAQ ─────────────────────────────────────────────────── */
+    .faq-section {
+      position:relative; z-index:1;
+      padding:80px 64px; max-width:1280px; margin:0 auto;
+      display:grid; grid-template-columns:2fr 3fr; gap:80px; align-items:start;
+      border-top:1px solid var(--line);
+    }
+    .faq-heading {
+      font-family:var(--font-display); font-size:clamp(26px,3.5vw,38px);
+      font-weight:700; letter-spacing:-0.04em; color:var(--ink); line-height:1.15;
+      margin-bottom:14px;
+    }
+    .faq-sub { font-size:15px; color:var(--ink-3); line-height:1.65; }
+    .faq-sub a { color:var(--accent); text-decoration:none; }
+    .faq-list { display:flex; flex-direction:column; }
+    .faq-item { border-bottom:1px solid var(--line); }
+    .faq-q {
+      width:100%; text-align:left; padding:20px 0;
+      font-size:16px; font-weight:500; color:var(--ink);
+      background:none; border:none; cursor:pointer;
+      display:flex; justify-content:space-between; align-items:center; gap:16px;
+      font-family:var(--font-sans); letter-spacing:-0.01em; line-height:1.4;
+    }
+    .faq-q:hover { color:var(--accent); }
+    .faq-arrow {
+      flex-shrink:0; width:18px; height:18px;
+      stroke:currentColor; stroke-width:2; fill:none;
+      transition: transform .25s;
+    }
+    .faq-item.open .faq-arrow { transform:rotate(180deg); }
+    .faq-a {
+      font-size:14.5px; line-height:1.75; color:var(--ink-2);
+      max-height:0; overflow:hidden;
+      transition:max-height .3s ease, padding-bottom .3s ease;
+    }
+    .faq-item.open .faq-a { max-height:300px; padding-bottom:20px; }
+
+    /* ── ACCESS ───────────────────────────────────────────────── */
+    .access-wrap {
+      position:relative; z-index:1;
+      padding:0 64px 80px; max-width:1280px; margin:0 auto;
+    }
+    .access-inner {
+      background:var(--ink); border-radius:24px;
+      padding:72px 48px; text-align:center;
+      position:relative; overflow:hidden;
+    }
+    .access-inner::before {
+      content:''; position:absolute; inset:0; pointer-events:none;
+      background:radial-gradient(ellipse 60% 80% at 50% -20%, rgba(10,143,90,0.35) 0%, transparent 60%);
+    }
+    .access-inner>*{ position:relative; z-index:1; }
+    .access-h2 {
+      font-family:var(--font-display); font-size:clamp(28px,4vw,44px);
+      font-weight:700; letter-spacing:-0.03em; color:#fff; line-height:1.1; margin-bottom:14px;
+    }
+    .access-sub {
+      font-size:16px; line-height:1.65; color:rgba(255,255,255,0.5);
+      max-width:440px; margin:0 auto 36px;
+    }
+    .btn-access {
+      display:inline-flex; align-items:center; gap:8px;
+      padding:14px 32px; border-radius:99px;
+      background:var(--accent); color:#fff;
+      font-size:15px; font-weight:600; font-family:var(--font-sans);
+      text-decoration:none; letter-spacing:-0.01em;
+      transition: transform .15s, box-shadow .15s;
+      box-shadow:0 4px 20px rgba(10,143,90,0.5);
+    }
+    .btn-access:hover { transform:translateY(-2px); box-shadow:0 8px 32px rgba(10,143,90,0.6); }
+    .access-note { margin-top:18px; font-size:12px; color:rgba(255,255,255,0.28); }
+    .access-note a { color:rgba(255,255,255,0.45); text-decoration:underline; }
+
+    /* ── FOOTER ───────────────────────────────────────────────── */
+    footer {
+      position:relative; z-index:1;
+      border-top:1px solid var(--line); padding:28px 64px;
+      display:flex; align-items:center; justify-content:space-between;
+      font-size:13px; color:var(--ink-4);
+    }
+    .footer-brand {
+      display:flex; align-items:center; gap:8px;
+      font-family:var(--font-display); font-weight:700; font-size:14px;
+      color:var(--ink); text-decoration:none; letter-spacing:-0.02em;
+    }
+    .footer-mark {
+      width:24px; height:24px; border-radius:7px;
+      background:linear-gradient(135deg,#0a8f5a,#3dd6b8);
+      display:flex; align-items:center; justify-content:center;
+    }
+    .footer-mark svg { width:14px; height:14px; fill:none; color:#fff; }
+
+    /* ── ANIMATIONS ───────────────────────────────────────────── */
+    @keyframes fadeUp {
+      from { opacity:0; transform:translateY(16px); }
+      to   { opacity:1; transform:translateY(0); }
+    }
+    .reveal {
+      opacity:0; transform:translateY(20px);
+      transition: opacity .65s ease, transform .65s ease;
+    }
+    .reveal.visible { opacity:1; transform:translateY(0); }
+
+    /* ── RESPONSIVE ───────────────────────────────────────────── */
+    @media (max-width:900px) {
+      nav { padding:16px 20px; }
+      nav.scrolled { padding:12px 20px; }
+      .hero { grid-template-columns:1fr; padding:110px 24px 60px; gap:40px; }
+      .hero-left { align-items:center; text-align:center; }
+      .hero-sub { max-width:100%; text-align:center; }
+      .hero-btns { justify-content:center; }
+      .charts-section { padding:60px 24px; }
+      .app-mockup { height:auto; min-height:420px; flex-direction:column; }
+      .mock-sb { width:100%; height:44px; flex-direction:row; align-items:center;
+        padding:0 16px; border-right:none; border-bottom:1px solid rgba(0,0,0,0.07);
+        overflow-x:auto; gap:0; }
+      .mock-sb-logo { padding:0 16px 0 0; border-right:1px solid var(--line); white-space:nowrap; }
+      .mock-sb-grp { display:contents; }
+      .mock-sb-sec { display:none; }
+      .mock-sb-item { padding:0 12px; border-left:none; white-space:nowrap; flex-shrink:0; }
+      .mock-sb-item.active { border-left:none; border-bottom:2px solid var(--accent); }
+      .mock-body { padding:12px 14px; gap:10px; }
+      .mock-stat-row { grid-template-columns:1fr 1fr; }
+      .mock-charts-row { grid-template-columns:1fr; }
+      .how-section { padding:60px 24px; }
+      .steps { grid-template-columns:1fr; gap:14px; }
+      .features-section { padding:60px 24px; }
+      .feat-grid { grid-template-columns:1fr; gap:36px; }
+      .faq-section { padding:60px 24px; grid-template-columns:1fr; gap:40px; }
+      .access-wrap { padding:0 24px 60px; }
+      .access-inner { padding:48px 24px; }
+      footer { padding:24px 20px; flex-direction:column; gap:12px; text-align:center; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav id="nav">
+  <a href="/" class="nav-brand">
+    <div class="nav-mark">
+      <svg width="20" height="20" viewBox="0 0 22 22"><path d="M3 18 L8 6 L11 13 L14 9 L19 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="3" cy="18" r="1.6" fill="currentColor"/><circle cx="19" cy="16" r="1.6" fill="currentColor"/></svg>
+    </div>
+    <span class="nav-name">MoneyTalk</span>
+  </a>
+  <div class="nav-right">
+    <a href="#features" class="nav-link">Features</a>
+    <a href="/login" class="btn-nav">Sign in</a>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-left">
+    <div class="live-badge"><span class="live-dot"></span>Your personal finance companion</div>
+    <h1 class="hero-h1">Talk to your<br><em>money</em></h1>
+    <p class="hero-sub">
+      Ask questions, set budgets, see exactly where your money goes. Connected to your real accounts — always up to date.
+    </p>
+    <div class="hero-actions">
+      <a href="#access" class="btn-primary">
+        Request access
+        <svg viewBox="0 0 16 16"><path d="M8 1L15 8l-7 7-1.4-1.4 5.1-5.1H1V6.5h11.7L6.6 2.4z"/></svg>
+      </a>
+      <a href="#how" class="btn-ghost">How it works</a>
+    </div>
+  </div>
+
+  <div class="hero-right">
+    <div class="chat-shell">
+      <div class="chat-header">
+        <div class="chat-header-left">
+          <span class="chat-header-dot"></span>
+          <span class="chat-header-name">MoneyTalk</span>
+        </div>
+        <span class="sync-badge" id="sync-badge">Synced just now</span>
+      </div>
+      <div class="chat-messages" id="chat-messages"></div>
+      <div class="chat-input-bar">
+        <div class="chat-input-mock" id="chat-input-mock">Ask anything about your finances…</div>
+        <div class="chat-send">
+          <svg viewBox="0 0 16 16"><path d="M14.7 7.3l-13-6a.5.5 0 00-.65.65l2.5 5.55-2.5 5.55A.5.5 0 002 13.75l13-6a.5.5 0 000-.9z"/></svg>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- CHARTS SECTION -->
+<section class="charts-section">
+  <div class="reveal">
+    <div class="section-eyebrow">Your dashboard</div>
+    <h2 class="section-h2">See your money, clearly</h2>
+    <p class="section-sub">Every chart built from your real transactions — income, expenses, and where it all went.</p>
+  </div>
+
+  <!-- App mockup — Monthly view with mock data -->
+  <div class="app-mockup reveal">
+    <!-- Sidebar -->
+    <nav class="mock-sb">
+      <div class="mock-sb-logo">
+        <div class="mock-sb-logo-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 18 L8 6 L11 13 L14 9 L19 16"/>
+            <circle cx="3" cy="18" r="1.2" fill="currentColor" stroke="none"/>
+            <circle cx="19" cy="16" r="1.2" fill="currentColor" stroke="none"/>
+          </svg>
+        </div>
+        MoneyTalk
+      </div>
+      <div class="mock-sb-grp">
+        <div class="mock-sb-sec">Money</div>
+        <div class="mock-sb-item">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>Overview
+        </div>
+        <div class="mock-sb-item">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6" stroke-linecap="round"/><line x1="3" y1="12" x2="3.01" y2="12" stroke-linecap="round"/><line x1="3" y1="18" x2="3.01" y2="18" stroke-linecap="round"/></svg>Transactions
+        </div>
+        <div class="mock-sb-item active">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>Monthly
+        </div>
+        <div class="mock-sb-item">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>Review
+        </div>
+        <div class="mock-sb-item">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/></svg>Shared
+        </div>
+      </div>
+      <div class="mock-sb-grp">
+        <div class="mock-sb-sec">Analysis</div>
+        <div class="mock-sb-item">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/></svg>Cash Flow
+        </div>
+        <div class="mock-sb-item">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>Categories
+        </div>
+        <div class="mock-sb-item">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>Trends
+        </div>
+      </div>
+      <div class="mock-sb-grp">
+        <div class="mock-sb-sec">Wealth</div>
+        <div class="mock-sb-item">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>Net Worth
+        </div>
+        <div class="mock-sb-item">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>Accounts
+        </div>
+        <div class="mock-sb-item">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>Recurring
+        </div>
+      </div>
+      <div class="mock-sb-grp">
+        <div class="mock-sb-sec">Tools</div>
+        <div class="mock-sb-item">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>Chat
+        </div>
+      </div>
+    </nav>
+
+    <!-- Main content -->
+    <div class="mock-main">
+      <div class="mock-topbar">
+        <div class="mock-topbar-title">Monthly</div>
+        <div class="mock-month-pill">
+          <span class="mock-month-arr">‹</span>
+          June 2026
+          <span class="mock-month-arr">›</span>
+        </div>
+        <div class="mock-hbtn">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.36"/></svg>
+          Sync
+        </div>
+        <div class="mock-search-pill">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          Search transactions…
+        </div>
+        <div class="mock-avatar">V</div>
+      </div>
+      <div class="mock-accent-bar"></div>
+
+      <div class="mock-body">
+        <!-- Stat cards -->
+        <div class="mock-stat-row">
+          <div class="mock-sc" style="background:linear-gradient(135deg,#f0fdf7 0%,#fff 100%)">
+            <div class="mock-sc-lbl">Income</div>
+            <div class="mock-sc-val cv-inc">$8,500</div>
+          </div>
+          <div class="mock-sc" style="background:linear-gradient(135deg,#fff5f3 0%,#fff 100%)">
+            <div class="mock-sc-lbl">Expenses</div>
+            <div class="mock-sc-val cv-exp">$5,240</div>
+          </div>
+          <div class="mock-sc">
+            <div class="mock-sc-lbl">Net</div>
+            <div class="mock-sc-val cv-net">$3,260</div>
+            <div class="mock-sc-sub">38% savings rate</div>
+          </div>
+          <div class="mock-sc">
+            <div class="mock-sc-lbl">Saved</div>
+            <div class="mock-sc-val cv-sav">$1,800</div>
+            <div class="mock-sc-sub">auto-transfers + IRA</div>
+          </div>
+        </div>
+
+        <!-- Charts -->
+        <div class="mock-charts-row">
+          <!-- Cash Flow -->
+          <div class="mock-mc">
+            <div class="mock-mc-hdr">
+              Cash Flow
+              <span class="mock-mc-meta">Last 6 months</span>
+            </div>
+            <div class="mock-cf-wrap">
+              <svg id="cf-svg" width="100%" viewBox="0 0 480 148" preserveAspectRatio="none" style="display:block;width:100%;height:100%"></svg>
+            </div>
+            <div class="cf-legend">
+              <span><span class="cf-dot" style="background:#0a8f5a"></span>Income <strong style="color:var(--ink);font-family:var(--font-mono)">$8,500</strong></span>
+              <span><span class="cf-dot" style="background:#e05c48"></span>Expenses <strong style="color:var(--ink);font-family:var(--font-mono)">$5,240</strong></span>
+            </div>
+          </div>
+          <!-- Where It Went -->
+          <div class="mock-mc">
+            <div class="mock-mc-hdr">Where It Went</div>
+            <div class="mock-donut-inner">
+              <svg id="mock-donut-svg" width="120" height="120" viewBox="0 0 120 120" style="flex-shrink:0"></svg>
+              <div class="mock-donut-leg" id="mock-donut-leg"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- HOW IT WORKS -->
+<section class="how-section" id="how">
+  <div class="how-inner">
+    <div class="how-header reveal">
+      <div class="section-eyebrow">How it works</div>
+      <h2 class="section-h2">Get started quickly</h2>
+    </div>
+    <div class="steps">
+      <div class="step reveal">
+        <div class="step-icon">
+          <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+        </div>
+        <div class="step-title">Connect your bank accounts</div>
+        <p class="step-desc">Link your banks and cards via <strong>Plaid</strong> — the most trusted and secure bank connection used by thousands of apps. Takes under a minute. Your data syncs automatically from then on.</p>
+      </div>
+      <div class="step reveal">
+        <div class="step-icon">
+          <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+        </div>
+        <div class="step-title">Everything gets organized</div>
+        <p class="step-desc">Our engine categorizes every transaction automatically. Review them, fix anything that looks off with one click — and we get smarter each time you do.</p>
+      </div>
+      <div class="step reveal">
+        <div class="step-icon">
+          <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+        </div>
+        <div class="step-title">Talk to your money</div>
+        <p class="step-desc">Ask questions, set budgets, understand your spending patterns. Get clear answers from your own data — no spreadsheets, no manual work.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section class="features-section" id="features">
+  <div class="features-header reveal">
+    <div class="section-eyebrow">What you get</div>
+    <h2 class="section-h2">Everything you need to understand your money</h2>
+  </div>
+  <div class="feat-grid">
+    <div class="feat-item reveal">
+      <div class="feat-check"><svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+      <div class="feat-title">Connected banking you can trust</div>
+      <p class="feat-desc">Link your bank accounts, credit cards, and investment accounts via <strong>Plaid</strong> — the most trusted bank connection used by thousands of financial apps. Takes under a minute to set up, syncs automatically from then on.</p>
+    </div>
+    <div class="feat-item reveal">
+      <div class="feat-check"><svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+      <div class="feat-title">Automatic categorization that learns</div>
+      <p class="feat-desc">Our engine organizes every transaction automatically — no rules to write. Review when you have time, fix anything with one click, and we get smarter every time you do.</p>
+    </div>
+    <div class="feat-item reveal">
+      <div class="feat-check"><svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+      <div class="feat-title">Ask anything about your money</div>
+      <p class="feat-desc">Type any financial question in plain language — "how much did I spend on restaurants last month?" or "am I saving more than last year?" — and get a direct answer backed by your actual transaction history.</p>
+    </div>
+    <div class="feat-item reveal">
+      <div class="feat-check"><svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+      <div class="feat-title">Your data, encrypted and private</div>
+      <p class="feat-desc">No ads. No selling your data. No third-party analytics. Your financial data is encrypted at rest and never shared — with anyone. This is a private tool built for people who take their finances seriously.</p>
+    </div>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section class="faq-section" id="faq">
+  <div class="faq-left reveal">
+    <div class="section-eyebrow">Questions</div>
+    <h2 class="faq-heading">Things people ask before signing up</h2>
+    <p class="faq-sub">Still curious? <a href="https://github.com/vedantbajaj96/money-talks-finance-dashboard/issues">Open an issue on GitHub.</a></p>
+  </div>
+  <div class="faq-list reveal">
+    <div class="faq-item">
+      <button class="faq-q">Is MoneyTalk free?
+        <svg class="faq-arrow" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      <div class="faq-a">100% free. MoneyTalk is open source — you host it yourself, so there are no subscription fees. The only costs are your own API keys (Plaid for bank connections, Anthropic or Gemini for AI categorization), which you configure once and own entirely.</div>
+    </div>
+    <div class="faq-item">
+      <button class="faq-q">How does it connect to my bank?
+        <svg class="faq-arrow" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      <div class="faq-a">We use Plaid, the same bank connection technology used by thousands of financial apps including Venmo and Robinhood. The connection is read-only — MoneyTalk can see your transactions, but can't move money or make any changes.</div>
+    </div>
+    <div class="faq-item">
+      <button class="faq-q">Who can see my financial data?
+        <svg class="faq-arrow" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      <div class="faq-a">Only you. Your data is encrypted and stored privately. We don't sell it, share it with advertisers, or use it to train any models. Not even us can read your individual transactions.</div>
+    </div>
+    <div class="faq-item">
+      <button class="faq-q">What banks and accounts are supported?
+        <svg class="faq-arrow" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      <div class="faq-a">Plaid supports over 12,000 US financial institutions — all major banks, credit unions, and brokerage accounts. If your bank has online banking, it almost certainly works.</div>
+    </div>
+    <div class="faq-item">
+      <button class="faq-q">How do I set it up?
+        <svg class="faq-arrow" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      <div class="faq-a">Clone the repo on GitHub, add your API keys to a .env file, and run it with Docker or Python. The README walks you through the full setup — typically under 15 minutes.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ACCESS -->
+<div class="access-wrap" id="access">
+  <div class="access-inner reveal">
+    <h2 class="access-h2">Free and open source</h2>
+    <p class="access-sub">Host it yourself. Own your data completely. No subscriptions, no third parties, no surprises.</p>
+    <a href="https://github.com/vedantbajaj96/money-talks-finance-dashboard" class="btn-access">View on GitHub</a>
+    <p class="access-note">Already set up? <a href="/login">Sign in →</a></p>
+  </div>
+</div>
+
+<!-- FOOTER -->
+<footer>
+  <a href="/" class="footer-brand">
+    <div class="footer-mark">
+      <svg width="20" height="20" viewBox="0 0 22 22"><path d="M3 18 L8 6 L11 13 L14 9 L19 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="3" cy="18" r="1.6" fill="currentColor"/><circle cx="19" cy="16" r="1.6" fill="currentColor"/></svg>
+    </div>
+    MoneyTalk
+  </a>
+  <span>© 2026 MoneyTalk. All rights reserved.</span>
+</footer>
+
+<script>
+// ── Nav scroll ────────────────────────────────────────────────────
+const nav = document.getElementById('nav');
+window.addEventListener('scroll', () => nav.classList.toggle('scrolled', scrollY > 20), { passive:true });
+
+// ── Scroll reveal ─────────────────────────────────────────────────
+document.querySelectorAll('.reveal').forEach(el => {
+  new IntersectionObserver((entries) => {
+    if (entries[0].isIntersecting) {
+      entries[0].target.classList.add('visible');
+    }
+  }, { threshold: 0.08 }).observe(el);
+});
+
+// ── FAQ accordion ─────────────────────────────────────────────────
+document.querySelectorAll('.faq-item').forEach(item => {
+  item.querySelector('.faq-q').addEventListener('click', () => {
+    const isOpen = item.classList.contains('open');
+    document.querySelectorAll('.faq-item.open').forEach(i => i.classList.remove('open'));
+    if (!isOpen) item.classList.add('open');
+  });
+});
+
+// ── Sync badge counter ("Synced 2 min ago") ───────────────────────
+let syncMin = 0;
+setInterval(() => {
+  syncMin++;
+  const badge = document.getElementById('sync-badge');
+  if (badge) badge.textContent = syncMin === 1 ? 'Synced 1 min ago' : `Synced ${syncMin} min ago`;
+}, 60000);
+
+// ── ANIMATED CHAT DEMO ────────────────────────────────────────────
+const CONVERSATIONS = [
+  {
+    q: 'How much did I spend on food last month?',
+    a: [
+      { type:'text', text:'You spent ' },
+      { type:'num',  text:'$847' },
+      { type:'text', text:' on food in June — ' },
+      { type:'num',  text:'$512' },
+      { type:'text', text:' dining out and ' },
+      { type:'num',  text:'$335' },
+      { type:'text', text:' on groceries. Dining out is up ' },
+      { type:'chip-neg', text:'↑ 12% vs May' },
+      { type:'text', text:', mostly restaurants.' },
+    ]
+  },
+  {
+    q: 'Am I saving more than last year?',
+    a: [
+      { type:'text', text:"Yes — you've saved " },
+      { type:'num',  text:'$18,240' },
+      { type:'text', text:' this year vs ' },
+      { type:'num',  text:'$14,100' },
+      { type:'text', text:" last year. That's " },
+      { type:'chip-pos', text:'+29% YoY' },
+      { type:'text', text:'. June was your best month at $3,200 saved.' },
+    ]
+  },
+  {
+    q: 'Which subscriptions am I forgetting about?',
+    a: [
+      { type:'text', text:'Found 6 subscriptions totaling ' },
+      { type:'num',  text:'$89/mo' },
+      { type:'text', text:': Netflix $15.99, Spotify $9.99, iCloud $2.99, NYT $4.99, Headspace $12.99. Adobe is your biggest at ' },
+      { type:'chip-neg', text:'$52.99/mo' },
+      { type:'text', text:' — still using it?' },
+    ]
+  },
+  {
+    q: 'What if I cut Uber by 30%?',
+    a: [
+      { type:'text', text:"You'd save " },
+      { type:'chip-pos', text:'$67/mo · $804/yr' },
+      { type:'text', text:'. Based on your patterns, 8–10 of your weekday Uber rides are commutes. Switching those to transit would do it without touching weekends.' },
+    ]
+  },
+];
+
+const msgContainer = document.getElementById('chat-messages');
+const inputMock = document.getElementById('chat-input-mock');
+let convoIdx = 0;
+let running = false;
+
+function buildBubble(parts) {
+  const span = document.createElement('span');
+  parts.forEach(p => {
+    if (p.type === 'text') {
+      span.appendChild(document.createTextNode(p.text));
+    } else if (p.type === 'num') {
+      const s = document.createElement('span');
+      s.style.fontFamily = 'var(--font-mono)';
+      s.style.fontWeight = '700';
+      s.textContent = p.text;
+      span.appendChild(s);
+    } else if (p.type === 'chip-pos') {
+      const s = document.createElement('span');
+      s.className = 'chip-pos';
+      s.textContent = p.text;
+      span.appendChild(s);
+    } else if (p.type === 'chip-neg') {
+      const s = document.createElement('span');
+      s.className = 'chip-neg';
+      s.textContent = p.text;
+      span.appendChild(s);
+    }
+  });
+  return span;
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+async function typeInput(text) {
+  inputMock.textContent = '';
+  inputMock.style.color = 'var(--ink)';
+  for (let i = 0; i < text.length; i++) {
+    inputMock.textContent = text.slice(0, i+1);
+    await sleep(28 + Math.random() * 20);
+  }
+  await sleep(400);
+}
+
+async function addUserMsg(text) {
+  const msg = document.createElement('div');
+  msg.className = 'msg user';
+  msg.innerHTML = `<div class="msg-av av-user">V</div><div class="msg-bbl">${text}</div>`;
+  msgContainer.appendChild(msg);
+  requestAnimationFrame(() => requestAnimationFrame(() => msg.classList.add('show')));
+  msgContainer.scrollTop = msgContainer.scrollHeight;
+}
+
+async function showTyping() {
+  const msg = document.createElement('div');
+  msg.className = 'msg ai show';
+  msg.id = 'typing-msg';
+  msg.innerHTML = `<div class="msg-av av-ai">MT</div><div class="msg-bbl"><div class="typing-dots"><span></span><span></span><span></span></div></div>`;
+  msgContainer.appendChild(msg);
+  msgContainer.scrollTop = msgContainer.scrollHeight;
+  return msg;
+}
+
+async function addAIMsg(parts) {
+  const typingEl = document.getElementById('typing-msg');
+  if (typingEl) typingEl.remove();
+  const av = document.createElement('div');
+  av.className = 'msg-av av-ai';
+  av.textContent = 'MT';
+  const bbl = document.createElement('div');
+  bbl.className = 'msg-bbl';
+  bbl.appendChild(buildBubble(parts));
+  const msg = document.createElement('div');
+  msg.className = 'msg ai';
+  msg.appendChild(av);
+  msg.appendChild(bbl);
+  msgContainer.appendChild(msg);
+  requestAnimationFrame(() => requestAnimationFrame(() => msg.classList.add('show')));
+  msgContainer.scrollTop = msgContainer.scrollHeight;
+}
+
+async function runConvo(c) {
+  await typeInput(c.q);
+  await sleep(300);
+  await addUserMsg(c.q);
+  inputMock.textContent = 'Ask anything about your finances…';
+  inputMock.style.color = 'var(--ink-3)';
+  await sleep(600);
+  const typingEl = await showTyping();
+  await sleep(1400 + Math.random() * 600);
+  await addAIMsg(c.a);
+  await sleep(3200);
+}
+
+async function chatLoop() {
+  if (running) return;
+  running = true;
+  while (true) {
+    const c = CONVERSATIONS[convoIdx % CONVERSATIONS.length];
+    await runConvo(c);
+    convoIdx++;
+    // After 2 convos, clear and restart
+    if (convoIdx % 2 === 0) {
+      await sleep(800);
+      // Fade out messages
+      [...msgContainer.children].forEach(el => {
+        el.style.transition = 'opacity .5s';
+        el.style.opacity = '0';
+      });
+      await sleep(600);
+      msgContainer.innerHTML = '';
+    }
+  }
+}
+
+// Start chat loop after initial page animation settles
+setTimeout(chatLoop, 1200);
+
+// ── Helpers ───────────────────────────────────────────────────────
+function fmtK(v) {
+  if (Math.abs(v) >= 1000) return '$' + (v/1000).toFixed(0) + 'k';
+  return '$' + Math.round(v);
+}
+function fmtFull(v) {
+  return '$' + Math.round(v).toLocaleString();
+}
+
+// ── CASH FLOW CHART (grouped bars: income vs expenses per month) ──
+(function renderCashFlow() {
+  const months = [
+    {label:'Jan', income:8200, expenses:5100},
+    {label:'Feb', income:8200, expenses:4900},
+    {label:'Mar', income:8500, expenses:5600},
+    {label:'Apr', income:8500, expenses:5000},
+    {label:'May', income:8500, expenses:5400},
+    {label:'Jun', income:8500, expenses:5240},
+  ];
+  const svg = document.getElementById('cf-svg');
+  if (!svg) return;
+  const W=480, H=148;
+  const pad={top:14,right:12,bottom:26,left:50};
+  const innerW=W-pad.left-pad.right, innerH=H-pad.top-pad.bottom;
+  const ns='http://www.w3.org/2000/svg';
+  const mk=(tag,a,p)=>{const e=document.createElementNS(ns,tag);for(const[k,v]of Object.entries(a||{}))e.setAttribute(k,v);if(p)p.appendChild(e);return e;};
+  const tx=(t,a,p)=>{const e=mk('text',a,p);e.textContent=t;e.setAttribute('class','chart-axis-label');return e;};
+
+  const allVals=[...months.map(m=>m.income),...months.map(m=>m.expenses)];
+  const max=Math.max(...allVals)*1.1;
+  const ticks=3;
+  for(let i=0;i<=ticks;i++){
+    const v=(max/ticks)*i, y=pad.top+innerH-(v/max)*innerH;
+    mk('line',{x1:pad.left,x2:W-pad.right,y1:y,y2:y,
+      stroke:i===0?'rgba(20,24,32,0.12)':'rgba(20,24,32,0.05)',
+      'stroke-width':1,'stroke-dasharray':i===0?'':'3 3'},svg);
+    tx(fmtK(v),{x:pad.left-6,y:y+3.5,'text-anchor':'end'},svg);
+  }
+
+  const slotW=innerW/months.length;
+  const barW=slotW*0.28, gap=slotW*0.07, rx=3;
+  months.forEach((m,i)=>{
+    const cx=pad.left+slotW*i+slotW/2;
+    // income bar (left of pair)
+    const ih=(m.income/max)*innerH, iy=pad.top+innerH-ih;
+    const ix=cx-gap/2-barW;
+    if(ih>rx*2){
+      mk('path',{d:`M ${ix} ${iy+ih} L ${ix} ${iy+rx} Q ${ix} ${iy} ${ix+rx} ${iy} L ${ix+barW-rx} ${iy} Q ${ix+barW} ${iy} ${ix+barW} ${iy+rx} L ${ix+barW} ${iy+ih} Z`,fill:'#0a8f5a'},svg);
+    }
+    // expenses bar (right of pair)
+    const eh=(m.expenses/max)*innerH, ey=pad.top+innerH-eh;
+    const ex=cx+gap/2;
+    if(eh>rx*2){
+      mk('path',{d:`M ${ex} ${ey+eh} L ${ex} ${ey+rx} Q ${ex} ${ey} ${ex+rx} ${ey} L ${ex+barW-rx} ${ey} Q ${ex+barW} ${ey} ${ex+barW} ${ey+rx} L ${ex+barW} ${ey+eh} Z`,fill:'#e05c48',opacity:'0.85'},svg);
+    }
+    tx(m.label,{x:cx,y:H-8,'text-anchor':'middle'},svg);
+  });
+})();
+
+// ── SPENDING DONUT (Where It Went) ────────────────────────────────
+(function renderMockDonut(){
+  const data=[
+    {name:'Housing',      color:'#6366f1', amount:1850},
+    {name:'Food & Drink', color:'#0a8f5a', amount:1240},
+    {name:'Shopping',     color:'#f59e0b', amount:680},
+    {name:'Health',       color:'#f87171', amount:430},
+    {name:'Transport',    color:'#3b82f6', amount:380},
+    {name:'Other',        color:'#94a3b8', amount:660},
+  ];
+  const total=data.reduce((s,d)=>s+d.amount,0);
+  const size=120, thickness=20;
+  const r=size/2-thickness/2-3, cx=size/2, cy=size/2;
+  const GAP=0.028;
+  const svg=document.getElementById('mock-donut-svg');
+  if(!svg)return;
+  const ns='http://www.w3.org/2000/svg';
+  const mk=(tag,a,p)=>{const e=document.createElementNS(ns,tag);for(const[k,v]of Object.entries(a||{}))e.setAttribute(k,v);if(p)p.appendChild(e);return e;};
+
+  mk('circle',{cx,cy,r,fill:'none',stroke:'rgba(20,24,32,0.05)','stroke-width':thickness},svg);
+  let angle=-Math.PI/2;
+  data.forEach(d=>{
+    const frac=d.amount/total;
+    const a0=angle+GAP/2, a1=angle+frac*Math.PI*2-GAP/2;
+    angle+=frac*Math.PI*2;
+    const x0=cx+Math.cos(a0)*r, y0=cy+Math.sin(a0)*r;
+    const x1=cx+Math.cos(a1)*r, y1=cy+Math.sin(a1)*r;
+    mk('path',{d:`M ${x0} ${y0} A ${r} ${r} 0 ${a1-a0>Math.PI?1:0} 1 ${x1} ${y1}`,
+      fill:'none',stroke:d.color,'stroke-width':thickness,'stroke-linecap':'butt'},svg);
+  });
+  // center label
+  const lbl=document.createElementNS(ns,'text');
+  lbl.setAttribute('x',cx);lbl.setAttribute('y',cy-5);lbl.setAttribute('text-anchor','middle');
+  lbl.style.cssText='font-size:8px;fill:#657082;font-weight:700;letter-spacing:0.07em;font-family:DM Sans,sans-serif;text-transform:uppercase';
+  lbl.textContent='Total';svg.appendChild(lbl);
+  const val=document.createElementNS(ns,'text');
+  val.setAttribute('x',cx);val.setAttribute('y',cy+13);val.setAttribute('text-anchor','middle');
+  val.style.cssText='font-size:15px;font-weight:700;fill:#0d1117;font-family:Sora,sans-serif;letter-spacing:-0.02em';
+  val.textContent='$5,240';svg.appendChild(val);
+
+  const leg=document.getElementById('mock-donut-leg');
+  if(!leg)return;
+  data.forEach(d=>{
+    const row=document.createElement('div');
+    row.className='mock-leg-row';
+    row.innerHTML=`<span class="mock-leg-dot" style="background:${d.color}"></span><span class="mock-leg-name">${d.name}</span><span class="mock-leg-amt">${fmtFull(d.amount)}</span>`;
+    leg.appendChild(row);
+  });
+})();
+</script>
+</body>
+</html>
