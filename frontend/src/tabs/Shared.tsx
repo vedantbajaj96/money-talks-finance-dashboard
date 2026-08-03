@@ -493,14 +493,20 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
     if (!detail || !editExpModal) return;
     setEditExpSaving(true);
     try {
-      const body = editExpModal.isRef
-        ? { category: editExpModal.category }
-        : { description: editExpModal.description, amount: parseFloat(editExpModal.amount), date: editExpModal.date, category: editExpModal.category };
-      await apiFetch(`/api/shared/${detail.id}/expenses/${editExpModal.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
+      if (editExpModal.isRef) {
+        // Patch the original transaction (owned by current user)
+        await apiFetch(`/api/transactions/${editExpModal.txn_id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ category: editExpModal.category }),
+        });
+      } else {
+        await apiFetch(`/api/shared/${detail.id}/expenses/${editExpModal.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ description: editExpModal.description, amount: parseFloat(editExpModal.amount), date: editExpModal.date, category: editExpModal.category }),
+        });
+      }
       setEditExpModal(null);
       loadDetail(detail);
     } finally {
@@ -1887,10 +1893,10 @@ function SharedTab({ pendingJoin, clearPendingJoin, setTab }) {
                               label: e.notes ? '✏️ Edit note' : '💬 Add note',
                               action: () => { setEditingNote({ id: e.id, value: e.notes || '' }); setMenuExpId(null); },
                             },
-                            ...(e.txn_id ? [{
+                            ...(e.txn_id && e.user === me?.username ? [{
                               label: '🏷️ Change category',
-                              action: () => { setEditExpModal({ id: e.id, description: e.description, amount: e.amount, date: e.date, category: e.category || 'other', isRef: true }); setMenuExpId(null); },
-                            }] : [{
+                              action: () => { setEditExpModal({ id: e.id, description: e.description, amount: e.amount, date: e.date, category: e.category || 'other', isRef: true, txn_id: e.txn_id, expUser: e.user }); setMenuExpId(null); },
+                            }] : e.txn_id ? [] : [{
                               label: '✏️ Edit expense',
                               action: () => { setEditExpModal({ id: e.id, description: e.description, amount: e.amount, date: e.date, category: e.category || 'other', isRef: false }); setMenuExpId(null); },
                             }]),
